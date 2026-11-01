@@ -23,11 +23,11 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/status` | GET | Manager status. |
 | `/api/v1/system-stats` | GET | System stats (file descriptors, memory). |
 | `/api/v1/version` | GET | Running simulator version string. Immutable per process; response carries `Cache-Control: private, max-age=3600`. |
-| `/api/v1/flows/status` | GET | Flow export status and cumulative counters. |
-| `/api/v1/traps/status` | GET | SNMP trap export status, INFORM counters, and per-type catalog map. |
-| `/api/v1/devices/{ip}/trap` | POST | Fire a named catalog trap on a specific device. |
-| `/api/v1/syslog/status` | GET | UDP syslog export status, counters, and per-type catalog map. |
-| `/api/v1/devices/{ip}/syslog` | POST | Fire a named catalog syslog message on a specific device. |
+| `/api/v1/flows/status` | GET | Flow export status and cumulative counters. See [Flow export → Status API](flow-export.md#status-api). |
+| `/api/v1/traps/status` | GET | SNMP trap export status, INFORM counters, and per-type catalog map. See [SNMP traps → Trap export status](snmp-traps.md#trap-export-status). |
+| `/api/v1/devices/{ip}/trap` | POST | Fire a named catalog trap on a specific device. See [SNMP traps → Fire a trap on demand](snmp-traps.md#fire-a-trap-on-demand). |
+| `/api/v1/syslog/status` | GET | Syslog export status, counters, and per-type catalog map. See [Syslog → Syslog export status](syslog-export.md#syslog-export-status). |
+| `/api/v1/devices/{ip}/syslog` | POST | Fire a named catalog syslog message on a specific device. See [Syslog → Fire a syslog message on demand](syslog-export.md#fire-a-syslog-message-on-demand). |
 | `/api/v1/devices/{ip}/optical/{component}/degrade` | POST | Degrade one optical channel on demand (optional auto-expiring window). |
 | `/api/v1/devices/{ip}/optical` | GET | Current degradation state of every optical channel on a device. |
 | `/api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status` | POST | Move one interface's link state, with optional `duration` auto-revert. See [Interface state](./interface-state.md). |
@@ -66,6 +66,7 @@ The same port also serves the management web UI at `/`.
 ## Fidelity mode
 
 `GET /api/v1/fidelity` reports fleet silence; `POST` changes it without a restart.
+What a silent fleet still does is in [Fidelity mode](../ops/loadtest-scenarios.md#fidelity-mode).
 
 ```json
 // GET response .data
@@ -77,8 +78,6 @@ The same port also serves the management web UI at `/`.
   "revert_to": false        // what the pending revert restores
 }
 ```
-
-`silent` and `startup_flag` are reported separately because once the value is mutable the flag is only a default; a surface reporting the flag alone would assert something the engine may have stopped honouring.
 
 ```bash
 curl -X POST .../api/v1/fidelity -H 'Content-Type: application/json' \
@@ -94,13 +93,10 @@ curl -X POST .../api/v1/fidelity -H 'Content-Type: application/json' \
 Shortening or extending a window keeps the same destination; a toggle in the *opposite* direction starts a new chain and reverts to whatever was in force when it was issued.
 `revert_to` reports the target, because it is not inferable from `silent`.
 
-A scenario report records `fidelity.silent_at_start` and `fidelity.changed_during_window`, so an archived measurement can say whether the rest of the fleet was quiet for its window.
-
 ## Continuous profiling
 
 `GET /api/v1/profiling` reports the profiling gate; `POST` changes it without a restart.
-Off by default: booted without `-profiling-pyroscope` and never POSTed, no profiler goroutine exists and `/debug/pprof/*` answers `503` naming this endpoint.
-The full reference, including the one-CPU-profile-at-a-time rule and the subsystem labels, is [Continuous profiling](../ops/profiling.md).
+The gate's behaviour, the `server_address` shapes, credentials and the pprof surface are in [Profile the simulator](../ops/profiling.md).
 
 ```json
 // GET response .data
@@ -130,18 +126,15 @@ curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
   -d '{"enabled": false}'                                             # off; the last profiles are flushed (bounded, 20 s) before 200
 ```
 
-`enabled` is **required**; a body without it is rejected with `400`, as is an unknown field, a non-positive or over-cap `duration`, a `server_address` that is not an `http://` or `https://` URL or embeds credentials or a query or fragment, or a `server_address` on an `enabled:false` request.
-`server_address` has three shapes: omitted keeps the address in force if a push is running, else uses the startup flag's, else is pull-only; an explicit `""` is pull-only even when the flag is set; a value re-targets.
-The same address twice is a no-op; a different address re-targets the push in one transition.
-A push the SDK refuses to start answers `500` with the state attached (`enabled:true`, `pushing:false`, `last_error`); the pull surface serves regardless.
-`pushing` means the SDK is running; a collector that is down or rejecting shows in `sdk_errors` and `last_error`, since `pyroscope.Start` never touches the network.
-`{"enabled":false}` asks the SDK to flush (a final snapshot plus the queued uploads) and then stops it, bounded by two upload timeouts (20 s) after which the flush is abandoned and logged; `GET` does not wait behind that flush.
-`/debug/pprof/profile?seconds=N` and `trace?seconds=N` are refused by `net/http/pprof` once `N` reaches the server's 30 s write timeout.
-Auto-revert follows the fidelity chain rule above and restores the whole (gate, address) pair; `revert_to_address` reports the address.
-Basic auth and the tenant ID are flag-only (`-profiling-pyroscope-basic-auth`, `-profiling-pyroscope-tenant`), because this endpoint echoes everything REST can set, and they are sent only to the flag's own address: a differing `server_address` is pushed to without them.
+`enabled` is **required**.
 
-**Removed.** The two hand-rolled `GET /api/v1/debug/...` handlers (a heap download and a fixed 5 s CPU download) are gone; a request to either is a `404`.
-Their replacements are `GET /debug/pprof/heap` and `GET /debug/pprof/profile?seconds=N`, which require the gate to be open (`503` otherwise).
+| Status | When |
+|--------|------|
+| `200` | The gate is in the requested state. `{"enabled":false}` answers after the SDK flush, bounded at 20 s. |
+| `400` | `enabled` missing, an unknown field, a non-positive or over-cap `duration`, a `server_address` that is not an `http://` or `https://` URL or embeds credentials, a query or a fragment, or a `server_address` on an `enabled:false` request. |
+| `500` | The SDK refused to start the push. The body carries the state (`enabled:true`, `pushing:false`, `last_error`); the pull surface still serves. |
+
+Auto-revert restores the whole (gate, address) pair; `revert_to_address` reports the address.
 
 ## Create devices
 
@@ -159,7 +152,6 @@ An explicit `"netmask": "24"` (or `"8"`) is still honored if you want classic pe
 It is refused with 400 and one of three messages: `start_ip is required` (missing or empty), `invalid start IP address: "<value>"` (does not parse) or `start IP address must be IPv4: "<value>"` (any IPv6 literal, the IPv4-mapped `::ffff:10.42.0.3` included).
 The value is echoed quoted, so a trailing space or tab that caused the refusal is visible.
 The same check runs on `-auto-start-ip` at startup, where a refusal is fatal.
-Up to v0.38.0 an IPv6 `start_ip` was accepted and the batch walked a single address, reporting every requested device as created.
 
 ```bash
 # Round-robin across all device types
@@ -278,37 +270,26 @@ A successful batch answers `200` with the counts in `data`:
 | `created` | int | n/a | Devices that started. |
 | `requested` | int | n/a | `device_count` from the request. |
 | `failed` | int | n/a | `requested - created`. Devices can fail to start under resource pressure at scale. Reconcile against `requested`. |
-| `warnings` | array | omitted | Reserved for settings that were accepted but are not honoured. Nothing populates it today, so it is omitted. |
+| `warnings` | array | omitted | Reserved for settings that were accepted but are not honoured. Currently always omitted. |
 
 When `failed` is not zero, `message` reads `Created 8 of 10 devices (2 failed to start) starting from 192.168.100.1`.
 
 ### Write admission
 
 Writes are **opt-in**.
-A batch created without `write_community` answers no v1/v2c `SetRequest`, and the v3 minimum security level defaults to `authNoPriv`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `write_community` | string (top level) | empty | SNMPv1/v2c community required to write. A mismatch is discarded with no response, which `snmpset` reports as a timeout. Empty admits no v1/v2c `SET`. |
 | `snmpv3.set_min_security_level` | `none` \| `auth` \| `priv` | `auth` | Lowest security level a v3 `SetRequest` may carry. Below it, the device answers a `usmStatsUnsupportedSecLevels` Report. An unrecognised value is rejected **400**. |
 
-Two properties worth knowing.
-
-`write_community` is **write-only**: it never appears in a response, and `GET /api/v1/devices` does not echo it.
-There is no way to read a device's write community back out of the API.
-
-Neither field is inherited from the CLI seed.
-A `POST` that omits them gets the shipped defaults (no v1/v2c write, `authNoPriv` for v3), even when the simulator was started with `-snmp-write-community`.
-That is the same opt-in-explicit contract the export blocks and the scenario fields follow.
-
-Reads are not gated at any version, and that asymmetry is deliberate; see the [SNMP reference](snmp.md#on-a-read-the-community-string-is-echoed-and-never-checked).
+Neither field is inherited from the CLI seed, and `write_community` is never echoed by any response.
+The admission rules are in [SNMP → Write admission for a `SET`](snmp.md#write-admission-for-a-set).
 
 A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a password is rejected with **400**.
-Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which has no defined result for an empty one, so the block is checked at creation rather than at the first encrypted request.
-A 200 followed by every encrypted poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when both are set **on the DES path only**.
 The AES128 path ignores `priv_password` and always derives from `password`, so a device configured with two distinct passwords and `"priv_protocol": 2` encrypts under a key no RFC 3414 manager derives.
-`Validate` accepts the configuration regardless.
+That configuration is accepted without a warning.
 
 The `if_error_scenario` field controls the per-device ppm bands used to derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards` from live packet counters.
 Accepted values: `clean` (default, no error growth), `typical`, `degraded`, `failing`.
@@ -334,12 +315,10 @@ curl -X POST http://localhost:8080/api/v1/devices \
 ### On-demand optical degradation
 
 `POST /api/v1/devices/{ip}/optical/{component}/degrade` drives one named optical channel across the SD-FEC threshold on demand.
-Use it to validate threshold and alarm logic without waiting for a health band to wander there.
+What each knob moves, and the four diagnostic quadrants, are in [Optical telemetry → On-demand degradation](optical-telemetry.md#on-demand-degradation).
 
 ```bash
 # Drive OCH-1-1 past the FEC threshold for 30 seconds, then back automatically.
-# Crossing the threshold is an OSNR phenomenon, so it takes a noise rise:
-# attenuation alone drops power without moving OSNR (see the quadrant table).
 curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degrade \
   -H "Content-Type: application/json" \
   -d '{"noise_rise_db": 8, "duration": "30s"}'
@@ -351,28 +330,11 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degr
 | `noise_rise_db` | number | Raises accumulated ASE only. Power holds while OSNR falls. This models a sick amplifier. |
 | `duration` | Go duration string | Optional. Omitted means open-ended; capped at 24 h. |
 
-Two knobs rather than one severity dial because they select which diagnostic quadrant the fault lands in, and collector correlation rules key on exactly that difference.
 Both are optional; **a request with neither (or an empty body) clears** active degradation on that channel.
-
-The whole receive cascade follows (`input-power`, `osnr`, `esnr`, `q-value`, `pre-fec-ber` and `fec-uncorrectable-blocks`), while the off-spine leaves (`output-power`, `laser-bias-current`, `chromatic-dispersion`, `polarization-mode-dispersion`, `polarization-dependent-loss`) stay flat.
-That asymmetry *is* the fibre-vs-transponder diagnostic; a simulator that moved every needle together would teach a collector nothing.
-
-**Revert needs no timer.** A degradation window is frozen at publish, and the value engine is a pure function of elapsed time, so the channel returns to its band by arithmetic when the window ends.
-There is no scheduled mutation to cancel.
 A second POST on the same channel supersedes the first.
-
-**`fec-uncorrectable-blocks` never decreases** across a degrade → revert cycle.
-The counter is the time integral of an above-threshold indicator, and degradation is stored as append-only immutable episodes precisely so that reverting cannot remove already-elapsed degradation from that integral.
-A counter that walked backwards would be read as a device reboot.
-
-Because attenuation leaves OSNR untouched, **crossing the FEC threshold takes `noise_rise_db`**.
-A pure power sag models a lossy span, not a failing one.
-Use both together for the fourth quadrant (power down *and* OSNR down).
-
-Scope of the attenuation model: `input_power_drop_db` holds OSNR *exactly* constant, which is loss **downstream of the amplifier chain** (a dirty receive connector, a patch-panel fault).
-Loss *upstream* of an amplifier is different in reality.
-The amplifier then adds ASE against a weaker signal, so OSNR degrades too.
-Model that case with both knobs rather than expecting `input_power_drop_db` alone to produce it.
+**Crossing the FEC threshold takes `noise_rise_db`**, because attenuation alone leaves OSNR unchanged.
+`input_power_drop_db` models loss downstream of the amplifier chain; for loss upstream of an amplifier, set both knobs.
+The channel returns to its band when the window ends, and `fec-uncorrectable-blocks` never decreases across a degrade and revert cycle.
 
 Query what is in force with `GET /api/v1/devices/{ip}/optical`:
 
@@ -431,7 +393,7 @@ Do not re-send the request while the batch runs; it is refused with `409` (next 
 ### One creation batch at a time (`409`)
 
 **Only one device-creation batch runs at a time.** A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
-Two such requests used to interleave.
+The refusal is fail-fast, not a queue.
 
 The response carries `Retry-After: 5`, and a body naming the batch in the way:
 
@@ -442,44 +404,28 @@ The response carries `Retry-After: 5`, and a body naming the batch in the way:
 }
 ```
 
-The refusal is fail-fast, not a queue.
-A large batch would otherwise make a small one wait minutes with no feedback, and an HTTP client that times out mid-wait cannot tell whether its batch ran.
+**How to wait.** Poll `GET /api/v1/status` until both `create_batch_in_progress` and `resource_reload_in_progress` are `false`, then retry.
+`create_batch_requested` reports the running batch's requested device count.
+A [profile reload](#reload-device-profiles) holds the same gate briefly; a create refused during one is told so in its `409` body.
+Do not poll `is_creating_devices`: it can read `false` while a create would still be refused.
+`Retry-After` is always 5 seconds.
 
-**How to wait properly.** `GET /api/v1/status` reports `create_batch_in_progress` (and `create_batch_requested`, the running batch's requested device count) and `resource_reload_in_progress`.
-The gate is held exactly when either is true: poll both until both are false, then retry.
-The second holder is a [profile reload](#reload-device-profiles), which borrows the same gate for microseconds; a create refused during one is told so in its `409` body rather than told a batch is running.
-`is_creating_devices` is a proxy, not the gate.
-It is published just after the gate is taken and cleared just before it is released, so it can read `false` while a create would still be refused.
-`Retry-After` is a fixed, deliberately short 5 seconds; the handler has no way to estimate the remaining work of a batch whose rate it does not know.
+**The auto-start batch counts as a batch.** A REST create issued while the `-auto-start-ip` batch runs gets the `409` until that batch completes, even though `GET /api/v1/status` already answers `200`.
 
-Why the refusal is needed: device IPs come from a shared cursor, not a reservation.
-A batch rewinds that cursor to its own start address after pre-allocating TUN interfaces, because the devices have to land on the addresses the pool carries.
-Two overlapping batches therefore walked overlapping address ranges, the duplicate IPs were absorbed as "already exists", and the second batch silently created fewer devices than requested while reporting success.
+- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). A client of your own should do the same.
+- The web console's Clos-fabric wizard does **not** retry. A `409` from another batch aborts it and leaves a **half-built fabric**: the devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe, because existing addresses are absorbed as successes.
 
-**The auto-start batch counts as a batch.** `-auto-start-ip` runs on the same code path alongside the HTTP server, so a REST create issued during fleet startup gets the `409` until the startup batch completes.
-That is intended (the fleet is mid-construction), and it is reachable on a normal boot: the container is healthy and `GET /api/v1/status` answers `200` while the startup batch still holds the gate.
-The shipped clients behave as follows, and a client of your own should do the first:
+**What the gate does not cover.** `DELETE /api/v1/devices`, shutdown, and the detached pre-allocation workers of a batch that timed out in pre-allocation (5-minute timeout) do not take the gate.
+A create that overlaps a delete-all, or follows such a timed-out batch, is not protected.
 
-- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). This is what keeps `compose up`'s bootstrapper working with `-auto-start-ip` set.
-- The web console's Clos-fabric wizard does **not** retry. Its per-tier POSTs are sequential, so it never conflicts with itself, but a `409` from another batch (an auto-start batch, another operator, a script) aborts it and leaves a **half-built fabric**. The devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe: existing addresses are absorbed as successes.
-
-**What "one batch at a time" does and does not cover.** It excludes one creation batch from another creation batch, and from a profile reload, and nothing more.
-Three paths still mutate creation state without holding the gate, all pre-existing: a previous batch's **detached pre-allocation workers** (the pre-allocator's 5-minute timeout returns while its workers keep writing the interface pool), `DELETE /api/v1/devices` (which clears the device and interface maps), and shutdown.
-So a create that overlaps a delete-all, or that follows a batch which timed out in pre-allocation, is not protected by this gate.
-
-The gate sits above every other check in the batch, the `resource_file` validation below and the privilege check included: a concurrency verdict must not depend on caller data.
-When no batch is in flight, nothing about a single batch changes, the `400` and `500` answers documented next included.
-
-**Which checks run before the gate.** The handler refuses malformed request *shape* before it asks for the gate: `device_count`, `max_workers`, `netmask`, `snmp_port`, the SNMPv3 block and the export blocks.
-These need no server state, answer 400 and write no server log line.
+**Check order.** Malformed request *shape* is refused with 400 before the gate, with no server log line: `device_count`, `max_workers`, `netmask`, `snmp_port`, the SNMPv3 block and the export blocks.
 Everything else runs inside the gate, in this order: `start_ip`, then the batch publishes its progress state (`is_creating_devices`, `create_batch_in_progress`), then the fleet freeze check, `resource_file` and the privilege check.
-`start_ip` goes first so a malformed request never shows up as a batch on `GET /api/v1/status` or refuses a concurrent freeze.
 Those are logged as `create devices: rejected with <status>: ...`.
 So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 
-**One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](../ops/loadtest-scenarios.md) documents it as a `409`.
-That divergence predates this change and was left alone deliberately: the freeze check is shared with the delete endpoints, so aligning it is a change to those too.
-Today `409` on this endpoint means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
+A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message.
+On a frozen fleet, `DELETE /api/v1/devices/{id}` answers `404` and `DELETE /api/v1/devices` answers `500`, both with the freeze message.
+On this endpoint `409` means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
 
 ### `resource_file` failures
 
@@ -510,22 +456,21 @@ The full path goes to the **server log** instead.
 That guarantee covers the `400` class only; the `500` class returns the raw error.
 
 `resource_file` is validated **before** TUN pre-allocation and before the privilege check, so a request naming a bad device type gets this `400` without allocating anything, whether or not the simulator runs as root.
-A request naming a good one proceeds, and without root gets the pre-existing `500` `root privileges required to create TUN interfaces`.
+A request naming a good one proceeds, and without root gets `500` `root privileges required to create TUN interfaces`.
 
 ### Per-device export blocks
 
 `POST /api/v1/devices` accepts four optional top-level blocks (`flow`, `traps`, `syslog`, `gnmi_dialout`) that attach export configuration to every device created by the request.
 Any block can be omitted; omitted blocks mean "this batch does not participate in that export subsystem."
 
-The subsystems are always-on after `main()`.
-Flow / trap / syslog / gNMI dial-out scheduler goroutines and catalog loaders run regardless of whether any CLI seed was supplied, so REST-created devices can opt in to any combination.
+The export subsystems run whether or not any CLI seed was supplied, so REST-created devices can opt in to any combination.
 
 **`flow` block:**
 
 ```json
 "flow": {
   "collector":        "192.168.1.10:2055",      // required; host:port
-  "protocol":         "netflow9",               // optional; "netflow9" | "ipfix" | "netflow5" | "sflow" (alias: "sflow5"); default "netflow9"
+  "protocol":         "netflow9",               // optional; "netflow9" | "ipfix" | "netflow5" | "sflow"; aliases "nf9", "ipfix10", "nf5", "sflow5"; default "netflow9"
   "active_timeout":   "30s",                     // optional; default 30s
   "inactive_timeout": "15s",                     // optional; default 15s
   "sub_agent_id":     0,                         // optional; sFlow datagram sub_agent_id, default 0; ignored by non-sFlow protocols
@@ -536,7 +481,7 @@ Flow / trap / syslog / gNMI dial-out scheduler goroutines and catalog loaders ru
 
 No per-device override exists for `source_per_device`.
 The `-flow-source-per-device` CLI flag is simulator-wide (see [CLI flags → Flow export](cli-flags.md#flow-export-flags)).
-Setting `"source_per_device"` in the REST body is rejected by `DisallowUnknownFields`.
+Setting `"source_per_device"` in the REST body is rejected with 400 as an unknown field.
 
 **`traps` block:**
 
@@ -546,14 +491,12 @@ Setting `"source_per_device"` in the REST body is rejected by `DisallowUnknownFi
   "mode":            "trap",                     // optional; "trap" | "inform"; default "trap"
   "community":       "public",                   // optional; SNMPv2c community; default "public"
   "inform_timeout":  "5s",                       // optional; INFORM retry timeout; default 5s
-  "inform_retries":  2                           // optional; max retransmissions per INFORM; default 2
+  "inform_retries":  2                           // optional; max retransmissions per INFORM; 0 or omitted = default 2; negative is 400
 }
 ```
 
-INFORM mode requires the simulator-wide `-trap-source-per-device=true` (the default).
-The check is **enforced at device-attach time**: if a request sets `mode: "inform"` while the flag is false, the attach fails per-device and the device's `trapConfig` is cleared so `ListDevices` doesn't show a ghost entry.
-This is distinct from request-level validation (which would fail the whole batch).
-INFORM without per-device binding is a runtime attach failure, not a 400.
+A `traps` block with `mode: "inform"` is rejected with 400 when `-trap-source-per-device` is `false`; see [TRAP vs INFORM](../ops/snmp-traps.md#trap-vs-inform).
+The wire version and the SNMPv3 settings are fleet-wide (`-trap-snmp-version`, `-trap-snmpv3-*`), with no per-device field.
 
 **`syslog` block:**
 
@@ -585,7 +528,6 @@ flow: tick_interval is not supported per device — one simulator-wide ticker dr
 
 The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`).
 Flow drives every device from one simulator-wide ticker (`-flow-tick-interval`).
-No `warnings` entry is emitted for these fields any more; the request fails instead.
 
 `GET /api/v1/devices` still reports the cadence in force in a sibling object, `effective_intervals`, present only on devices that export something.
 It carries one key per block the device has: `syslog_interval`, `traps_interval` and `flow_tick_interval`.
@@ -604,16 +546,11 @@ It carries one key per block the device has: `syslog_interval`, `traps_interval`
 `-syslog-global-cap` / `-trap-global-cap` throttle by blocking, `-fidelity` suppresses background emission entirely, and a running scenario drives its participants at its own rate.
 None of those change the reported value.
 
-The effective values sit in a sibling object, deliberately not inside the config blocks.
-A block that carried a read-only field would stop being a valid `POST` body, since `POST /api/v1/devices` rejects unknown fields, and that would break every read-modify-write client, `scripts/fleet.sh import` included.
-
 ### A GET block is a valid POST block
 
 Config blocks round-trip: take a `flow` / `traps` / `syslog` object from `GET /api/v1/devices`, change what you like, and POST it back.
 Nothing needs stripping.
-
-That is why the effective cadences live in a sibling object rather than inside the blocks.
-Strict decoding is retained, so a genuine typo is still caught:
+Strict decoding still catches a typo:
 
 ```console
 # 400 Invalid JSON: unknown field "intervl"
@@ -636,9 +573,8 @@ POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
     "enabled": true,
     "insecure_skip_verify": false,                                  // dev only
     "ca_pem": "",                                                   // PEM CA bundle INLINE; empty = system roots.
-                                                                    // Not a path: this block is REST-settable, and a path
-                                                                    // would let a caller name any file to open. Use
-                                                                    // -gnmi-dialout-tls-ca for a file. "ca_file" is rejected.
+                                                                    // Not a path; use -gnmi-dialout-tls-ca for a file.
+                                                                    // "ca_file" is rejected.
     "mtls": false                                                   // present the shared cert as a client cert
   }
 }
@@ -671,42 +607,10 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-**Heterogeneous fleet of two batches pointing at different collectors:**
-
-```bash
-# Batch A: 50 devices → collector A, 5424
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H "Content-Type: application/json" \
-  -d '{
-    "start_ip": "10.0.0.1",
-    "device_count": 50,
-    "syslog": {"collector": "192.168.1.10:514", "format": "5424"}
-  }'
-
-# Batch B: 20 devices → collector A, 3164 (same host, different format)
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H "Content-Type: application/json" \
-  -d '{
-    "start_ip": "10.0.1.1",
-    "device_count": 20,
-    "syslog": {"collector": "192.168.1.10:514", "format": "3164"}
-  }'
-
-# Batch C: 30 devices → collector B, 5424
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H "Content-Type: application/json" \
-  -d '{
-    "start_ip": "10.0.2.1",
-    "device_count": 30,
-    "syslog": {"collector": "192.168.1.20:514", "format": "5424"}
-  }'
-```
-
-`GET /api/v1/syslog/status` then reports three collector records keyed by `(collector, format, transport)`.
-See [Syslog export status](#syslog-export-status).
+To point batches at different collectors or protocols, send one request per batch, as in [Run a heterogeneous fleet](../ops/flow-export.md#run-a-heterogeneous-fleet-multiple-collectors--protocols).
 
 **Validation failures return `400` with the underlying error** (e.g. `unknown protocol`, `invalid collector address`, unresolvable host, explicitly invalid syslog format, i.e. non-`5424` / non-`3164`); no device from the batch is created (atomic batch failure).
-Unknown / typo'd JSON fields at any level are also rejected via `DisallowUnknownFields`.
+Unknown JSON fields at any level are also rejected with 400.
 For example, `"interval_ms": 10000` lands as a 400, not a silent drop.
 
 ## List devices
@@ -731,7 +635,7 @@ Blocks are omitted (`omitempty`) for devices that don't participate in that subs
 
 Each record also carries the device's geolocation: `location` (the world-city string also served as SNMP `sysLocation.0`), and `latitude` / `longitude` (decimal degrees, drawn from the same world-cities dataset).
 The coordinates are emitted as a **pair**: both present or both omitted.
-They are `omitempty` on a nullable type so that an *unresolved* location omits them entirely rather than reporting a misleading `0`; a device whose true coordinates are `0.0,0.0` still reports them as present.
+An *unresolved* location omits them; a device whose true coordinates are `0.0,0.0` still reports them.
 `location` is omitted when empty.
 
 ```json
@@ -763,16 +667,15 @@ curl -X POST http://localhost:8080/api/v1/resources/reload \
 ```
 
 **What a reload does and does not change.** A profile is read from disk the first time a device of that type is created and cached.
-Every device built from it holds a pointer to that cached set and serves from indexes built on it, so rewriting the set in place would change what 30,000 devices answer mid-walk.
-A reload therefore drops the cache entry and nothing else: a device created **before** the reload serves exactly what it served before, and a device created **after** it serves the file as it is now.
+A reload drops the cache entry and nothing else: a device created **before** the reload serves exactly what it served before, and a device created **after** it serves the file as it is now.
 `devices_on_old_snapshot` counts, per evicted key, how many running devices still serve a pre-reload set (any earlier generation, not only the one evicted now).
-It is a snapshot taken under the gate: `DELETE /api/v1/devices/{id}` is not gated, so the number can already be lower by the time the response is read.
+A concurrent delete can make it lower by the time the response is read.
 To move devices onto the edited profile, delete and recreate them.
 `present_on_disk` says whether the profile still exists on disk at the time of the reload, so a renamed or removed directory is reported now rather than at the next create.
 
-**The default profile is covered.** The profile a device gets with no `resource_file` (`asr9k`, the same one the whole `-auto-start-ip` fleet serves) is read from `resources/asr9k/` at startup through the same cache under the key `asr9k.json`, so a device created with `"resource_file":"asr9k.json"` and one created without it share one object, and reloading `asr9k.json` covers both.
-Devices created without a `resource_file` are counted under that key.
-The only default that stays outside the cache is the compiled-in one the simulator synthesises when no `asr9k` directory or file exists at all.
+**The default profile is covered.** The profile a device gets with no `resource_file` (`asr9k`, the one the `-auto-start-ip` fleet serves) is cached under the key `asr9k.json`.
+Reloading `asr9k.json` covers devices created with and without a `resource_file`, and both are counted under that key.
+The exception is the compiled-in default used when no `asr9k` directory or file exists at all; it is never reloaded.
 
 **Not reloaded: trap and syslog catalogs.** `resources/<type>/traps.json` and `syslog.json` are loaded when the trap and syslog subsystems start and are never re-read.
 Editing one and calling this endpoint gets a `200` that evicts the profile and leaves the catalog as it was; the `note` says so.
@@ -789,11 +692,8 @@ A profile that fails to load after the edit is answered by that create with the 
 | `409` | A device-creation batch, or another reload, holds the gate. Same `Retry-After: 5` and body as the [create endpoint's `409`](#one-creation-batch-at-a-time-409). |
 | `413` | The body exceeds 4 KiB. |
 
-**Why a reload is refused during a batch.** Every profile load runs inside a creation batch, and the cache keeps the **first** entry published for a key (two goroutines may both miss and both load; only one set is retained).
-An evict that raced a load already in flight would clear the slot and then watch that load publish the *old* file's contents into it.
-The reload takes the same one-batch-at-a-time gate as creation, so that ordering cannot happen.
-It is fail-fast, never queued, for the reasons given for the create endpoint; poll `create_batch_in_progress` and `resource_reload_in_progress` on `GET /api/v1/status` and retry.
-While a reload holds the gate, `GET /api/v1/status` reports `resource_reload_in_progress: true` and `create_batch_in_progress: false`, and a create refused in that window is told a reload holds the gate, not that a batch is running.
+**A reload is refused during a batch**, because evicting while a load is in flight could republish the old file.
+While a reload holds the gate, `GET /api/v1/status` reports `resource_reload_in_progress: true`; poll it as for the [create endpoint's `409`](#one-creation-batch-at-a-time-409).
 
 There is no file watcher.
 Reload is explicit.
@@ -805,11 +705,9 @@ curl http://localhost:8080/api/v1/devices/export -o devices.csv
 ```
 
 The CSV columns are, in order: `Device ID`, `IP Address`, `Interface`, `SNMP Port`, `SSH Port`, `Status`, `Resource File`.
-`Resource File` is appended at the end so any downstream consumer that indexes columns positionally (`awk -F, '{print $2}'`, spreadsheet macros) is unaffected by the new column.
 Devices without a known resource file emit `N/A` in that column, matching the `Interface` convention.
 
-Note: `N/A` is a display sentinel, not a valid resource filename.
-A re-import tool that POSTs each row back must translate `N/A` to an omitted `resource_file` field, not pass it through as a literal value (POST would reject `"N/A"` as a non-existent file).
+A re-import tool must translate `N/A` to an omitted `resource_file` field; POST rejects `"N/A"`.
 
 ## Generate a route script
 
@@ -833,12 +731,11 @@ curl -X DELETE http://localhost:8080/api/v1/devices
 ## Version
 
 Report the running simulator's version.
-The value is baked into the binary at build time via the Makefile's `APP_VERSION` variable (resolution order: `APP_VERSION` env > `git describe --tags` > `dev`) and passed to `go build` as `-ldflags "-X main.Version=…"`.
+The value is set at build time from the Makefile's `APP_VERSION` (resolution order: `APP_VERSION` env > `git describe --tags` > `dev`).
 It never changes for the lifetime of the process, so the endpoint sets `Cache-Control: private, max-age=3600`.
-Reloads of the web UI within a browser session will reuse the cached value.
 
 Release binaries report the clean tag (e.g., `vX.Y.Z`).
-A `make build` from a HEAD that is ahead of the last tag reports the commit-distance form (e.g., `vX.Y.Z-11-g0356c42`), so a post-release dev binary never masquerades as the tagged release.
+A `make build` from a HEAD ahead of the last tag reports the commit-distance form (e.g., `vX.Y.Z-11-g0356c42`).
 
 ```bash
 curl http://localhost:8080/api/v1/version
@@ -848,241 +745,17 @@ curl http://localhost:8080/api/v1/version
 {"version": "vX.Y.Z"}
 ```
 
-For an untagged development build (or any build produced by `go build` directly, bypassing the Makefile), the reported version is the literal string `dev`.
-Operators troubleshooting a version mismatch can call the same string from the CLI without starting the server:
+A build without tags, or one made by `go build` directly, reports `dev`.
+`-version` prints the same string without starting the server:
 
 ```bash
 ./nl6 -version
 # → vX.Y.Z
 ```
 
-## Flow export status
+## Export status and on-demand fires
 
-```bash
-curl http://localhost:8080/api/v1/flows/status
-```
-
-When flow export is enabled:
-
-```json
-{
-  "success": true,
-  "message": "Success",
-  "data": {
-    "collectors": [
-      {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 50, "sent_packets": 8123, "send_failures": 0, "sent_bytes": 12123456, "sent_records": 243690},
-      {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "send_failures": 2, "sent_bytes":  5560000, "sent_records":  62000}
-    ],
-    "devices_exporting": 70,
-    "last_template_send": "2026-04-23T10:35:00Z",
-    "tick_synchronized": false,
-    "tick_phase_slots": 50
-  }
-}
-```
-
-Response fields:
-
-| Field | Meaning |
-|-------|---------|
-| `collectors[]` | One record per `(collector, protocol)` tuple that ever had a device. Deleted-device counters persist in the aggregate until process exit. |
-| `collectors[].devices` | Count of LIVE exporters for this tuple. `0` means no live device but the aggregate remembers prior fires. |
-| `collectors[].sent_packets` / `sent_bytes` / `sent_records` | Cumulative across live + historical exporters for this tuple (monotonic within subsystem lifecycle). `sent_*` means the datagram **reached the kernel**; a refused write counts in `send_failures` instead. |
-| `collectors[].send_failures` | Datagrams the kernel refused. A down collector shows up here, not in `sent_*`. |
-| `devices_exporting` | Total LIVE exporters across all tuples. |
-| `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 / IPFIX only). |
-| `tick_synchronized` | `true` when the running ticker sweeps every device on one firing (`-flow-tick-sync`, or a tick interval at or under the 50ms sub-period floor), so the fleet exports in one burst per interval. `false` when devices are spread over `tick_phase_slots` phase slots within the interval. Read from what the ticker latched, not from the flag. See [Flow export → fleet arrival shape](flow-export.md#fleet-arrival-shape). |
-| `tick_phase_slots` | Number of phase slots the tick interval is divided into (`50` at the 5s default; `1` when synchronized; `0` only if the ticker has not started, which the HTTP endpoint cannot observe). |
-| `nbar2_catalogs_by_type` | Resolved NBAR2 application catalogs, keyed by `_universal` and per-type slug. Each value carries `entries`, `oversized` (entries the load-time dry render disabled, omitted when zero) and `source`. Absent when no NBAR2 catalog loaded. |
-
-Clients detect "no flow export configured" via `len(collectors) == 0`.
-The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed; callers that depended on them must migrate to the array-of-collectors shape.
-
-See [Flow export how-to](../ops/flow-export.md) and [Flow export reference](flow-export.md) for protocol-specific details.
-
-## Trap export status
-
-```bash
-curl http://localhost:8080/api/v1/traps/status
-```
-
-Unlike the flow-status endpoint, this response is **not** wrapped in the `{success, message, data}` envelope.
-The handler serialises `TrapStatus` directly.
-
-```json
-{
-  "subsystem_active": true,
-  "collectors": [
-    {
-      "collector": "192.168.1.10:162",
-      "mode":      "inform",
-      "devices":   80,
-      "sent":      182430,
-      "send_failures": 0,
-      "informs_pending": 17,
-      "informs_acked":   182380,
-      "informs_failed":  33,
-      "informs_dropped": 0
-    },
-    {
-      "collector": "192.168.1.20:162",
-      "mode":      "trap",
-      "devices":   20,
-      "sent":      6000,
-      "send_failures": 4
-    }
-  ],
-  "snmp_version": "v3",
-  "snmpv3": {
-    "user": "nl6trap",
-    "security_level": "authPriv",
-    "auth_protocol": "sha1",
-    "priv_protocol": "aes128",
-    "engine_id_format": "RFC 3411 section 5 format 3: 80007ed9 (PEN 32473) || 03 || 0242 || the device's IPv4 in hex",
-    "engine_ids_by_device": {"192.168.100.1": "80007ed9030242c0a86401"}
-  },
-  "devices_exporting": 100,
-  "rate_limiter_tokens_available": 94,
-  "catalogs_by_type": {
-    "_universal":    {"entries": 5,  "source": "embedded"},
-    "cisco_ios":     {"entries": 12, "source": "file:resources/cisco_ios/traps.json"},
-    "juniper_mx240": {"entries": 12, "source": "file:resources/juniper_mx240/traps.json"}
-  }
-}
-```
-
-The four `informs_*` fields **only appear on records whose `mode == inform`**.
-TRAP-mode records omit them.
-`send_failures` counts fires that did not reach the kernel (resolve or encode failure, refused write, failed INFORM retransmission).
-`snmp_version` is the fleet's notification wire format (`v2c`, `v1`, `v3`).
-`snmpv3` is present only under `-trap-snmp-version=v3`: it reports the USM user, security level and protocols, and `engine_ids_by_device` maps each exporting device IP to its derived engine ID, the value `snmptrapd`'s `createUser -e` needs.
-No password is reported.
-
-`subsystem_active` is the authoritative feature-on signal.
-It is `true` after `StartTrapSubsystem` runs.
-In normal operation, the HTTP endpoint always returns `true`: the subsystem initialises from `main()` and the only path that sets `subsystem_active=false` is `StopTrapExport`, which is invoked at process shutdown alongside the HTTP server.
-A `false` value is therefore only observable programmatically (e.g. from a test harness calling `GetTrapStatus` without starting the subsystem).
-Clients that previously branched on the retired `enabled` scalar should use `subsystem_active`.
-`len(collectors) == 0` with `subsystem_active=true` means the subsystem is running but no device has opted in.
-
-`catalogs_by_type` keys are device-type slugs (plus the reserved `_universal` entry for the fallback catalog).
-`source` is `"embedded"`, `"file:<path>"`, or `"override:<path>"` when `-trap-catalog` was supplied.
-When disabled:
-
-```json
-{"subsystem_active": false, "collectors": [], "devices_exporting": 0}
-```
-
-`rate_limiter_tokens_available` is only present when `-trap-global-cap` is set.
-The `sent` counter increments on **every wire emission including INFORM retransmissions**, so it can exceed `informs_acked + informs_failed + informs_dropped + informs_pending` under retry churn.
-
-Counters are **monotonic within a subsystem lifecycle**: deleting a device does not zero its collector's `sent`; the aggregate survives.
-
-See [SNMP trap export how-to](../ops/snmp-traps.md) and [SNMP trap reference](snmp-traps.md) for the full feature details.
-
-## Fire a trap on demand
-
-```bash
-curl -X POST http://localhost:8080/api/v1/devices/192.168.100.1/trap \
-  -H "Content-Type: application/json" \
-  -d '{"name":"linkDown","varbindOverrides":{"IfIndex":"3"}}'
-```
-
-Request body:
-
-| Field | Type | Required | Meaning |
-|-------|------|----------|---------|
-| `name` | string | yes | Catalog entry name (e.g. `linkDown`, `ciscoConfigManEvent`). Must match an entry in the **device's resolved catalog** (per-type overlay if present, universal otherwise), not the universal catalog globally. |
-| `varbindOverrides` | object | no | Map of template-field → string-value overrides. Only fields from the twelve-field unified vocabulary are accepted (`IfIndex`, `IfName`, `Uptime`, `Now`, `NowLocal`, `DeviceIP`, `SysName`, `Model`, `Serial`, `ChassisID`, `Detail`, `IfAdminStatus`). See [SNMP trap reference → Template vocabulary](snmp-traps.md#template-vocabulary). |
-
-Response:
-
-| Status | Body | When |
-|--------|------|------|
-| `202 Accepted` | `{"requestId": <uint32>}` | Trap has been enqueued. In INFORM mode the `requestId` is the INFORM PDU's `request-id`. |
-| `400 Bad Request` | `{"error": "...", "catalog": "<slug>", "availableEntries": [...]}` | Unknown catalog entry for this device. The enriched body reports which catalog the device resolved to (`cisco_ios`, `_universal`, etc.) and lists its entries alphabetically so a scripted caller can fix its call without a separate discovery endpoint. For malformed JSON or missing `name`, the legacy envelope form `{"success": false, "message": "..."}` applies. |
-| `404 Not Found` | error JSON | Unknown device IP. |
-| `500 Internal Server Error` | error JSON | Template resolve error, catalog resolution returned nil despite feature active (pathological manager state), or write failure. |
-| `503 Service Unavailable` | error JSON | The trap subsystem has not started **or** the target device has no trap config. |
-
-The endpoint does not block waiting for an INFORM ack.
-Use `/api/v1/traps/status` to observe INFORM lifecycle counters.
-
-## Syslog export status
-
-```bash
-curl http://localhost:8080/api/v1/syslog/status
-```
-
-When syslog export is enabled:
-
-```json
-{
-  "subsystem_active": true,
-  "collectors": [
-    {"collector": "192.168.1.10:514", "format": "5424", "transport": "udp", "devices": 50, "sent": 18240, "send_failures": 3},
-    {"collector": "192.168.1.10:514", "format": "3164", "transport": "tcp", "devices": 20, "sent":  6130, "send_failures": 0}
-  ],
-  "devices_exporting": 70,
-  "rate_limiter_tokens_available": 380,
-  "catalogs_by_type": {
-    "_universal":    {"entries": 6,  "source": "embedded"},
-    "cisco_ios":     {"entries": 14, "source": "file:resources/cisco_ios/syslog.json"},
-    "juniper_mx240": {"entries": 13, "source": "file:resources/juniper_mx240/syslog.json"}
-  }
-}
-```
-
-Tuples are keyed by `(collector, format, transport)`: a single collector receiving 5424 from some devices and 3164 from others surfaces as two separate records.
-`transport` is `udp`, `tcp` or `tls`, so a TCP outage is not hidden inside a row of healthy UDP devices.
-Under `udp`, per-device bind failures are non-fatal.
-The exporter falls back to the shared-pool socket with a warning and the `sent` counter still increments.
-Under `tcp` and `tls` there is no shared socket, so the attach fails when `-syslog-source-per-device` is `false`.
-A collector that is down does not fail the attach: the connection reconnects with capped backoff.
-
-`subsystem_active` has the same semantics as on the trap status endpoint; `len(collectors) == 0` is **not** sufficient on its own to imply "feature off."
-When disabled:
-
-```json
-{"subsystem_active": false, "collectors": [], "devices_exporting": 0}
-```
-
-`format` is `"5424"` or `"3164"`.
-`catalogs_by_type` follows the same shape as the trap endpoint.
-`rate_limiter_tokens_available` is present only when `-syslog-global-cap` is set.
-
-See [Syslog export how-to](../ops/syslog-export.md) and [Syslog export reference](syslog-export.md) for the full feature details.
-
-## Fire a syslog message on demand
-
-```bash
-curl -X POST http://localhost:8080/api/v1/devices/192.168.100.1/syslog \
-  -H "Content-Type: application/json" \
-  -d '{"name":"interface-down","templateOverrides":{"IfIndex":"3"}}'
-```
-
-Expected output (`fireSyslogHandler` in `go/nl6/web.go`):
-
-```json
-{}
-```
-
-Request body:
-
-| Field | Type | Required | Meaning |
-|-------|------|----------|---------|
-| `name` | string | yes | Catalog entry name. Same device's-catalog resolution rule as the trap endpoint. |
-| `templateOverrides` | object | no | Twelve-field unified vocabulary (same set as `varbindOverrides` on the trap side). |
-
-Response:
-
-| Status | Body | When |
-|--------|------|------|
-| `202 Accepted` | `{}` | Message emitted. On-demand fires **do not** consume global rate-cap tokens. |
-| `400 Bad Request` | `{"error": "...", "catalog": "<slug>", "availableEntries": [...]}` | Unknown catalog entry for this device. Same enriched-error shape as the trap endpoint. |
-| `404 Not Found` | error JSON | Unknown device IP. |
-| `500 Internal Server Error` | error JSON | Pathological catalog-resolution-nil state. |
-| `503 Service Unavailable` | error JSON | The syslog subsystem has not started **or** the target device has no syslog config. |
+The flow, trap and syslog status and fire endpoints are documented on each protocol's reference page, linked from the [endpoint catalog](#endpoint-catalog).
 
 ## Device interaction
 

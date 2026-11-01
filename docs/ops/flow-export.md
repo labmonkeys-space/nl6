@@ -91,25 +91,8 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-`GET /api/v1/flows/status` then reports three collector records, one per `(collector, protocol)` tuple:
-
-```json
-{
-  "success": true,
-  "message": "Success",
-  "data": {
-    "collectors": [
-      {"collector": "192.168.1.10:2055", "protocol": "netflow9", "devices": 50, "sent_packets": 8123, "sent_bytes": 12123456, "sent_records": 243690, "send_failures": 0},
-      {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 30, "..." },
-      {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "..." }
-    ],
-    "devices_exporting": 100
-  }
-}
-```
-
-`sent_*` counts datagrams that reached the kernel.
-A datagram the kernel refused lands in `send_failures` instead.
+`GET /api/v1/flows/status` then reports three collector records, one per `(collector, protocol)` tuple.
+The response fields are in [Flow export reference → Status API](../reference/flow-export.md#status-api).
 
 ### Notes
 
@@ -123,7 +106,10 @@ A datagram the kernel refused lands in `send_failures` instead.
 
 ## Prerequisites for per-device source IP
 
-When `-flow-source-per-device` is enabled (the default), flow packets originate from inside the `nl6sim` namespace and must traverse the `veth-sim-host` ↔ `veth-sim-ns` pair to reach the collector.
+Trap and syslog export use the same namespace plumbing, so this section applies to them too.
+Each export has its own flag: `-flow-source-per-device` for flow, `-trap-source-per-device` for traps and `-syslog-source-per-device` for syslog.
+All three default to on.
+When an export's flag is on, its packets originate from inside the `nl6sim` namespace and must traverse the `veth-sim-host` ↔ `veth-sim-ns` pair to reach the collector.
 Three things have to be in place:
 
 - **`iptables` installed on the simulator host.** At startup the simulator inserts `iptables -I FORWARD 1 -i veth-sim-host -j ACCEPT` so that hosts with a default-DROP `FORWARD` policy (common when Docker is installed) allow per-device egress. The rule is removed on clean shutdown. Without `iptables` a warning is logged and flows are silently dropped on such hosts. See [Network namespace](network-namespace.md).
@@ -131,7 +117,9 @@ Three things have to be in place:
   ```bash
   sudo ip netns exec nl6sim ip route get <collector-ip>
   ```
-- **Collector-side `rp_filter`.** Reverse-path filtering on the collector machine may drop flow packets whose source IP (e.g. `10.0.0.x`) isn't reachable back through the receiving interface:
+- **Collector-side `rp_filter`.** Reverse-path filtering on the collector machine may drop packets whose source IP (e.g. `10.0.0.x` or `10.42.0.x`) isn't reachable back through the receiving interface.
+  This applies to flow, trap and syslog datagrams and to syslog TCP and TLS connections.
+  Loose mode fixes it:
   ```bash
   sudo sysctl -w net.ipv4.conf.all.rp_filter=2
   sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2

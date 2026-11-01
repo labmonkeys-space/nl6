@@ -14,8 +14,8 @@ import (
 // Scenario 2 is NOT "force everything up": it is the identity over whatever
 // the device's resource files declare, which is what the removed
 // getIfStateOverride also did ("use whatever the JSON says"). The distinction
-// is observable, not academic — the shipped corpus carries 62 ifOperStatus and
-// 32 ifAdminStatus rows set to down(2), so four profiles boot with interfaces
+// is observable, not academic — the shipped corpus carries 82 ifOperStatus and
+// 32 ifAdminStatus rows set to down(2), so five profiles boot with interfaces
 // down under the DEFAULT scenario. Calling this row "up/up" has misdescribed
 // the corpus since the flag was written.
 const (

@@ -9,10 +9,7 @@ nl6 can emit syslog messages in either **RFC 5424** (the modern structured forma
 Each device uses its own IP as the source address by default, so collectors that key on source-IP → node mapping attribute messages correctly without extra work.
 
 UDP is the default transport.
-`-syslog-transport tcp` (RFC 6587) and `-syslog-transport tls` (RFC 5425) switch the auto-start batch to one connection per device.
-`-syslog-framing` selects `octet-counting` or `non-transparent` under tcp; it is rejected under udp and forced to octet-counting under tls.
-`-syslog-tls-ca` names a PEM CA bundle for the collector and `-syslog-tls-insecure` skips verification.
-Under tls a bare collector hostname defaults to port 6514 instead of 514. See [Syslog reference → TCP transport](../reference/syslog-export.md#tcp-transport-rfc-6587) and [TLS](../reference/syslog-export.md#tls-rfc-5425).
+TCP and TLS are covered in [Send syslog over TCP or TLS](#send-syslog-over-tcp-or-tls).
 
 This page is the operator-facing setup guide.
 For the CLI flags see [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags); for wire format, catalog JSON, and HTTP endpoints see [Syslog export reference](../reference/syslog-export.md).
@@ -61,6 +58,41 @@ The shared-socket pool is keyed by `(collector, format)`, so 5424 and 3164 never
 Choose 5424 for new deployments and anything that consumes structured data.
 Choose 3164 for downstream testing against legacy collectors or when the message sink auto-detects format from the leading characters.
 
+## Send syslog over TCP or TLS
+
+`-syslog-transport tcp` (RFC 6587) and `-syslog-transport tls` (RFC 5425) switch the auto-start batch to one connection per device.
+A REST-created device sets `syslog.transport` in its `syslog` block.
+
+```bash
+# TCP, octet-counting framing (the default)
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
+  -syslog-collector 192.168.1.10:514 -syslog-transport tcp
+
+# TCP with LF framing, for collectors that speak only non-transparent framing
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
+  -syslog-collector 192.168.1.10:514 -syslog-transport tcp \
+  -syslog-framing non-transparent
+
+# TLS, verifying the collector against a CA file
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
+  -syslog-collector 192.168.1.10:6514 -syslog-transport tls \
+  -syslog-tls-ca /etc/ssl/certs/collector-ca.pem
+```
+
+- `-syslog-framing` is rejected under `udp` and accepts only `octet-counting` under `tls`.
+- Without `-syslog-tls-ca`, the collector is verified against the host's root store. `-syslog-tls-insecure` skips verification, for development only.
+- Under `tls` a bare collector hostname defaults to port 6514 instead of 514. Give the collector an explicit port if you do not want the port to move with the transport.
+- A REST `syslog.tls.ca_pem` carries the CA inline, never as a path.
+
+Before you point a fleet at a stream collector:
+
+- **One connection per device.** A collector accepting 30,000 concurrent connections from 30,000 source addresses is a different proposition from receiving datagrams. File-descriptor and accept-backlog limits are usually what bites first.
+- **TLS adds handshake cost per reconnect.** A collector that bounces makes the fleet renegotiate, not only reconnect.
+- **OpenNMS's classic Syslogd is UDP-only.** `syslogd-configuration.xml` has no transport attribute. Terminate TCP or TLS in rsyslog or syslog-ng and relay onward.
+- **`rp_filter`** on the collector host applies to TCP connections as it does to datagrams. See [Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
+
+The transport rules, framing and connection handling are in [Syslog reference → TCP transport](../reference/syslog-export.md#tcp-transport-rfc-6587) and [TLS](../reference/syslog-export.md#tls-rfc-5425).
+
 ## Per-device source IP binding
 
 `-syslog-source-per-device=true` (the default) binds a UDP socket per device inside the `nl6sim` network namespace so the UDP source address on the wire matches the simulated device's IP.
@@ -101,17 +133,7 @@ See [Fidelity mode](loadtest-scenarios.md#fidelity-mode).
 
 ## Prerequisites inherited from flow / trap export
 
-Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow and trap export.
-It adds no new `iptables` rules and no new netns setup.
-Three conditions apply:
-
-- **`iptables FORWARD` rule.** At startup the simulator inserts `FORWARD -i veth-sim-host -j ACCEPT` so Docker-present hosts (which default FORWARD to drop) allow per-device egress. Walkthrough: [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
-- **Route to the collector from inside the namespace.** Same default route via `veth-sim-host` (`10.254.0.1`); if you've customised host routing, verify with `sudo ip netns exec nl6sim ip route get <collector-ip>`.
-- **Collector-side `rp_filter`.** Reverse-path filtering on the collector host may drop syslog packets whose source IP (`10.0.0.x`, `10.42.0.x`, whatever subnet your devices live in) isn't reachable back through the receiving interface. Loose mode fixes it:
-  ```bash
-  sudo sysctl -w net.ipv4.conf.all.rp_filter=2
-  sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
-  ```
+Per-device source IP binding reuses the flow-export namespace plumbing, so the same [prerequisites](flow-export.md#prerequisites-for-per-device-source-ip) apply: the `FORWARD` rule, a route to the collector from the namespace, and a relaxed `rp_filter` on the collector host.
 
 ## Run a smoke test
 
@@ -151,7 +173,7 @@ Expected output (HTTP `202 Accepted`, from `fireSyslogHandler` in `go/nl6/web.go
 {}
 ```
 
-See [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand) for the full request / response shape.
+See [Syslog export reference → Fire a syslog message on demand](../reference/syslog-export.md#fire-a-syslog-message-on-demand) for the full request / response shape.
 
 ## Troubleshooting
 
@@ -176,4 +198,4 @@ For generic bring-up failures (TUN module missing, `sudo` required, port conflic
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
 - [SNMP trap export how-to](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
 - [Flow export how-to](flow-export.md), which shares the `nl6sim` namespace plumbing
-- [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand)
+- [Syslog export reference → Fire a syslog message on demand](../reference/syslog-export.md#fire-a-syslog-message-on-demand)
