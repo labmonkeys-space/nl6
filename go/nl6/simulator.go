@@ -788,6 +788,15 @@ func main() {
 	autoStartFlapScenario := flapScenarioCanon
 
 	// Validate auto-creation parameters
+	// Fail fast on a bad -auto-start-ip. The batch repeats this check, but it
+	// runs in a background goroutine, so a refusal there leaves a healthy
+	// process with an empty fleet and one log line an orchestrator never sees.
+	// Same predicate as the REST path, so IPv6 is refused here too (nl6#942).
+	if *autoStartIP != "" {
+		if _, err := parseStartIP(*autoStartIP); err != nil {
+			log.Fatalf("-auto-start-ip: %v", err)
+		}
+	}
 	if *autoStartIP != "" && *autoCount <= 0 {
 		log.Println("WARNING: -auto-start-ip provided but -auto-count is 0 or negative. No devices will be auto-created.")
 	} else if *autoStartIP == "" && *autoCount > 0 {

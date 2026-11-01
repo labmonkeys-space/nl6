@@ -148,8 +148,9 @@ Any other value matches no device type and is rejected with 400.
 Only the `/16` network and broadcast are reserved, so `.x.0` and `.x.255` are assigned as ordinary hosts.
 An explicit `"netmask": "24"` (or `"8"`) is still honored if you want classic per-`/24` semantics (which skip `.0`/`.255`).
 `start_ip` must be an IPv4 address.
-It is refused with 400 and one of three messages: `start_ip is required` (missing or empty), `invalid start IP address: "<value>"` (does not parse) or `start IP address must be IPv4: "<value>"` (an IPv6 address).
-The value is echoed in Go `%q` form, so a trailing space or tab that caused the refusal is visible.
+It is refused with 400 and one of three messages: `start_ip is required` (missing or empty), `invalid start IP address: "<value>"` (does not parse) or `start IP address must be IPv4: "<value>"` (any IPv6 literal, the IPv4-mapped `::ffff:10.42.0.3` included).
+The value is echoed quoted, so a trailing space or tab that caused the refusal is visible.
+The same check runs on `-auto-start-ip` at startup, where a refusal is fatal.
 Up to v0.38.0 an IPv6 `start_ip` was accepted and the batch walked a single address, reporting every requested device as created.
 
 ```bash
@@ -420,7 +421,8 @@ When no batch is in flight, nothing about a single batch changes, the `400` and 
 
 **Which checks run before the gate.** The handler refuses malformed request *shape* before it asks for the gate: `device_count`, `max_workers`, `netmask`, `snmp_port`, the SNMPv3 block and the export blocks.
 These need no server state, answer 400 and write no server log line.
-Everything that reads server state or belongs to the batch runs inside the gate, in this order: the fleet freeze check, `start_ip`, `resource_file`, the privilege check.
+Everything else runs inside the gate, in this order: `start_ip`, then the batch publishes its progress state (`is_creating_devices`, `create_batch_in_progress`), then the fleet freeze check, `resource_file` and the privilege check.
+`start_ip` goes first so a malformed request never shows up as a batch on `GET /api/v1/status` or refuses a concurrent freeze.
 Those are logged as `create devices: rejected with <status>: ...`.
 So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 

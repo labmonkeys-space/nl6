@@ -16,40 +16,44 @@ import (
 )
 
 // parseStartIP is THE start_ip predicate for both creation paths, so its
-// three refusals and its one acceptance are pinned here by kind, not by
-// message text (nl6#942).
+// three refusals and its acceptance are pinned here by kind, not by message
+// text (nl6#942). Every row goes through the same assertions: a row with a
+// kind must be refused with that kind, a row with a wantIP must be accepted
+// as that 4-byte address.
 func TestParseStartIP(t *testing.T) {
-	ip, err := parseStartIP("10.42.0.3")
-	if err != nil {
-		t.Fatalf("parseStartIP(10.42.0.3): %v", err)
-	}
-	if len(ip) != net.IPv4len || !ip.Equal(net.IPv4(10, 42, 0, 3)) {
-		t.Errorf("parseStartIP(10.42.0.3) = %v (len %d), want the 4-byte form", ip, len(ip))
-	}
-
 	for _, tc := range []struct {
-		in   string
-		kind error
+		in     string
+		kind   error
+		wantIP net.IP
 	}{
-		{"", errStartIPRequired},
-		{"not-an-ip", errStartIPInvalid},
-		{"10.42.0.256", errStartIPInvalid},
-		{"10.42.0.3 cisco_ios.json", errStartIPInvalid},
-		{"2001:db8::1", errStartIPNotIPv4},
-		{"::ffff:10.42.0.3", errStartIPInvalid}, // IPv4-mapped parses and To4() succeeds; see below
+		{in: "10.42.0.3", wantIP: net.IPv4(10, 42, 0, 3)},
+		{in: "192.168.100.1", wantIP: net.IPv4(192, 168, 100, 1)},
+		{in: "", kind: errStartIPRequired},
+		{in: "not-an-ip", kind: errStartIPInvalid},
+		{in: "10.42.0.256", kind: errStartIPInvalid},
+		{in: "10.42.0.", kind: errStartIPInvalid},
+		{in: "10.42.0.3 cisco_ios.json", kind: errStartIPInvalid},
+		{in: "2001:db8::1", kind: errStartIPNotIPv4},
+		// An IPv4-mapped IPv6 literal is an IPv6 literal: net.IP.To4 would
+		// accept it, netip.Addr.Is4 does not, and the docs promise that every
+		// IPv6 address is refused.
+		{in: "::ffff:10.42.0.3", kind: errStartIPNotIPv4},
+		{in: "fe80::1%eth0", kind: errStartIPNotIPv4},
 	} {
 		t.Run(tc.in, func(t *testing.T) {
-			if tc.in == "::ffff:10.42.0.3" {
-				// An IPv4-mapped IPv6 address IS an IPv4 address to net.IP.To4,
-				// so it is accepted and normalised. Pinned so the behaviour is
-				// a decision and not a surprise.
-				ip, err := parseStartIP(tc.in)
-				if err != nil || !ip.Equal(net.IPv4(10, 42, 0, 3)) {
-					t.Fatalf("parseStartIP(%q) = %v, %v; want 10.42.0.3, nil", tc.in, ip, err)
+			ip, err := parseStartIP(tc.in)
+			if tc.kind == nil {
+				if err != nil {
+					t.Fatalf("parseStartIP(%q): %v", tc.in, err)
+				}
+				if len(ip) != net.IPv4len || !ip.Equal(tc.wantIP) {
+					t.Fatalf("parseStartIP(%q) = %v (len %d), want %v in the 4-byte form", tc.in, ip, len(ip), tc.wantIP)
 				}
 				return
 			}
-			_, err := parseStartIP(tc.in)
+			if ip != nil {
+				t.Errorf("parseStartIP(%q) returned %v alongside an error", tc.in, ip)
+			}
 			if !errors.Is(err, tc.kind) {
 				t.Fatalf("parseStartIP(%q) = %v, want kind %v", tc.in, err, tc.kind)
 			}
@@ -61,9 +65,11 @@ func TestParseStartIP(t *testing.T) {
 	}
 }
 
-// The HTTP rendering quotes the value so whitespace is visible, escapes control
-// and bidi runes, and is length-capped like the resource_file 400 class.
+// The one rendering quotes the value so whitespace is visible, escapes control
+// and bidi runes, and is length-capped like the resource_file 400 class. The
+// cap applies to the LOG rendering too: Error() and PublicMessage() are equal.
 func TestStartIPError_PublicMessage(t *testing.T) {
+	const rlo = "\u202e" // U+202E RIGHT-TO-LEFT OVERRIDE
 	for _, tc := range []struct {
 		in   string
 		want string
@@ -73,8 +79,8 @@ func TestStartIPError_PublicMessage(t *testing.T) {
 		{"10.42.0.3\t", `invalid start IP address: "10.42.0.3\t"`},
 		{"10.42.0.3 ", `invalid start IP address: "10.42.0.3 "`},
 		{"2001:db8::1", `start IP address must be IPv4: "2001:db8::1"`},
-		// %q escapes the newline and U+202E RIGHT-TO-LEFT OVERRIDE to ASCII.
-		{"a\nFATAL: fine\u202e", "invalid start IP address: \"a\\nFATAL: fine\\u202e\""},
+		// Quote escapes the newline and the override to ASCII.
+		{"a\nFATAL: fine" + rlo, `invalid start IP address: "a\nFATAL: fine\u202e"`},
 	} {
 		_, err := parseStartIP(tc.in)
 		var sierr *startIPError
@@ -84,18 +90,25 @@ func TestStartIPError_PublicMessage(t *testing.T) {
 		if got := sierr.PublicMessage(); got != tc.want {
 			t.Errorf("PublicMessage(%q) = %q, want %q", tc.in, got, tc.want)
 		}
-		if strings.ContainsAny(sierr.Error(), "\n\r\t\u202e") {
+		if sierr.Error() != sierr.PublicMessage() {
+			t.Errorf("Error(%q) = %q differs from PublicMessage %q; the type has one rendering", tc.in, sierr.Error(), sierr.PublicMessage())
+		}
+		if strings.ContainsAny(sierr.Error(), "\n\r\t"+rlo) {
 			t.Errorf("Error(%q) = %q carries a raw control or bidi rune", tc.in, sierr.Error())
 		}
 	}
 
-	_, err := parseStartIP(strings.Repeat("x", 3*maxResourceMessageBytes))
+	// A 60 KiB value of U+202E expands about sixfold under Quote. Both
+	// renderings are capped, so the log line is bounded too.
+	_, err := parseStartIP(strings.Repeat(rlo, 20*1024))
 	var sierr *startIPError
 	if !errors.As(err, &sierr) {
 		t.Fatalf("long value: %T, want *startIPError", err)
 	}
-	if got := sierr.PublicMessage(); len(got) > maxResourceMessageBytes+len("… (truncated)") || !strings.HasSuffix(got, "(truncated)") {
-		t.Errorf("PublicMessage of a %d-byte value is %d bytes and ends %q; want capped and marked", 3*maxResourceMessageBytes, len(got), got[len(got)-12:])
+	for name, got := range map[string]string{"Error": sierr.Error(), "PublicMessage": sierr.PublicMessage()} {
+		if len(got) > maxResourceMessageBytes+len("… (truncated)") || !strings.HasSuffix(got, "(truncated)") {
+			t.Errorf("%s of a 60 KiB value is %d bytes and ends %q; want capped and marked", name, len(got), got[len(got)-12:])
+		}
 	}
 }
 
@@ -149,6 +162,7 @@ func TestCreateDevicesHandler_RejectsBadStartIPWith400(t *testing.T) {
 		{"10.42.0.3 cisco_ios.json", `invalid start IP address: "10.42.0.3 cisco_ios.json"`},
 		{"10.42.0.3\t", `invalid start IP address: "10.42.0.3\t"`},
 		{"2001:db8::1", `start IP address must be IPv4: "2001:db8::1"`},
+		{"::ffff:10.42.0.3", `start IP address must be IPv4: "::ffff:10.42.0.3"`},
 		{"", "start_ip is required"},
 	} {
 		t.Run(tc.startIP, func(t *testing.T) {
@@ -165,6 +179,12 @@ func TestCreateDevicesHandler_RejectsBadStartIPWith400(t *testing.T) {
 			if n := len(sm.ListDevices()); n != 0 {
 				t.Errorf("%d devices exist after a refused start_ip, want 0", n)
 			}
+			// The refusal is judged before the batch publishes itself, so a
+			// malformed request never shows as a batch of `count` devices on
+			// GET /api/v1/status or refuses a concurrent freeze.
+			if got := sm.deviceCreateTotal.Load(); got != 0 {
+				t.Errorf("deviceCreateTotal = %v after a refused start_ip, want 0: the batch published itself before validating", got)
+			}
 		})
 	}
 }
@@ -172,7 +192,7 @@ func TestCreateDevicesHandler_RejectsBadStartIPWith400(t *testing.T) {
 // Positive control: a valid start_ip passes the check and the batch runs on to
 // the privilege check, so the check refuses the bad addresses and not every
 // address. Asserted on the ANSWER, not on deviceCreateTotal, which the batch
-// stores before it validates anything (nl6#944).
+// stores before it validates anything else (nl6#944).
 func TestCreateDevicesHandler_ValidStartIPReachesTheBatch(t *testing.T) {
 	sm := newCreateGateRESTManager(t)
 	w := postCreateDevices(t, sm, createBody(t, "10.42.0.3"))

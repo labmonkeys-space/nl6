@@ -815,16 +815,19 @@ func createDevicesErrorResponse(err error) (string, int) {
 	if errors.Is(err, errCreateBatchInProgress) {
 		return err.Error(), http.StatusConflict
 	}
-	var rerr *resourceFileError
-	if errors.As(err, &rerr) {
-		return rerr.PublicMessage(), http.StatusBadRequest
+	// Every caller-data refusal the batch produces (resourceFileError,
+	// startIPError) carries a PublicMessage rendering that is safe for an HTTP
+	// body, so ONE interface arm maps them all to 400: a new caller-data error
+	// type gets its 400 by implementing PublicMessage, with no arm to forget
+	// (the nl6#940 failure mode, where a plain error here read as a 500). After
+	// the 409 arm because the gate is judged before any caller-data check, so a
+	// 409 never carries one of these.
+	var perr interface {
+		error
+		PublicMessage() string
 	}
-	// A bad start_ip is caller data too (nl6#940, nl6#942). After the 409 arm
-	// for the same reason as resource_file: the gate is judged before any
-	// caller-data check inside the batch, so a 409 never carries this error.
-	var sierr *startIPError
-	if errors.As(err, &sierr) {
-		return sierr.PublicMessage(), http.StatusBadRequest
+	if errors.As(err, &perr) {
+		return perr.PublicMessage(), http.StatusBadRequest
 	}
 	return err.Error(), http.StatusInternalServerError
 }
