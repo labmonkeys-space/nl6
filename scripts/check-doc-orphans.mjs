@@ -97,7 +97,7 @@ if (undescribed.length > 0) {
 // Public pages cite no tracker issues; release notes keep the history.
 const issueRef = new RegExp(
   [
-    String.raw`\b[\w.-]+#\d+\b`, // nl6#123, owner/repo#123
+    String.raw`\b[\w.-]+#\d+(?![\w-])`, // nl6#123, owner/repo#123, not an anchor like page.md#1-intro
     String.raw`\(#\d+\)`, // (#123)
     String.raw`\b(?:issues?|PRs?|pull requests?)\s+#\d+`, // issue #123, PR #123
     String.raw`github\.com\/[^\s)]*\/(?:issues|pull)\/\d+`,
