@@ -1,8 +1,13 @@
-# Flow export reference
+---
+sidebar_label: "Flow export"
+description: "The NetFlow v5, NetFlow v9, IPFIX and sFlow formats nl6 emits, with templates, field layouts, datagram sizing and the sFlow caveat."
+---
+
+# Flow export
 
 nl6 emits synthetic flow telemetry in four protocols: **NetFlow v5** (Cisco), **NetFlow v9** (RFC 3954), **IPFIX** (RFC 7011), and **sFlow v5** (`sflow_version_5.txt`).
 This page covers the protocol-level details.
-For deployment, collector setup, and `rp_filter` tuning see [Flow export (operator guide)](../ops/flow-export.md); for the CLI flags see [CLI flags → Flow export](cli-flags.md#flow-export-flags).
+For deployment, collector setup, and `rp_filter` tuning see [Export flows](../ops/flow-export.md); for the CLI flags see [CLI flags → Flow export](cli-flags.md#flow-export-flags).
 
 ## Architecture
 
@@ -341,7 +346,7 @@ This makes per-device attribution work out of the box on collectors that key on 
 
 Set the flag to `false` to fall back to a shared socket bound in the host namespace, one per `(collector, protocol)` pair.
 
-See [Flow export (operator guide)](../ops/flow-export.md#prerequisites-for-per-device-source-ip) for the prerequisites (iptables `FORWARD` rule, route to the collector from the namespace, collector-side `rp_filter` tuning).
+See [Export flows](../ops/flow-export.md#prerequisites-for-per-device-source-ip) for the prerequisites (iptables `FORWARD` rule, route to the collector from the namespace, collector-side `rp_filter` tuning).
 
 ## Starting flow export
 

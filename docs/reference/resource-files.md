@@ -1,3 +1,8 @@
+---
+sidebar_label: "Resource files"
+description: "The JSON layout of a device-type profile, how nl6 loads and merges its SNMP, SSH, REST and optical sections, and how to reload one."
+---
+
 # Resource files
 
 A device type ships as a directory under `go/nl6/resources/<slug>/` holding one or more JSON files, or as a legacy single file `go/nl6/resources/<slug>.json`.

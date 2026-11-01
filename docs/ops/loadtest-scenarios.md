@@ -1,4 +1,9 @@
-# Running a load-test scenario
+---
+sidebar_label: "Run a scenario"
+description: "Run a load-test scenario from submit to report, use fidelity mode and run isolation, reconcile the counts, and fix failed runs."
+---
+
+# Run a load-test scenario
 
 The operating guide for the nl6 load-test scenario subsystem: the lifecycle, fidelity mode, run isolation, reconciliation, and troubleshooting.
 New to the feature?

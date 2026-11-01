@@ -1,3 +1,8 @@
+---
+sidebar_label: "Fleet inventory"
+description: "Export a running fleet to a JSON file with scripts/fleet.sh and replay it into another simulator to move or snapshot a topology."
+---
+
 # Manage fleet inventory
 
 A *fleet* is the set of devices a running nl6 simulator hosts.

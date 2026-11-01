@@ -1,3 +1,8 @@
+---
+sidebar_label: "Collector ceiling"
+description: "A method for finding how much telemetry a collector actually accepts, worked through on OpenNMS Horizon syslog ingest."
+---
+
 # Measuring a collector's ingest ceiling
 
 nl6 can tell you what it put on the wire.
@@ -396,6 +401,6 @@ And the 320/s configuration is disqualified anyway on ordering grounds ([the che
 
 ## Related
 
-- [Runbooks](../ops/loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
+- [Load-test runbooks](../ops/loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
 - [Scenarios](../ops/loadtest-scenarios.md) for the lifecycle and fidelity mode
 - [Report schema](../reference/loadtest-report-schema.md) for `sent` versus `emitted`, and what nl6 reports about its own side of the measurement

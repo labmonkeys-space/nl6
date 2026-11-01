@@ -1,3 +1,8 @@
+---
+sidebar_label: "SNMP data fidelity"
+description: "What the load-time checks prove about the SNMP data nl6 serves, and which vendor subtrees a human has checked against a published MIB."
+---
+
 # SNMP data fidelity
 
 How trustworthy is the SNMP data nl6 actually serves?
@@ -12,7 +17,7 @@ They say nothing about whether an OID means what the vendor's MIB says it means.
 Five vendor subtrees have been read against a MIB.
 Fourteen have not, and are labelled as such in the files themselves.
 
-For how the agent answers a request, see the [SNMP reference](../reference/snmp.md).
+For how the agent answers a request, see the [SNMP](../reference/snmp.md).
 For writing your own profiles, see [resource files](../reference/resource-files.md).
 
 ## Resource values are validated at load

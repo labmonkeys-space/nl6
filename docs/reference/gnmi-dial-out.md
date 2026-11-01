@@ -1,3 +1,8 @@
+---
+sidebar_label: "gNMI dial-out"
+description: "How a device opens a gRPC connection to a collector and pushes telemetry over gnmireverse, and how to configure it per device."
+---
+
 # gNMI dial-out
 
 By default every nl6 device is a gNMI **dial-in** target: a collector opens the connection and calls `Subscribe`.

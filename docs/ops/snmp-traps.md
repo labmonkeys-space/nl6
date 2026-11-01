@@ -1,4 +1,9 @@
-# SNMP trap / INFORM export (operator guide)
+---
+sidebar_label: "Export traps"
+description: "Send SNMP v1, v2c or v3 traps and v2c INFORMs from every simulated device to a trap collector, and tune the rate and catalog."
+---
+
+# Export SNMP traps and INFORMs
 
 nl6 emits notifications from every simulated device to a single collector such as `snmptrapd` or an NMS trap daemon, in the SNMP version that `-trap-snmp-version` selects: **v2c** (the default), **v1** RFC 1157 Trap-PDUs, or **v3** with RFC 3414 USM authentication and privacy.
 One version per fleet.
@@ -189,12 +194,12 @@ See [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-d
 | v3 fleet stopped being accepted after an nl6 restart | `msgAuthoritativeEngineBoots` is always 1 and engine time restarts at 0, and a trap has no discovery, so the receiver's cached `(boots, time)` puts the new traps outside RFC 3414 §3.2's 150-second window | Clear the receiver's persistent USM state and restart it, or wait the window out |
 | Optical alarms went quiet after lowering `-datagram-mtu` on a v3 fleet | The USM envelope adds ~91 bytes, so the Ciena 39-varbind entries cross the budget ~91 B sooner under v3 | The startup log names each disabled entry with its size and the MTU that would admit it; raise `-datagram-mtu` |
 
-For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshooting](troubleshooting.md).
+For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshoot the simulator](troubleshooting.md).
 
 ## Related
 
 - [SNMP trap reference](../reference/snmp-traps.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
 - [CLI flags → SNMP trap / INFORM export flags](../reference/cli-flags.md#snmp-trap--inform-export-flags)
-- [Syslog export (operator guide)](syslog-export.md), the sibling feature that shares the overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md), which shares the `nl6sim` namespace plumbing
+- [Export syslog](syslog-export.md), the sibling feature that shares the overlay loader and template vocabulary
+- [Export flows](flow-export.md), which shares the `nl6sim` namespace plumbing
 - [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand)

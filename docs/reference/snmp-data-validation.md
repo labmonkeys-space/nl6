@@ -1,3 +1,8 @@
+---
+sidebar_label: "SNMP validation"
+description: "The three load rules nl6 applies to every SNMP resource entry, and which vendor subtrees have been audited against a MIB."
+---
+
 # SNMP data validation
 
 What nl6 checks about a resource file's `snmp` array at load, and which vendor subtrees a human has read against a MIB.

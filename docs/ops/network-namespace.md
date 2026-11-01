@@ -1,4 +1,9 @@
-# Network namespace
+---
+sidebar_label: "Network namespace"
+description: "Learn what the nl6sim namespace contains, how to inspect it, when to run without it, and which rp_filter and FORWARD settings to tune."
+---
+
+# Manage the network namespace
 
 By default, nl6 runs every simulated device inside a dedicated Linux network namespace named `nl6sim`.
 This page covers what that namespace contains, why the simulator prefers it over the root namespace, and the `rp_filter` / `FORWARD` knobs you may need to tune.
@@ -37,7 +42,7 @@ Without the rule the simulator logs a warning and flows disappear on such hosts.
 **iptables is required on the host.** The container image ships `iptables` for this reason.
 Bare-metal hosts need `iptables` (or `iptables-nft`) available and on the simulator's `PATH`.
 
-See [Flow export (operator guide)](flow-export.md#prerequisites-for-per-device-source-ip) for the full context.
+See [Export flows](flow-export.md#prerequisites-for-per-device-source-ip) for the full context.
 Per-device source IPs route out of the namespace via this FORWARD rule.
 
 ## Run without the namespace: `-no-namespace`
@@ -83,5 +88,5 @@ sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
 
 ## When bring-up fails
 
-See [Troubleshooting](troubleshooting.md) for common failures: TUN module not loaded, namespace already present from a previous run, and veth-pair cleanup edge cases.
+See [Troubleshoot the simulator](troubleshooting.md) for common failures: TUN module not loaded, namespace already present from a previous run, and veth-pair cleanup edge cases.
 A missing `iptables` binary is covered under [iptables FORWARD rule](#iptables-forward-rule) above.

@@ -1,3 +1,8 @@
+---
+sidebar_label: "SNMP SET"
+description: "Turn on SNMP SET with a write community or a v3 security level, then shut and unshut a simulated interface from a collector."
+---
+
 # Enable SNMP SET
 
 nl6 serves `SetRequest` at SNMPv1, v2c and v3, on one writable object: `ifAdminStatus`.
@@ -268,6 +273,6 @@ It is not a setting to carry into a shared environment.
 
 ## Next steps
 
-- [SNMP reference](../reference/snmp.md) for the full `SetRequest` error ladder and the write-admission rules.
+- [SNMP](../reference/snmp.md) for the full `SetRequest` error ladder and the write-admission rules.
 - [CLI flags](../reference/cli-flags.md) for every flag used above.
 - [Web API](../reference/web-api.md) for the REST control plane, including `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status`, which does the same job over HTTP.

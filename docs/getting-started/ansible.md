@@ -1,3 +1,8 @@
+---
+sidebar_label: "Ansible"
+description: "Use the labmonkeys.nl6 Ansible collection to install the nl6 package, set the sysctls, write the config and enable the service."
+---
+
 # Install with Ansible
 
 The `labmonkeys.nl6` Ansible collection installs nl6 from its native package and runs it under systemd.
@@ -118,7 +123,7 @@ A change to `/etc/nl6/nl6.conf` restarts nl6 through a handler, which also wipes
 
 nl6 inserts a FORWARD ACCEPT rule for its own veth when it sets up its network namespace.
 That rule covers traffic leaving the namespace only.
-See [Network namespace](../ops/network-namespace.md#iptables-forward-rule) for the rule itself.
+See [Manage the network namespace](../ops/network-namespace.md#iptables-forward-rule) for the rule itself.
 Traffic from a collector to the devices relies on the FORWARD chain policy being ACCEPT, which is true on a stock Ubuntu cloud image.
 Docker and ufw set the policy to DROP.
 The role reads `iptables -S FORWARD` and fails when the policy is not ACCEPT.

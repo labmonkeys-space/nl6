@@ -1,7 +1,12 @@
-# Quick start
+---
+sidebar_label: "Quick start"
+description: "Build nl6 from source, start a handful of simulated devices on a Linux host, and query them over SNMP and SSH."
+---
+
+# Run a fleet from source
 
 Get a small fleet of simulated devices running on a Linux host in three commands.
-For full flag docs see [CLI flags](../reference/cli-flags.md); for container workflows see [Docker](docker.md).
+For full flag docs see [CLI flags](../reference/cli-flags.md); for container workflows see [Install with Docker](docker.md).
 
 ## Prerequisites
 
@@ -11,9 +16,9 @@ For full flag docs see [CLI flags](../reference/cli-flags.md); for container wor
 - net-snmp client tools (`snmpget`, `snmpwalk`, `snmpset`) to poll and write to the devices. On Debian and Ubuntu these are the `snmp` package.
 
 **Skip host setup.** For a zero-prerequisite path, run the published container image.
-See [Docker](./docker.md).
+See [Install with Docker](./docker.md).
 The image bundles the dependencies and TUN/TAP support.
-On bare metal, install the prerequisites above; for large fleets see the host tuning in [Scaling](../ops/scaling.md).
+On bare metal, install the prerequisites above; for large fleets see the host tuning in [Scale the fleet](../ops/scaling.md).
 
 ## Build the simulator
 
@@ -53,11 +58,11 @@ snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1
 ssh simadmin@192.168.100.1
 ```
 
-See [SNMP reference](../reference/snmp.md) for the protocol coverage and the dynamic HC counter layout.
+See [SNMP](../reference/snmp.md) for the protocol coverage and the dynamic HC counter layout.
 
 ## Next steps
 
 - **Change device state**: [Enable SNMP SET](snmp-set.md) to shut and unshut an interface over SNMP. Writes are off by default.
-- **Scale up**: [Scaling](../ops/scaling.md) covers the 30k-device tuning.
-- **Flow export**: [Flow export (operator guide)](../ops/flow-export.md) to plug nl6 into a NetFlow / IPFIX / sFlow collector.
+- **Scale up**: [Scale the fleet](../ops/scaling.md) covers the 30k-device tuning.
+- **Flow export**: [Export flows](../ops/flow-export.md) to plug nl6 into a NetFlow / IPFIX / sFlow collector.
 - **Device types**: [Device types](../reference/device-types.md) lists the 31 simulated device types across 9 categories.

@@ -1,3 +1,8 @@
+---
+sidebar_label: "Web API"
+description: "The REST control plane on port 8080, with device CRUD, CSV and route-script export, subsystem status endpoints and runtime switches."
+---
+
 # Web API
 
 The simulator exposes a REST control-plane on port 8080 (override with [`-port`](cli-flags.md#core-flags)) for device CRUD, CSV / route-script export, system stats, and flow-export status.
@@ -32,7 +37,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/topology` | DELETE | Remove links. |
 | `/api/v1/topology/status` | GET | `{subsystem_active, configured_links, active_links}`. |
 | `/api/v1/topology/graph` | GET | Node and edge graph for the web console's topology view. |
-| `/api/v1/scenarios` | POST | Create a load-test scenario. See [Load-test scenario REST API](./loadtest-api.md). |
+| `/api/v1/scenarios` | POST | Create a load-test scenario. See [Load-test scenario API](./loadtest-api.md). |
 | `/api/v1/scenarios` | GET | List scenarios. |
 | `/api/v1/scenarios/{id}` | GET | Scenario status. |
 | `/api/v1/scenarios/{id}` | DELETE | Delete a scenario. |
@@ -42,8 +47,8 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/scenarios/{id}/report` | GET | Scenario report. |
 | `/api/v1/scenarios/{id}/metrics` | GET | Scenario metrics. |
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
-| `/api/v1/netconf/status` | GET | NETCONF subsystem status: listeners, sessions, subscriptions, notification counters. See [NETCONF reference](netconf.md#status-endpoint). |
-| `/api/v1/netconf/tls` | GET | NETCONF over TLS client trust: the client CA PEM, the identity table and the default username. `404` when the NETCONF subsystem is off. See [NETCONF reference](netconf.md#rest). |
+| `/api/v1/netconf/status` | GET | NETCONF subsystem status: listeners, sessions, subscriptions, notification counters. See [NETCONF](netconf.md#status-endpoint). |
+| `/api/v1/netconf/tls` | GET | NETCONF over TLS client trust: the client CA PEM, the identity table and the default username. `404` when the NETCONF subsystem is off. See [NETCONF](netconf.md#rest). |
 | `/api/v1/netconf/tls` | PUT | Replace the whole NETCONF over TLS client trust. An omitted field clears it. `404` when the subsystem is off, `400` for a bad body. |
 | `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. `404` when no shared TLS certificate exists. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
@@ -95,7 +100,7 @@ A scenario report records `fidelity.silent_at_start` and `fidelity.changed_durin
 
 `GET /api/v1/profiling` reports the profiling gate; `POST` changes it without a restart.
 Off by default: booted without `-profiling-pyroscope` and never POSTed, no profiler goroutine exists and `/debug/pprof/*` answers `503` naming this endpoint.
-The full reference, including the one-CPU-profile-at-a-time rule and the subsystem labels, is [Continuous profiling](../ops/profiling.md).
+The full reference, including the one-CPU-profile-at-a-time rule and the subsystem labels, is [Profile the simulator](../ops/profiling.md).
 
 ```json
 // GET response .data
@@ -296,7 +301,7 @@ Neither field is inherited from the CLI seed.
 A `POST` that omits them gets the shipped defaults (no v1/v2c write, `authNoPriv` for v3), even when the simulator was started with `-snmp-write-community`.
 That is the same opt-in-explicit contract the export blocks and the scenario fields follow.
 
-Reads are not gated at any version, and that asymmetry is deliberate; see the [SNMP reference](snmp.md#on-a-read-the-community-string-is-echoed-and-never-checked).
+Reads are not gated at any version, and that asymmetry is deliberate; see the [SNMP](snmp.md#on-a-read-the-community-string-is-echoed-and-never-checked).
 
 A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a password is rejected with **400**.
 Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which has no defined result for an empty one, so the block is checked at creation rather than at the first encrypted request.
@@ -310,7 +315,7 @@ Accepted values: `clean` (default, no error growth), `typical`, `degraded`, `fai
 Unknown values reject the batch atomically with 400.
 REST-created devices default to `clean` independently of the `-if-error-scenario` CLI flag.
 You must opt in explicitly.
-See [SNMP reference](snmp.md#per-device-error-scenario) for the full scenario bands and counter model.
+See [SNMP](snmp.md#per-device-error-scenario) for the full scenario bands and counter model.
 
 A specific resource file can be requested directly (useful for storage devices):
 
@@ -893,7 +898,7 @@ Response fields:
 Clients detect "no flow export configured" via `len(collectors) == 0`.
 The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed in phase 3; callers that depended on them must migrate to the array-of-collectors shape.
 
-See [Flow export (operator guide)](../ops/flow-export.md) and [Flow export reference](flow-export.md) for protocol-specific details.
+See [Export flows](../ops/flow-export.md) and [Flow export](flow-export.md) for protocol-specific details.
 
 ## Trap export status
 
@@ -973,7 +978,7 @@ The `sent` counter increments on **every wire emission including INFORM retransm
 
 Counters are **monotonic within a subsystem lifecycle**: deleting a device does not zero its collector's `sent`; the aggregate survives.
 
-See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and [SNMP trap reference](snmp-traps.md) for the full feature details.
+See [Export SNMP traps and INFORMs](../ops/snmp-traps.md) and [SNMP trap reference](snmp-traps.md) for the full feature details.
 
 ## Fire a trap on demand
 
@@ -1046,7 +1051,7 @@ When disabled:
 `catalogs_by_type` follows the same shape as the trap endpoint.
 `rate_limiter_tokens_available` is present only when `-syslog-global-cap` is set.
 
-See [UDP syslog export (operator guide)](../ops/syslog-export.md) and [Syslog export reference](syslog-export.md) for the full feature details.
+See [Export syslog](../ops/syslog-export.md) and [Syslog export](syslog-export.md) for the full feature details.
 
 ## Fire a syslog message on demand
 
@@ -1107,7 +1112,7 @@ snmpget -v3 -l authPriv -u simadmin -a SHA -A simadmin -x AES -X simadmin \
   192.168.100.1 1.3.6.1.2.1.1.1.0
 ```
 
-See [SNMP reference](snmp.md) for the OID coverage, including the dynamic HC interface counters on `ifXTable`.
+See [SNMP](snmp.md) for the OID coverage, including the dynamic HC interface counters on `ifXTable`.
 
 ### Storage HTTPS endpoints
 

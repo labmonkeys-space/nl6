@@ -1,3 +1,8 @@
+---
+sidebar_label: "Report schema"
+description: "The fields of the immutable report a finished load-test scenario returns, which you diff against your monitor's received counts."
+---
+
 # Load-test scenario report schema
 
 The report is the machine-readable output of a finalized scenario.

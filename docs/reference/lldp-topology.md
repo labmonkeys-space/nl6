@@ -1,3 +1,8 @@
+---
+sidebar_label: "LLDP topology"
+description: "Define links between simulated devices and serve them as an LLDP-MIB neighbor table that an NMS link-discovery daemon can map."
+---
+
 # LLDP topology
 
 nl6 can model **inter-device links** and expose them as a standards-compliant LLDP-MIB (IEEE 802.1AB, OID root `1.0.8802.1.1.2`) neighbor table on every participating device, plus a transparent `ifAlias` link label.

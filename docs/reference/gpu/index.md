@@ -1,3 +1,8 @@
+---
+sidebar_label: "GPU simulation"
+description: "Simulated NVIDIA DGX and HGX GPU servers with per-GPU SNMP metrics, nvidia-smi and dcgmi output, and the OIDs a collector polls."
+---
+
 # GPU simulation
 
 nl6 simulates NVIDIA DGX and HGX GPU servers with per-GPU SNMP metrics, `nvidia-smi` and `dcgmi` SSH output, and DCGM-shaped REST endpoints.

@@ -1,4 +1,9 @@
-# Continuous profiling
+---
+sidebar_label: "Profiling"
+description: "Switch on continuous profiling with a Grafana Pyroscope push or an Alloy pprof scrape, at startup or at runtime, and switch it off again."
+---
+
+# Profile the simulator
 
 nl6 can profile itself continuously with [Grafana Pyroscope](https://grafana.com/oss/pyroscope/), and it can serve the standard Go `net/http/pprof` surface for a [Grafana Alloy](https://grafana.com/docs/alloy/latest/) scrape.
 Both sit behind one gate that is **off by default**.

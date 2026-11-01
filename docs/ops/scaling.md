@@ -1,4 +1,9 @@
-# Scaling
+---
+sidebar_label: "Scaling"
+description: "Size and prepare a host for up to 30,000 simulated devices, monitor a running fleet, and scale inside a container."
+---
+
+# Scale the fleet
 
 nl6 is tested up to **30,000 concurrent simulated devices on a single host**.
 Each device has its own IP, SNMP listener, SSH server, and flow exporter, so the working set is dominated by file descriptors and the Go runtime's goroutine / heap footprint rather than raw CPU.
@@ -35,7 +40,7 @@ Run these before a large deployment:
   ```
   For a persistent limit, raise `LimitNOFILE` on the systemd unit or `nofile` in `/etc/security/limits.conf`, preserving any existing PAM limits.
 - **Keep network namespaces enabled** (default). Only pass [`-no-namespace`](../reference/cli-flags.md#core-flags) for debugging. Running in the root namespace pulls systemd-networkd into every interface change and kills throughput.
-- **Prefer the container path** for repeatable setup. The [Docker](../getting-started/docker.md) image bundles the dependencies and the tuning above.
+- **Prefer the container path** for repeatable setup. The [Install with Docker](../getting-started/docker.md) image bundles the dependencies and the tuning above.
 
 ## Monitor a running fleet
 
@@ -54,7 +59,7 @@ When running under Docker, pair the host tuning above with:
 - `--network=host` so per-device TUN IPs are reachable from outside the container.
 - A memory budget of about `16 KiB * device_count` of live heap plus a comfortable buffer for the Go runtime.
 
-See [Docker](../getting-started/docker.md) for the full bring-up recipe and [Troubleshooting](troubleshooting.md) for bring-up failures.
+See [Install with Docker](../getting-started/docker.md) for the full bring-up recipe and [Troubleshoot the simulator](troubleshooting.md) for bring-up failures.
 
 Kubernetes is not a supported deployment target.
 `deploy/helm/nl6-minion/` is a single-node lab chart, not a supported path.

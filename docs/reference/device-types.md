@@ -1,3 +1,8 @@
+---
+sidebar_label: "Device types"
+description: "The 31 simulated device types across 9 categories, with their resource directories and the category filter the REST API uses."
+---
+
 # Device types
 
 nl6 ships resource files for **31 device types across 9 categories**.
@@ -50,7 +55,7 @@ Each interface has a port entity at index 1000 + ifIndex, and `entAliasMappingTa
 
 | Device | Ports | Description |
 |--------|-------|-------------|
-| Cisco Catalyst 9500 | 48 | Enterprise core switch, Catalyst 9500-48Y4C. Serves NETCONF over SSH when `-netconf-enable` is set, see the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/cisco_catalyst_9500_limitations.md) and the [NETCONF reference](netconf.md). |
+| Cisco Catalyst 9500 | 48 | Enterprise core switch, Catalyst 9500-48Y4C. Serves NETCONF over SSH when `-netconf-enable` is set, see the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/cisco_catalyst_9500_limitations.md) and the [NETCONF](netconf.md). |
 | Extreme VSP4450 | 48 | Campus switch |
 | D-Link DGS-3630 | 52 | L3 managed switch |
 | Cisco IOS | 4 | Access switch, Catalyst 2960-X (WS-C2960X-24TS-L) |
@@ -129,11 +134,11 @@ It takes exactly one of five strings; any other value matches no device type and
 - **Entity MIB alignment.** ifTable and Entity MIB rows are consistent across chassis, line cards, power supplies, fans, and temperature sensors.
 - **`entAliasMappingTable`.** Physical-to-logical port mappings.
 - **Dynamic metrics.** CPU, memory, and temperature cycle through a 100-point sine-wave pattern per device. See [Architecture](../explanation/architecture.md).
-- **Dynamic HC interface counters.** `ifHCInOctets` / `ifHCOutOctets` are computed on-demand as monotonically increasing Counter64 values, with per-interface phase offsets. See [SNMP reference](snmp.md).
+- **Dynamic HC interface counters.** `ifHCInOctets` / `ifHCOutOctets` are computed on-demand as monotonically increasing Counter64 values, with per-interface phase offsets. See [SNMP](snmp.md).
 - **GPU metrics via NVIDIA DCGM OIDs, on GPU servers only.**
   Per-GPU utilization, VRAM, temperature, power, fan, and clocks.
   See [GPU simulation](gpu/index.md).
-- **SNMPv3 support.** Engine ID, MD5/SHA1 authentication and DES/AES128 privacy, RFC 3414 USM, verified against net-snmp. See [SNMP reference](snmp.md).
+- **SNMPv3 support.** Engine ID, MD5/SHA1 authentication and DES/AES128 privacy, RFC 3414 USM, verified against net-snmp. See [SNMP](snmp.md).
 - **Per-category baselines.** CPU / memory / temperature ranges and spike amplitudes are driven by per-category device profiles.
 - **Interface stats and operational status**, **system information**, **vendor-specific OIDs**, **CDP & LLDP**, and **OSPF / BGP / VRF** via SSH.
 

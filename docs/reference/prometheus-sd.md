@@ -1,3 +1,8 @@
+---
+sidebar_label: "Prometheus SD"
+description: "The HTTP service discovery endpoint that hands Prometheus one target per running device, with the labels snmp_exporter relabels on."
+---
+
 # Prometheus service discovery
 
 nl6 publishes the running fleet as a Prometheus [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) endpoint.

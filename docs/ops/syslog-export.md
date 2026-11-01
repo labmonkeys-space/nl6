@@ -1,4 +1,9 @@
-# Syslog export (operator guide)
+---
+sidebar_label: "Export syslog"
+description: "Send RFC 5424 or RFC 3164 syslog from simulated devices to a collector over UDP, TCP or TLS, and tune the rate and catalog."
+---
+
+# Export syslog
 
 nl6 can emit syslog messages in either **RFC 5424** (the modern structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy BSD format most network gear still defaults to) from every simulated device to a single collector such as `rsyslog`, `syslog-ng`, or an NMS syslog daemon.
 Each device uses its own IP as the source address by default, so collectors that key on source-IP → node mapping attribute messages correctly without extra work.
@@ -10,7 +15,7 @@ UDP is the default transport.
 Under tls a bare collector hostname defaults to port 6514 instead of 514. See [Syslog reference → TCP transport](../reference/syslog-export.md#tcp-transport-rfc-6587) and [TLS](../reference/syslog-export.md#tls-rfc-5425).
 
 This page is the operator-facing setup guide.
-For the CLI flags see [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags); for wire format, catalog JSON, and HTTP endpoints see [Syslog export reference](../reference/syslog-export.md).
+For the CLI flags see [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags); for wire format, catalog JSON, and HTTP endpoints see [Syslog export](../reference/syslog-export.md).
 
 ## Enable syslog export
 
@@ -163,12 +168,12 @@ See [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a
 | No `syslog` config on a `tcp` or `tls` device, log says `requires -syslog-source-per-device` | Started with `-syslog-source-per-device=false` | Remove the flag. A stream transport has no shared-socket fallback |
 | Catalog load fails at startup naming a `resources/<slug>/syslog.json` | Malformed per-type JSON or a reserved template field | See [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays) for the schema and vocabulary |
 
-For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshooting](troubleshooting.md).
+For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshoot the simulator](troubleshooting.md).
 
 ## Related
 
-- [Syslog export reference](../reference/syslog-export.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
+- [Syslog export](../reference/syslog-export.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
-- [SNMP trap export (operator guide)](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md), which shares the `nl6sim` namespace plumbing
+- [Export SNMP traps and INFORMs](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
+- [Export flows](flow-export.md), which shares the `nl6sim` namespace plumbing
 - [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand)

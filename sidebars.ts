@@ -1,108 +1,152 @@
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
-// Four independent sidebars, one per top-level section. The navbar items in
-// docusaurus.config.ts select which sidebar to render via `sidebarId`.
+// One sidebar for the whole site, so a reader on any page can see every
+// section. Each top-level category has a generated index page at the slug the
+// navbar links to (docusaurus.config.ts). Doc ids are file paths under docs/,
+// so regrouping here never changes a URL.
 const sidebars: SidebarsConfig = {
-  gettingStarted: [
+  docs: [
     {
       type: 'category',
       label: 'Getting Started',
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        slug: '/getting-started',
+        description: 'Install nl6, start a fleet, and try the first tasks.',
+      },
       items: [
-        'getting-started/quick-start',
-        'getting-started/install-packages',
-        'getting-started/ansible',
-        'getting-started/docker',
-        'getting-started/fleet',
-        'getting-started/dns',
-        'getting-started/snmp-set',
+        {
+          type: 'category',
+          label: 'Install',
+          collapsed: false,
+          items: [
+            'getting-started/quick-start',
+            'getting-started/install-packages',
+            'getting-started/ansible',
+            'getting-started/docker',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'First tasks',
+          collapsed: false,
+          items: [
+            'getting-started/fleet',
+            'getting-started/dns',
+            'getting-started/snmp-set',
+          ],
+        },
       ],
     },
-  ],
-
-  ops: [
     {
       type: 'category',
       label: 'Ops',
-      collapsed: false,
+      link: {
+        type: 'generated-index',
+        slug: '/ops',
+        description: 'Run, scale, troubleshoot and profile a fleet, and operate its exports and load tests.',
+      },
       items: [
         'ops/scaling',
         'ops/network-namespace',
-        'ops/flow-export',
-        'ops/snmp-traps',
-        'ops/syslog-export',
-        'ops/profiling',
         'ops/troubleshooting',
+        'ops/profiling',
+        {
+          type: 'category',
+          label: 'Export',
+          items: ['ops/flow-export', 'ops/snmp-traps', 'ops/syslog-export'],
+        },
         {
           type: 'category',
           label: 'Load-test scenarios',
-          // The operating guide and the worked recipes. The feature overview,
-          // REST API and report schema stay under Reference.
+          // Both load-test categories land on the same overview page.
+          link: {type: 'doc', id: 'reference/loadtest-overview'},
           items: ['ops/loadtest-scenarios', 'ops/loadtest-runbooks'],
         },
       ],
     },
-  ],
-
-  explanation: [
+    {
+      type: 'category',
+      label: 'Reference',
+      link: {
+        type: 'generated-index',
+        slug: '/reference',
+        description: 'Flags, endpoints, device data, protocols and wire formats.',
+      },
+      items: [
+        {
+          type: 'category',
+          label: 'Control surface',
+          items: ['reference/cli-flags', 'reference/web-api'],
+        },
+        {
+          type: 'category',
+          label: 'Device data',
+          items: [
+            'reference/device-types',
+            'reference/resource-files',
+            'reference/snmp-data-validation',
+            {
+              type: 'category',
+              label: 'GPU simulation',
+              link: {type: 'doc', id: 'reference/gpu/index'},
+              items: ['reference/gpu/dcgm'],
+            },
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Polling',
+          items: [
+            'reference/snmp',
+            'reference/gnmi',
+            'reference/gnmi-dial-out',
+            'reference/netconf',
+            'reference/interface-state',
+            'reference/lldp-topology',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Export',
+          items: [
+            'reference/snmp-traps',
+            'reference/syslog-export',
+            'reference/flow-export',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Optical',
+          items: ['reference/optical-telemetry', 'reference/optical-limitations'],
+        },
+        {
+          type: 'category',
+          label: 'Discovery',
+          items: ['reference/dns-service-discovery', 'reference/prometheus-sd'],
+        },
+        {
+          type: 'category',
+          label: 'Load-test scenarios',
+          link: {type: 'doc', id: 'reference/loadtest-overview'},
+          items: ['reference/loadtest-api', 'reference/loadtest-report-schema'],
+        },
+      ],
+    },
     {
       type: 'category',
       label: 'Explanation',
-      collapsed: false,
+      link: {
+        type: 'generated-index',
+        slug: '/explanation',
+        description: 'Why nl6 is built the way it is, and how far to trust what it serves.',
+      },
       items: [
         'explanation/architecture',
         'explanation/kubernetes',
         'explanation/snmp-data-fidelity',
         'explanation/loadtest-collector-ceiling',
-      ],
-    },
-  ],
-
-  reference: [
-    {
-      type: 'category',
-      label: 'Reference',
-      collapsed: false,
-      items: [
-        'reference/cli-flags',
-        'reference/web-api',
-        'reference/device-types',
-        'reference/snmp',
-        'reference/snmp-data-validation',
-        'reference/snmp-traps',
-        'reference/syslog-export',
-        'reference/flow-export',
-        'reference/gnmi',
-        'reference/gnmi-dial-out',
-        'reference/netconf',
-        'reference/optical-telemetry',
-        'reference/optical-limitations',
-        'reference/interface-state',
-        'reference/lldp-topology',
-        'reference/dns-service-discovery',
-        'reference/prometheus-sd',
-        {
-          type: 'category',
-          label: 'Load-test scenarios',
-          // Landing = the feature overview. The operating guide and the
-          // runbooks are under Ops; the collector-ceiling method is under
-          // Explanation.
-          link: {type: 'doc', id: 'reference/loadtest-overview'},
-          items: [
-            'reference/loadtest-api',
-            'reference/loadtest-report-schema',
-          ],
-        },
-        'reference/resource-files',
-        {
-          type: 'category',
-          label: 'GPU Simulation',
-          // Clicking the category label takes the reader to the GPU overview
-          // page directly; the nested children become the sub-pages below it.
-          // Avoids the confusing "GPU Simulation > index" sidebar shape.
-          link: {type: 'doc', id: 'reference/gpu/index'},
-          items: ['reference/gpu/dcgm'],
-        },
       ],
     },
   ],

@@ -1,9 +1,14 @@
-# SNMP trap / INFORM reference
+---
+sidebar_label: "SNMP traps"
+description: "The trap and INFORM wire format for SNMP v1, v2c and v3, the catalog JSON schema, the HTTP endpoints and the status JSON shape."
+---
+
+# SNMP traps and INFORMs
 
 nl6 emits notifications in **all three SNMP versions**, one per fleet, selected with `-trap-snmp-version`: SNMPv2c (default), SNMPv1 Trap-PDUs, and SNMPv3 with RFC 3414 USM authentication and privacy.
 INFORM is SNMPv2c only.
 This page covers the wire format, the JSON catalog schema, the HTTP endpoints, and the status JSON shape.
-For enabling the feature, CLI flags, and troubleshooting see [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and [CLI flags → SNMP trap / INFORM export](cli-flags.md#snmp-trap--inform-export-flags).
+For enabling the feature, CLI flags, and troubleshooting see [Export SNMP traps and INFORMs](../ops/snmp-traps.md) and [CLI flags → SNMP trap / INFORM export](cli-flags.md#snmp-trap--inform-export-flags).
 
 ## Scope and security posture
 
@@ -604,6 +609,6 @@ The `-trap-*` flags, including the five `-trap-snmpv3-*` USM settings, are docum
 
 ## Related
 
-- [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) for how to enable it, INFORM constraints, and the `snmptrapd` smoke test
-- [SNMP reference](snmp.md) for polling-side SNMP (v2c/v3 GETs, GETNEXTs, OID lookup, HC counters)
+- [Export SNMP traps and INFORMs](../ops/snmp-traps.md) for how to enable it, INFORM constraints, and the `snmptrapd` smoke test
+- [SNMP](snmp.md) for polling-side SNMP (v2c/v3 GETs, GETNEXTs, OID lookup, HC counters)
 - [Web API](web-api.md) for the control-plane REST surface

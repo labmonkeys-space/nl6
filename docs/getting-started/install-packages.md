@@ -1,3 +1,8 @@
+---
+sidebar_label: "Packages"
+description: "Install nl6 from the .deb or .rpm package with apt or dnf and run it as a systemd service, with no Go toolchain needed."
+---
+
 # Install packages
 
 Prebuilt native packages let you install nl6 with your system package manager and run it as a managed `systemd` service.
@@ -185,6 +190,6 @@ It covers the layout, `nfpm.yaml`, the NixOS flake/module, the Cachix cache, and
 ## See also
 
 - [Install with Ansible](./ansible.md) to install the `.deb` and start the service from a playbook.
-- [Docker](./docker.md) to run the published container image instead.
-- [Quick start](./quick-start.md) to build and run from source.
+- [Install with Docker](./docker.md) to run the published container image instead.
+- [Run a fleet from source](./quick-start.md) to build and run from source.
 - [CLI flags](../reference/cli-flags.md) for everything you can put in `NL6_OPTS`.

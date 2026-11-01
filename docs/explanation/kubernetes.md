@@ -1,10 +1,15 @@
+---
+sidebar_label: "Kubernetes"
+description: "Why nl6 ships no supported Kubernetes deployment, what it would take to support one, and what to run instead today."
+---
+
 # Kubernetes (not supported)
 
 nl6 does not currently ship a supported Kubernetes deployment.
 This page is the honest accounting of *why*.
 The simulator's design fights Kubernetes' isolation model in several places, and the workarounds shift the risk onto cluster operators rather than removing it.
 
-If you need to run the simulator today, use bare-metal or [Docker](../getting-started/docker.md) on a single host.
+If you need to run the simulator today, use bare-metal or [Install with Docker](../getting-started/docker.md) on a single host.
 Both are documented and tested up to 30,000 devices.
 
 ## Why Kubernetes is out of scope
@@ -96,7 +101,7 @@ The value depends on whether anyone actually wants to run a hypervisor-shaped wo
 
 ## What to use instead
 
-- **Bare-metal Linux.** The canonical environment. [Quick start](../getting-started/quick-start.md), [Scaling](../ops/scaling.md).
-- **Docker on a single host.** Same privileges, isolated filesystem. [Docker](../getting-started/docker.md).
+- **Bare-metal Linux.** The canonical environment. [Run a fleet from source](../getting-started/quick-start.md), [Scale the fleet](../ops/scaling.md).
+- **Docker on a single host.** Same privileges, isolated filesystem. [Install with Docker](../getting-started/docker.md).
 
 Both reach the documented 30k-device scale and exercise the same code paths as a Kubernetes deployment would.

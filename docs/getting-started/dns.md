@@ -1,3 +1,8 @@
+---
+sidebar_label: "DNS names"
+description: "Run a CoreDNS secondary next to nl6 so simulated devices resolve by name, with forward A records and reverse PTRs kept current."
+---
+
 # Resolve devices with DNS
 
 Out of the box you address simulated devices by their `10.42.x.x` management IPs.
@@ -18,7 +23,7 @@ No custom CoreDNS plugin.
 
 ## Prerequisites
 
-- Docker with Compose v2 (`docker compose`). The sidecar stack runs nl6 in a container, so you don't need host TUN/netns setup. See [Docker](./docker.md).
+- Docker with Compose v2 (`docker compose`). The sidecar stack runs nl6 in a container, so you don't need host TUN/netns setup. See [Install with Docker](./docker.md).
 - `dig` (or any DNS client) and `curl` on the host to verify.
 
 ## Run the stack

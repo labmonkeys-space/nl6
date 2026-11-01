@@ -1,3 +1,8 @@
+---
+sidebar_label: "DNS discovery"
+description: "The hidden-primary DNS server with its flags, forward and reverse records, naming rules, zone transfers, NOTIFY and status endpoint."
+---
+
 # DNS service discovery
 
 nl6 can publish the simulated fleet to DNS so consumers refer to devices by name instead of raw `10.42.x.x` management IPs, and reverse lookups resolve to a hostname.

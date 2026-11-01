@@ -1,7 +1,12 @@
-# Troubleshooting
+---
+sidebar_label: "Troubleshooting"
+description: "Recover from common bring-up failures such as permission errors, port conflicts, a missing TUN module and file descriptor limits."
+---
+
+# Troubleshoot the simulator
 
 Common failures during bring-up and how to recover.
-Flow-export-specific issues live on their own page, [Flow export (operator guide) → Flow troubleshooting](flow-export.md#flow-troubleshooting), because they cross into collector-side `rp_filter` and FORWARD-chain territory.
+Flow-export-specific issues live on their own page, [Export flows: troubleshooting](flow-export.md#flow-troubleshooting), because they cross into collector-side `rp_filter` and FORWARD-chain territory.
 
 ## Common issues
 
@@ -9,7 +14,7 @@ Flow-export-specific issues live on their own page, [Flow export (operator guide
 The simulator creates TUN interfaces and manages the `nl6sim` network namespace; both require privileges.
 Run with `sudo` or use a container that grants `CAP_NET_ADMIN`, `CAP_SYS_ADMIN` and access to `/dev/net/tun`.
 `CAP_SYS_ADMIN` lets the simulator enter the `nl6sim` namespace with `setns`.
-See [Docker](../getting-started/docker.md).
+See [Install with Docker](../getting-started/docker.md).
 
 ### Port conflicts
 Something else is listening on `:8080` (the default control plane).
@@ -47,7 +52,7 @@ ulimit -Hn 1048576          # current shell; nl6 then lifts the soft limit to it
 ```
 
 Keep the `nl6sim` namespace enabled (default); running in the root namespace with `-no-namespace` at scale drags `systemd-networkd` into every interface change.
-See [Scaling](scaling.md).
+See [Scale the fleet](scaling.md).
 
 ## Debug commands
 
@@ -81,4 +86,4 @@ sudo ip link delete veth-sim-host
 sudo iptables -D FORWARD -i veth-sim-host -j ACCEPT 2>/dev/null
 ```
 
-See [Network namespace](network-namespace.md) for the full bridge anatomy.
+See [Manage the network namespace](network-namespace.md) for the full bridge anatomy.

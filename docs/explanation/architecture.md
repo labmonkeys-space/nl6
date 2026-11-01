@@ -1,3 +1,8 @@
+---
+sidebar_label: "Architecture"
+description: "How nl6 runs thousands of simulated devices in one Go process, the components inside it, and the host network setup it depends on."
+---
+
 # Architecture
 
 nl6 is a single Go program that stands up thousands of simulated devices inside a dedicated Linux network namespace.
@@ -37,7 +42,7 @@ flowchart LR
     class simulator,resources,netns,tun default
 ```
 
-The namespace was `opensim` before the fork was renamed; see [Network namespace](../ops/network-namespace.md) for the one-time cleanup.
+The namespace was `opensim` before the fork was renamed; see [Manage the network namespace](../ops/network-namespace.md) for the one-time cleanup.
 
 ## Management surfaces
 
@@ -86,7 +91,7 @@ The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile) is 
 | SNMP SET | `SetRequest` on `ifAdminStatus` through the RFC 3416 ladder, gated by a write community (v1/v2c) and a minimum security level (v3) | `snmp_set.go` | [Enable SNMP SET](../getting-started/snmp-set.md) |
 | Interface state | Link and admin state per ifIndex, flap scheduler, REST control, link traps and syslog | `interface_state.go`, `if_counters.go` | [Interface state](../reference/interface-state.md) |
 | Metrics engine | 100-point pre-generated sine-wave patterns per device, per-GPU metrics, per-category baselines | `metrics_cycler.go`, `gpu_metrics.go`, `device_profiles.go` | [GPU simulation](../reference/gpu/index.md) |
-| Network infrastructure | TUN interfaces, the `nl6sim` namespace, parallel pre-allocation (100 to 200 workers by default, sized by batch; `max_workers` overrides it, clamped to 500) | `tun.go`, `netns.go`, `prealloc.go` | [Network namespace](../ops/network-namespace.md) |
+| Network infrastructure | TUN interfaces, the `nl6sim` namespace, parallel pre-allocation (100 to 200 workers by default, sized by batch; `max_workers` overrides it, clamped to 500) | `tun.go`, `netns.go`, `prealloc.go` | [Manage the network namespace](../ops/network-namespace.md) |
 | Web API | The control plane: routes, handlers, Linux route script generation | `web.go`, `api.go`, `web_routes*.go` | [Web API](../reference/web-api.md) |
 | Flow export | NetFlow v5 / v9, IPFIX, sFlow v5 encoders behind one `FlowEncoder` interface; a socket per collector and protocol, or per device under `-flow-source-per-device` (the default); one ticker goroutine | `flow_exporter.go`, `netflow5.go`, `netflow9.go`, `ipfix.go`, `sflow.go` | [Flow export](../reference/flow-export.md) |
 | Trap export | Catalog-driven SNMP traps and informs, central Poisson scheduler with a global rate cap | `trap_*.go` | [SNMP traps](../reference/snmp-traps.md) |
@@ -120,4 +125,4 @@ Counter values for SNMP, gNMI and sFlow come from one dispatcher, `IfCounterCycl
 
 The simulator is published as `ghcr.io/labmonkeys-space/nl6`.
 [`ci.yml`](https://github.com/labmonkeys-space/nl6/blob/main/.github/workflows/ci.yml) publishes on push to `main`; [`release.yml`](https://github.com/labmonkeys-space/nl6/blob/main/.github/workflows/release.yml) publishes on a release tag.
-See [Docker](../getting-started/docker.md) to run it.
+See [Install with Docker](../getting-started/docker.md) to run it.

@@ -1,3 +1,8 @@
+---
+sidebar_label: "Interface state"
+description: "How nl6 tracks oper, admin and last-change per interface, the ways to change them, and the link traps and syslog a change fires."
+---
+
 # Interface state engine
 
 nl6 maintains a per-device, in-memory **interface state engine** that owns `oper-status`, `admin-status`, and `last-change` for every known ifIndex.

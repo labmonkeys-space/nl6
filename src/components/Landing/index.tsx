@@ -305,7 +305,7 @@ export default function Landing(): React.JSX.Element {
           <div className="nl6-sec__hd">
             <span className="nl6-sec__num">03</span>
             <h2 className="nl6-sec__title">device catalog</h2>
-            <span className="nl6-sec__sub">28 types · 8 categories · 341 resource files</span>
+            <span className="nl6-sec__sub">31 types · 9 categories · 414 resource files</span>
           </div>
           <div className="nl6-grid-4">
             {CATEGORIES.map(cat => (

@@ -1,4 +1,9 @@
-# Runbooks
+---
+sidebar_label: "Runbooks"
+description: "Copy-paste recipes for common load tests, from a fixed-rate syslog baseline to flow fidelity checks, ramps, abort predicates and report diffs."
+---
+
+# Load-test runbooks
 
 Worked, copy-pasteable recipes, one per use case.
 Each is complete: how to start nl6 so the target protocol is exporting, the scenario to submit, and what to read back.
@@ -29,7 +34,7 @@ A device without that exporter lands in the arm `excluded[]` list, never in the 
 | [7](#7-check-ipfix-only-fidelity) | a clean IPFIX-only run | IPFIX |
 | [8](#8-measure-a-mixed-flow-protocol-fleet-20-v5--20-v9--60-ipfix) | measure a mixed-protocol fleet | NetFlow v5/v9 + IPFIX |
 
-### 1. Check syslog fidelity at a fixed rate (the baseline)
+## 1. Check syslog fidelity at a fixed rate (the baseline)
 
 Prove a syslog pipeline loses nothing at a steady 10 msg/s per device.
 
@@ -50,7 +55,7 @@ curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop | jq .summary
 A `constant` profile is deterministic: `summary.sent` is exactly `rate × window × devices = 10 × 30 × 3 = 900`.
 Reconcile that against your collector; `loss_ratio` should be `0`.
 
-### 2. Check NetFlow v9 flow-export fidelity
+## 2. Check NetFlow v9 flow-export fidelity
 
 A different protocol: the device needs **flow** export, not syslog.
 
@@ -68,7 +73,7 @@ Swap `-flow-protocol` (and the scenario `protocol`) for `ipfix`, `sflow`, or `ne
 On a shared collector, isolate the run by its lever (v9 Source ID, IPFIX ODID, sFlow `sub_agent_id`).
 See [Run tagging](./loadtest-scenarios.md#isolate-experiment-traffic-with-run-tags); the report's `metadata.run_tags` records which one and how.
 
-### 3. Ramp production-shaped load and localize loss
+## 3. Ramp production-shaped load and localize loss
 
 Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how much.
 
@@ -90,7 +95,7 @@ Loss concentrated in the **late, high-rate** buckets points at collector overloa
 Bucket your collector's received data the same way (receive-time relative to `metadata.t0`) and diff per bucket.
 Try `"kind": "sine"` (`mean_rate`, `amplitude`, `period`) for a cyclic load or `"kind": "staged"` (`stages: [{duration, rate}, …]`) for step changes.
 
-### 4. Abort an experiment automatically (abort predicate)
+## 4. Abort an experiment automatically (abort predicate)
 
 Stop the run automatically before it floods an unhealthy collector.
 
@@ -107,7 +112,7 @@ If the fleet-wide `send_failures` stays over `100` for `5s`, the scenario aborts
 It has the same schema and is still reconcilable.
 Watch `metric` be any of `send_failures` / `dropped` / `deferred` / `sent`.
 
-### 5. Coordinate the start across systems (scheduled T0)
+## 5. Coordinate the start across systems (scheduled T0)
 
 Line nl6's window up with a load generator or a monitoring capture window: arm now, but open the window at a precise absolute `T0`.
 
@@ -120,7 +125,7 @@ curl -sf -X POST $NL6/api/v1/scenarios/$ID/start \
 The scenario stays `armed` (transports connected, **no data on the wire**) until the RFC3339 `at` instant, then runs its window.
 A past timestamp is rejected `400`.
 
-### 6. Diff the report in one command
+## 6. Diff the report in one command
 
 Skip the manual join.
 Feed the report and your collector's counts to [`nl6-reconcile`](./loadtest-scenarios.md#reconcile-with-nl6-reconcile):
@@ -135,7 +140,7 @@ nl6-reconcile -report report.json -received collector.csv
 nl6-reconcile -report report.json -received collector.csv -drained
 ```
 
-### 7. Check IPFIX-only fidelity
+## 7. Check IPFIX-only fidelity
 
 IPFIX carries the cleanest run-isolation lever, the Observation Domain ID.
 Unlike NetFlow v9, its **data-record sequence legitimately starts at 0 at T0** (templates are counted separately), so a collector sees no pre-window sequence advance.
@@ -154,7 +159,7 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 
 Reconcile per `metadata.run_tags` (mechanism `ipfix_odid`): filter the collector's records by each device's Observation Domain ID within `[T0,T1)`.
 
-### 8. Measure a mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
+## 8. Measure a mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
 
 A scenario targets **one protocol**, so a mixed fleet is measured with **one scenario per protocol** over that protocol's device subset.
 The three device subsets are disjoint, so the scenarios could run concurrently; this runbook runs them **back-to-back** so each report stands alone.
