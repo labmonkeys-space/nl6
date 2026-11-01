@@ -347,7 +347,7 @@ What the guard does **not** cover, and what remains outstanding:
 - **In the value position it sees `sysObjectID` and `entPhysicalVendorType`.**
   The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly two such rows.
   `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133.
-  It joined the table when the ENTITY-MIB chassis rows were corrected, so its 236 responses in 22 profiles now go out as OIDs and the main guard reads them.
+  It joined the table in the ENTITY-MIB correction (when `entPhysicalVendorType` became OID-typed), so its 236 responses in 22 profiles now go out as OIDs and the main guard reads them.
   Reusing the production predicate is deliberate.
   Nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity.
   Widening it again means adding a row to `oidTypeTable`, which is a wire change.
@@ -689,7 +689,7 @@ One of the 13 misses is a **weak call** and is named below, so the strong-call r
 
 **The value-position denominator is 2, not 3, and the missing one is a known coverage gap.** `juniper_mx240` answers `entPhysicalVendorType.1` with a Juniper product OID too.
 The production predicate that decides whether a value reaches the wire as an OID is `snmpTypeTag`, and `oidTypeTable` had exactly one OBJECT IDENTIFIER row (`sysObjectID`) when this was measured, so that value went out as an OCTET STRING and sat outside every OID-position measurement in the package.
-A later change added `entPhysicalVendorType` as a second OBJECT IDENTIFIER row, which closed the gap.
+The ENTITY-MIB correction added `entPhysicalVendorType` as a second OBJECT IDENTIFIER row, which closed the gap.
 The value is pinned anyway, because it was already right.
 
 #### The finding that matters most to a collector
@@ -827,7 +827,7 @@ The polled data missed 13 of 15. The pinned Juniper trap reading pins the commen
 - **Semantic faithfulness of the mib-2 rows.**
   They are not under the Juniper arc, so they belong with an ENTITY-MIB sweep, which no arc audit has done.
   When this audit ran, `juniper_mx960` answered `entPhysicalModelName.1` with `MODEL123`.
-  A later change corrected that row to `MX960`, together with the chassis `entPhysicalDescr.1` and `entPhysicalVendorType.1`.
+  The ENTITY-MIB correction set that row to `MX960`, together with the chassis `entPhysicalDescr.1` and `entPhysicalVendorType.1`.
   The rest of the class is still open.
   The Arista audit left the same class open for the same reason.
 - **Which container index a Routing Engine occupies**, and therefore whether the renamed rows sit on the right row of a right-shaped table.
@@ -880,7 +880,7 @@ So the label states what is known and nothing more, and it says so in the file, 
 The fourteen, one arc each: `check_point_15600` (2620), `dell_emc_unity` (1139), `dell_poweredge_r750` (674), `dlink_dgs3630` (171), `extreme_vsp4450` (1916), `fortinet_fortigate_600e` (12356), `hpe_proliant_dl380` (232), `huawei_ne8000` (2011), `ibm_power_s922` (2), `nec_ix3315` (119), `netapp_ontap` (789), `nokia_7750_sr12` (6527), `pure_storage_flasharray` (40482), `sonicwall_nsa6700` (8741).
 
 **Fourteen profiles, twenty-five parts.** Eleven of them carry their arc in two parts and three in one.
-Nineteen parts were labelled first, and six more were labelled when `entPhysicalVendorType` became OID-typed.
+Nineteen parts were labelled first, and six more were labelled in the ENTITY-MIB correction.
 The marker is therefore **per part**, not per profile: a per-profile marker leaves that second file looking checked, and the label's entire value is that a reader who opens the file sees it.
 
 Each label states five things and claims nothing else:

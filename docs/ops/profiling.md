@@ -201,13 +201,14 @@ Under the 150 ms line by a factor of five, so **the default is `true`** (the SDK
 
 This is an **in-process proxy**.
 The benchmark's devices carry their value engines and resource pointers but no sockets, TUN interfaces or namespace, so a real 30,000-device fleet's heap is larger and its GC slower than the extrapolation.
-A real fleet also holds sockets, buffers, TUN and namespace state.
+The check is to time one forced GC on a host running 30,000 real devices and compare it with the 15 s upload cadence, against the same 150 ms line (1% of that window).
 If a fleet-scale measurement crosses the line, flip the constant and this table.
 
 ## Go version coupling
 
 `godeltaprof` forks `runtime/pprof` internals and reaches into the runtime with `go:linkname`.
-It has broken on Go major releases before (pyroscope-go issues #38 and #103).
+It has broken on Go major releases before.
+Upstream once had to cut a release because the published `godeltaprof` did not build with Go 1.21, and its tests later failed against Go tip after a runtime change.
 `github.com/grafana/pyroscope-go/godeltaprof` is pinned to the newest tag that declares support for the Go version in `go.mod` (`v0.1.12` carries a `go1.27` build file).
 **When bumping Go**: check that a `godeltaprof` tag declares the new major before bumping `go.mod`, then rebuild with `CGO_ENABLED=0 GOOS=linux` (the Dockerfile's shape).
 If no tag does, the Go bump waits; do not pin an older Go and do not vendor a fork.

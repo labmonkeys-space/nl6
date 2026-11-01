@@ -1,6 +1,6 @@
 ---
 sidebar_label: "DCGM simulation"
-description: "How the simulator models DCGM-style GPU metrics, with OID types, the GPU cycler, device profiles, resource layout and REST endpoints."
+description: "The SNMP OIDs, metric value behaviour, SSH commands and REST paths that the three simulated NVIDIA GPU server profiles serve."
 ---
 
 # NVIDIA DCGM simulation
@@ -48,7 +48,8 @@ Static columns come from the `*_snmp_gpu.json` resource file and never change.
 | 17 | NVLink active links | INTEGER | `18` (A100: `6`) |
 
 Dynamic columns come from the metrics cycler.
-Eight columns times eight GPUs gives 64 dynamic OIDs per device.
+Eight columns times eight GPUs gives 64 dynamic GPU OIDs per device.
+With the three Host Resources OIDs under [Standard MIBs](#standard-mibs), each device serves 67 dynamic OIDs.
 
 | Column | Name | Type and unit | Behaviour |
 |--------|------|---------------|-----------|
@@ -64,10 +65,17 @@ Eight columns times eight GPUs gives 64 dynamic OIDs per device.
 ### Value behaviour
 
 Each GPU holds a pre-generated cycle of 100 points per metric, seeded per device and per GPU.
-Every read of a dynamic column returns the next point, so the value moves per poll, not per unit of time.
+Every read of a dynamic column returns the next point, so the value moves per read, not per unit of time.
 Two collectors polling the same OID share one cursor.
 SM clock and memory clock share a cursor too, so a read of either advances both.
 VRAM total is constant and never advances.
+
+A GETNEXT can advance a cursor without returning its OID.
+GETNEXT reads the first dynamic OID after the requested OID as a candidate, even when a static OID sorts first and is returned.
+This happens on every GETNEXT and GETBULK step whose next static OID sorts after `hrStorageSize.1` and whose requested OID sorts before the last GPU metric OID.
+A walk of the static GPU columns 1 to 4 is 32 GETNEXT steps, and each one reads GPU 0 utilization.
+That column has moved 32 points by the time the walk returns it.
+Do not expect a dynamic OID to move one step per poll when the collector also walks neighbouring columns.
 
 The per-profile ranges the cycles are drawn from:
 
@@ -83,6 +91,16 @@ The per-profile ranges the cycles are drawn from:
 
 The profiles also serve `system`, the IF-MIB interface tables and Host Resources (`1.3.6.1.2.1.25`).
 Interface counters come from the same engine as every other device type; see [SNMP](../snmp.md).
+
+Three Host Resources OIDs are dynamic and come from the device's metrics cycler, not the static resource file.
+
+| OID | Name | Behaviour |
+|-----|------|-----------|
+| `1.3.6.1.2.1.25.3.3.1.2.1` | `hrProcessorLoad.1` | Cycling CPU percent, advances on every read |
+| `1.3.6.1.2.1.25.2.3.1.5.1` | `hrStorageSize.1` | Constant physical memory total from the device profile, never advances |
+| `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, advances on every read |
+
+The other Host Resources OIDs, including storage row 2, are static.
 
 ## SSH
 
@@ -112,13 +130,21 @@ It does not track the SNMP metric values.
 Each profile serves seven `GET` paths on the device's HTTPS API port (`8443` by default).
 The bodies are static JSON from the `*_api.json` resource file and do not track the SNMP metric values.
 There is no per-GPU path such as `/api/v1/gpu/devices/{id}`.
+The top-level fields differ between profiles on every path except `/api/v1/gpu/devices`.
 
-| Path | Top-level fields |
-|------|------------------|
-| `/api/v1/gpu/status` | `gpu_count`, `driver_version`, `cuda_version`, `dcgm_version`, `gpus` |
-| `/api/v1/gpu/devices` | `count`, `devices` |
-| `/api/v1/gpu/topology` | `gpu_count`, `nvlink_version`, `nvswitch_count`, `topology`, `links_per_gpu`, `bandwidth_per_link_gbps`, `total_bandwidth_per_gpu_gbps`, `connections` |
-| `/api/v1/dcgm/health` | `overall_health`, `checks`, `gpu_health` |
-| `/api/v1/dcgm/config` | `dcgm_version`, `monitoring_enabled`, `collection_interval_ms`, `health_check_interval_s`, `profiling_enabled`, `watched_fields` |
-| `/api/v1/system/info` | `hostname`, `os`, `kernel`, `architecture`, `driver_version`, `cuda_version`, `dcgm_version`, `dgx_software_version`, `cpu`, `gpu`, `network` |
-| `/api/v1/system/memory` | `total_gb`, `used_gb`, `free_gb`, `shared_gb`, `buff_cache_gb`, `available_gb`, `swap_total_gb`, `swap_used_gb`, `swap_free_gb` |
+| Path | Profile | Top-level fields |
+|------|---------|------------------|
+| `/api/v1/gpu/status` | A100 | `gpu_count`, `driver_version`, `cuda_version`, `dcgm_version`, `overall_health`, `gpus` |
+| `/api/v1/gpu/status` | H100, H200 | `gpu_count`, `driver_version`, `cuda_version`, `dcgm_version`, `gpus` |
+| `/api/v1/gpu/devices` | All | `count`, `devices` |
+| `/api/v1/gpu/topology` | A100 | `nvlink_version`, `nvswitch_count`, `gpu_count`, `connectivity`, `numa_affinity` |
+| `/api/v1/gpu/topology` | H100, H200 | `gpu_count`, `nvlink_version`, `nvswitch_count`, `topology`, `links_per_gpu`, `bandwidth_per_link_gbps`, `total_bandwidth_per_gpu_gbps`, `connections` |
+| `/api/v1/dcgm/health` | A100 | `overall_health`, `checks`, `last_check` |
+| `/api/v1/dcgm/health` | H100, H200 | `overall_health`, `checks`, `gpu_health` |
+| `/api/v1/dcgm/config` | A100 | `dcgm_version`, `monitoring_interval_ms`, `features`, `watched_fields` |
+| `/api/v1/dcgm/config` | H100, H200 | `dcgm_version`, `monitoring_enabled`, `collection_interval_ms`, `health_check_interval_s`, `profiling_enabled`, `watched_fields` |
+| `/api/v1/system/info` | A100 | `hostname`, `os`, `kernel`, `architecture`, `nvidia_driver`, `cuda_version`, `dcgm_version`, `dgx_software_version`, `cpu_model`, `cpu_sockets`, `cpu_cores_total`, `gpu_count`, `gpu_model`, `infiniband_ports`, `infiniband_speed_gbps` |
+| `/api/v1/system/info` | H100 | `hostname`, `os`, `kernel`, `architecture`, `driver_version`, `cuda_version`, `dcgm_version`, `dgx_software_version`, `cpu`, `gpu`, `network` |
+| `/api/v1/system/info` | H200 | `hostname`, `os`, `kernel`, `architecture`, `driver_version`, `cuda_version`, `dcgm_version`, `hgx_software_version`, `cpu`, `gpu`, `network` |
+| `/api/v1/system/memory` | A100 | `system_memory`, `gpu_memory`, `swap` |
+| `/api/v1/system/memory` | H100, H200 | `total_gb`, `used_gb`, `free_gb`, `shared_gb`, `buff_cache_gb`, `available_gb`, `swap_total_gb`, `swap_used_gb`, `swap_free_gb` |

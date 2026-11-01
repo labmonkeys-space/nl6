@@ -15,10 +15,13 @@
  * it (`'reference/x'` or `link: {id: 'reference/x'}`). We check that each
  * tracked doc's id appears as a quoted string in sidebars.ts.
  *
- * It also fails a page without a `description` in its front matter, and a
- * page that cites a tracker issue (`nl6#123`, `(#123)`, an issue or PR URL). Docusaurus
+ * It also fails a page without a `description` in its front matter. Docusaurus
  * otherwise falls back to the first paragraph for the meta description and the
  * generated section index, which is often a warning or a code lead-in.
+ *
+ * Finally it fails a page that cites a tracker issue outside a code block:
+ * `nl6#123`, `owner/repo#123`, `(#123)`, `issue #123`, `PR #123`, or an issue
+ * or pull request URL. A reader needs the cause, not the ticket.
  */
 
 import { execSync } from 'node:child_process';
@@ -91,16 +94,27 @@ if (undescribed.length > 0) {
   process.exit(1);
 }
 
-// Public pages cite no tracker issues: a reader needs the cause, not the
-// ticket, and release notes keep the history. Fenced code blocks are skipped,
-// so a sample that happens to contain `#123` is not flagged.
-const issueRef = /nl6#\d+|\(#\d+\)|github\.com\/[^\s)]*\/(?:issues|pull)\/\d+/;
+// Public pages cite no tracker issues; release notes keep the history.
+const issueRef = new RegExp(
+  [
+    String.raw`\b[\w.-]+#\d+\b`, // nl6#123, owner/repo#123
+    String.raw`\(#\d+\)`, // (#123)
+    String.raw`\b(?:issues?|PRs?|pull requests?)\s+#\d+`, // issue #123, PR #123
+    String.raw`github\.com\/[^\s)]*\/(?:issues|pull)\/\d+`,
+  ].join('|'),
+  'i'
+);
+// A fence closes only on the same character repeated at least as often as it
+// opened, so a ``` sample inside a ~~~~ or ```` block does not end the block.
+const fenceOpen = /^\s*(`{3,}|~{3,})/;
 const withIssueRefs = [];
 for (const f of files) {
-  let inFence = false;
+  let fence = null;
   readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
-    else if (!inFence && issueRef.test(line)) withIssueRefs.push(`${f}:${i + 1}`);
+    const m = line.match(fenceOpen);
+    if (fence === null && m) fence = m[1];
+    else if (fence !== null && m && m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1]) fence = null;
+    else if (fence === null && issueRef.test(line)) withIssueRefs.push(`${f}:${i + 1}`);
   });
 }
 if (withIssueRefs.length > 0) {
