@@ -147,6 +147,7 @@ Any other value matches no device type and is rejected with 400.
 `netmask` is optional and **defaults to `/16`**.
 Only the `/16` network and broadcast are reserved, so `.x.0` and `.x.255` are assigned as ordinary hosts.
 An explicit `"netmask": "24"` (or `"8"`) is still honored if you want classic per-`/24` semantics (which skip `.0`/`.255`).
+A `start_ip` that does not parse as an IP address is rejected with 400 (`invalid start IP address: <value>`) before the batch starts, as an unsupported `netmask` is.
 
 ```bash
 # Round-robin across all device types
