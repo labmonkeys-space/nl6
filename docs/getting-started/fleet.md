@@ -27,8 +27,9 @@ Fetching device inventory ... <N> devices written to nl6-inventory.json
 ```
 
 The output is the raw `GET /api/v1/devices` response.
-It holds one entry per device with its `ip`, `resource_file`, `snmp_port`, and any configured `flow`, `traps`, and `syslog` blocks.
-Server-assigned fields (`id`, `interface`, `running`) are kept in the file for reference but are dropped on import.
+It holds one entry per device with its `ip`, `resource_file`, `snmp_port`, any configured `flow`, `traps`, `syslog` and `gnmi_dialout` blocks, and any `if_error_scenario`, `if_flap_scenario` and `optical_scenario` set at creation.
+Import carries all of these to the target simulator.
+Server-assigned and read-only fields (`id`, `interface`, `running`, `ssh_port`, `device_type`, `effective_intervals` and the location fields) stay in the file for reference and are dropped on import.
 
 If the file argument is omitted, `nl6-inventory.json` in the current directory is used.
 

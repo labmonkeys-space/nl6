@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web test-fleet check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-typecheck docs-check-orphans docs-check-csp docs-audit-overrides docs-audit-overrides-test docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -376,7 +376,7 @@ check-guard-file:
 	echo "check-guard-file: nl6#577 guard present with all four checks"
 
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
-test: check-go check-guard-file test-web
+test: check-go check-guard-file test-web test-fleet
 ifneq ($(UNAME_S),Linux)
 	@echo "Note: 'make test' runs Go tests on Linux only (CI parity). The suite"
 	@echo "      itself passes on $(UNAME_S) — run 'cd $(GO_DIR) && go test ./...'"
@@ -540,6 +540,10 @@ test-interop-netconf: check-go
 ## Ctrl-C.
 test-interop-netconf-junos: check-go
 	cd $(GO_DIR) && NL6_NETCONF_JUNOS_INTEROP=1 go test ./nl6/ -run 'TestNetconfJunosInteropAgainstReference' -count=1 -v -timeout 15m
+
+## test-fleet: Run scripts/fleet.sh import against a local stub server (needs sh, curl, jq)
+test-fleet: check-node-runtime
+	$(NODE) scripts/fleet.test.mjs
 
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime
