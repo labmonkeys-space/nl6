@@ -31,8 +31,8 @@ import (
 //
 // This is an IN-PROCESS PROXY: the devices carry their value engines and
 // resource pointers but no sockets, TUN or namespace, so the real fleet's
-// heap is larger. The fleet-scale VM measurement is the follow-up recorded
-// under docs/ops/profiling.md#follow-ups.
+// heap is larger. To confirm the default at fleet scale, time the forced GC
+// on a host running 30,000 real devices and compare it with the 15 s cadence.
 
 // benchFleetSizes are the device counts measured. Override with
 // NL6_GC_BENCH_DEVICES=<n> to measure one size.

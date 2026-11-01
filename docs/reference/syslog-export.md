@@ -208,7 +208,7 @@ The same twelve fields work on both sides:
 
 References to any other field are rejected at catalog load.
 Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`, `RuleName`, `NeighborRouterID`) are explicitly unsupported.
-They're tracked as follow-up work so syslog entries that semantically require them (sshd auth, BGP/OSPF events, firewall rules) are either shipped bland or deferred.
+Syslog entries that semantically require them (sshd auth, BGP/OSPF events, firewall rules) are shipped bland or not at all.
 
 ## Per-type catalog overlays
 
@@ -235,9 +235,7 @@ The default is `"extends": true`.
 Message bodies match the vendor's canonical shape verbatim so collector-side pattern matchers tuned for Cisco / Juniper strings fire correctly.
 Every other type falls back to the universal catalog.
 That includes the other Cisco types (`asr9k`, `cisco_catalyst_9500`, `cisco_crs_x`, `cisco_nexus_9500`), `juniper_mx960`, `arista_7280r3`, `linux_server` and `palo_alto_pa3220`.
-Their realistic content depends on Class 2 random fields deferred to a follow-up.
-
-Family-catalog concept (one catalog shared by all `cisco_*` slugs, one by all `juniper_*`) is also a follow-up refactor.
+Their realistic content depends on Class 2 random fields, which are not supported.
 
 ## Starting syslog export
 
@@ -294,7 +292,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-A per-device `interval` in the `syslog` block is **rejected with 400** (nl6#445).
+A per-device `interval` in the `syslog` block is **rejected with 400**.
 Every device fires at the simulator-wide `-syslog-interval` cadence, which the device read-back reports under `effective_intervals`.
 To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 

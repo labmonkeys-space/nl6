@@ -112,7 +112,7 @@ A command line is not private: it is visible to every user on the host through `
 
 Treat these as test credentials for a lab collector.
 Do not reuse a password that protects anything else.
-An environment-variable or file form is recorded as follow-up work; until it exists there is no way to pass these privately.
+There is no environment-variable or file form, so there is no way to pass these privately.
 :::
 
 ### Every device is its own SNMP engine
@@ -351,7 +351,7 @@ The same twelve fields work on both sides:
 
 References to any other field are rejected at catalog load.
 The simulator refuses to start rather than silently emitting a trap with an empty OID component.
-Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`, `RuleName`, `NeighborRouterID`, `PeerAS`) are explicitly unsupported and tracked as follow-up work.
+Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`, `RuleName`, `NeighborRouterID`, `PeerAS`) are not supported.
 
 ## Per-type catalog overlays
 
@@ -376,8 +376,7 @@ Operators tuning the distribution should check `GET /api/v1/traps/status` → `c
 | `ciena_waveserver5` | 4 CIENA-WS entries (merged total 9) | `opticalPreFecSdRaise`, `opticalPreFecSdClear`, `opticalPreFecSfRaise`, `opticalPreFecSfClear`. All role-tagged (`optical-sd-*`, `optical-sf-*`), so they fire on a pre-FEC threshold crossing and never from the scheduler. |
 
 Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`, `cisco_nexus_9500`, `asr9k`, `cisco_asr9902`), `juniper_mx960`, Arista, Linux, and Palo Alto fall back to the universal catalog.
-Their realistic content depends on Class 2 random fields deferred to a follow-up.
-Family-catalog concept (one catalog shared by all `cisco_*` slugs) is also a follow-up refactor.
+Their realistic content depends on Class 2 random fields, which are not supported.
 
 ## Starting trap export
 
@@ -451,7 +450,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-A per-device `interval` in the `traps` block is **rejected with 400** (nl6#445).
+A per-device `interval` in the `traps` block is **rejected with 400**.
 Every device fires at the simulator-wide `-trap-interval` cadence, which the device read-back reports under `effective_intervals`.
 To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 

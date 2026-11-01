@@ -114,7 +114,7 @@ A datagram the kernel refused lands in `send_failures` instead.
 ### Notes
 
 - The same device IP can belong to only one flow config (one `flow` block per device). If you need the same device to appear on multiple collectors, run multiple simulator processes. The `nl6sim` netns + per-device-source-IP scheme isn't designed to multicast.
-- `-flow-tick-interval` is simulator-wide. One ticker drives every exporter regardless of batch. A per-device `tick_interval` in the REST body is **rejected with 400** (nl6#445). No `warnings` entry is emitted; the request does not create any device.
+- `-flow-tick-interval` is simulator-wide. One ticker drives every exporter regardless of batch. A per-device `tick_interval` in the REST body is **rejected with 400**. No `warnings` entry is emitted; the request does not create any device.
 - `-flow-tick-interval` sets the simulator-wide cadence and **is** honored. It controls **batching, not volume**: a slower tick puts more records in each datagram rather than proportionally reducing the record rate. Volume is set by the profile's concurrent-flow count and the expiry timeouts. A value of zero or less is refused at startup. A value above 1h is logged and replaced by the 5s default. `effective_intervals.flow_tick_interval` in the device read-back reports the period actually latched.
 - Collector-side `rp_filter` tuning applies per collector host, not per protocol. See the next section.
 - To silence the fleet's flow export without changing its configuration, start with `-fidelity` or toggle it with `POST /api/v1/fidelity`.

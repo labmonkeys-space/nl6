@@ -18,6 +18,10 @@
  * It also fails a page without a `description` in its front matter. Docusaurus
  * otherwise falls back to the first paragraph for the meta description and the
  * generated section index, which is often a warning or a code lead-in.
+ *
+ * Finally it fails a page that cites a tracker issue outside a code block:
+ * `nl6#123`, `owner/repo#123`, `(#123)`, `issue #123`, `PR #123`, or an issue
+ * or pull request URL. A reader needs the cause, not the ticket.
  */
 
 import { execSync } from 'node:child_process';
@@ -90,4 +94,34 @@ if (undescribed.length > 0) {
   process.exit(1);
 }
 
-console.log(`✓ all ${files.length} doc page(s) are referenced in sidebars.ts and carry a description`);
+// Public pages cite no tracker issues; release notes keep the history.
+const issueRef = new RegExp(
+  [
+    String.raw`\b[\w.-]+#\d+(?![\w-])`, // nl6#123, owner/repo#123, not an anchor like page.md#1-intro
+    String.raw`\(#\d+\)`, // (#123)
+    String.raw`\b(?:issues?|PRs?|pull requests?)\s+#\d+`, // issue #123, PR #123
+    String.raw`github\.com\/[^\s)]*\/(?:issues|pull)\/\d+`,
+  ].join('|'),
+  'i'
+);
+// A fence closes only on the same character repeated at least as often as it
+// opened, so a ``` sample inside a ~~~~ or ```` block does not end the block.
+const fenceOpen = /^\s*(`{3,}|~{3,})/;
+const withIssueRefs = [];
+for (const f of files) {
+  let fence = null;
+  readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+    const m = line.match(fenceOpen);
+    if (fence === null && m) fence = m[1];
+    else if (fence !== null && m && m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1]) fence = null;
+    else if (fence === null && issueRef.test(line)) withIssueRefs.push(`${f}:${i + 1}`);
+  });
+}
+if (withIssueRefs.length > 0) {
+  console.error(`\n✗ ${withIssueRefs.length} issue reference(s) in public doc pages:`);
+  for (const loc of withIssueRefs) console.error(`    - ${loc}`);
+  console.error(`\nState the cause in words instead of citing the issue.\n`);
+  process.exit(1);
+}
+
+console.log(`✓ all ${files.length} doc page(s) are referenced in sidebars.ts, carry a description, and cite no issues`);

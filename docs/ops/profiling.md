@@ -117,7 +117,8 @@ A Go heap profile carries allocation sites and sizes, not object contents; a CPU
 `POST /api/v1/profiling` and `/debug/pprof/` are exactly as unauthenticated as the rest of the REST API.
 Anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile.
 nl6 is a lab tool; the scope is stated in [`SECURITY.md`](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md), and the gate is off by default for that reason.
-The basic-auth flag value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is listed under [Follow-ups](#follow-ups).
+The basic-auth flag value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history).
+There is no file or environment form.
 
 ## The CPU-contention rule
 
@@ -200,12 +201,14 @@ Under the 150 ms line by a factor of five, so **the default is `true`** (the SDK
 
 This is an **in-process proxy**.
 The benchmark's devices carry their value engines and resource pointers but no sockets, TUN interfaces or namespace, so a real 30,000-device fleet's heap is larger and its GC slower than the extrapolation.
-The fleet-scale measurement on the Ubuntu VM is listed under [Follow-ups](#follow-ups); if it crosses the line, flip the constant and this table.
+The check is to time one forced GC on a host running 30,000 real devices and compare it with the 15 s upload cadence, against the same 150 ms line (1% of that window).
+If a fleet-scale measurement crosses the line, flip the constant and this table.
 
 ## Go version coupling
 
 `godeltaprof` forks `runtime/pprof` internals and reaches into the runtime with `go:linkname`.
-It has broken on Go major releases before (pyroscope-go issues #38 and #103).
+It has broken on Go major releases before.
+Upstream once had to cut a release because the published `godeltaprof` did not build with Go 1.21, and its tests later failed against Go tip after a runtime change.
 `github.com/grafana/pyroscope-go/godeltaprof` is pinned to the newest tag that declares support for the Go version in `go.mod` (`v0.1.12` carries a `go1.27` build file).
 **When bumping Go**: check that a `godeltaprof` tag declares the new major before bumping `go.mod`, then rebuild with `CGO_ENABLED=0 GOOS=linux` (the Dockerfile's shape).
 If no tag does, the Go bump waits; do not pin an older Go and do not vendor a fork.
@@ -217,13 +220,6 @@ With the gate closed they show the server's `503` message instead of a silent em
 
 ## Not built, by decision
 
-- No eBPF profiling (`pyroscope.ebpf`, a privileged Alloy sidecar). It is the only way to get kernel frames and off-CPU time, it is CPU-only and blind to goroutines, and Grafana's own pages disagree on its kernel floor (4.9 versus 5.10). See [Follow-ups](#follow-ups).
+- No eBPF profiling (`pyroscope.ebpf`, a privileged Alloy sidecar). It is the only way to get kernel frames and off-CPU time, it is CPU-only and blind to goroutines, and Grafana's own pages disagree on its kernel floor (4.9 versus 5.10).
 - No span profiles or OpenTelemetry bridge.
 - No mTLS or CA pinning for the push; the address is a plain `http://` or `https://` URL.
-
-## Follow-ups
-
-- **Fleet-scale forced-GC measurement.** The `-profiling-force-gc` default rests on an in-process proxy (N=5000 TUN-free devices, ~29 ms extrapolated to 30,000). A real fleet's heap also holds sockets, buffers, TUN and namespace state. Time one forced `runtime.GC()` on the Ubuntu VM with 30,000 real devices against the 150 ms rule, and watch the SDK's 15 s cadence under load. If it crosses the line, flip `profilingForceGCDefault` and the table above.
-- **Mutex and block profile rates.** Served but empty until `runtime.SetMutexProfileFraction` / `SetBlockProfileRate` have a measured cost. They are pinned at 0, so setting them is a decision with a test to change.
-- **eBPF for kernel frames and off-CPU time.** The only thing `pyroscope.ebpf` offers that the SDK cannot. Revisit only if a question needs kernel frames; it is CPU-only, blind to goroutines and to the `subsystem` labels, and its kernel floor is contradicted between Grafana's own pages.
-- **A file or environment form for the basic-auth secret.** `-profiling-pyroscope-basic-auth user:pass` sits in the process arguments, readable by every local user (`/proc/<pid>/cmdline`, `docker inspect`, shell history). A `-profiling-pyroscope-basic-auth-file` or an environment variable read once at startup would keep it out of argv.

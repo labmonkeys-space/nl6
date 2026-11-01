@@ -709,7 +709,7 @@ A rate computed from them was 0 bps forever, and they contradicted the 64-bit co
 The 1322 static entries the cycler now shadows (661 `ifInOctets` + 661 `ifOutOctets`, across 20 profiles) were deleted in the same change, because `findResponse` consults the cycler before the static map and an unreachable entry that looks authoritative is what let the defect survive.
 A ledger records every deleted row and reverses it to reproduce the parent corpus digest.
 
-**The dead-data rule now covers every cycler-owned `ifTable` column.** That change applied it to `.10`/`.16` only, because its own scope forbade touching the other shadows, and a follow-up finished the sweep with **742 further static rows deleted**: `ifLastChange` `.9` (646 rows, 17 profiles), `ifInUcastPkts` `.11` (48, `asr9k`) and `ifOutUcastPkts` `.17` (48, `asr9k`).
+**The dead-data rule now covers every cycler-owned `ifTable` column.** That change applied it to `.10`/`.16` only, because its own scope forbade touching the other shadows, and a later change finished the sweep with **742 further static rows deleted**: `ifLastChange` `.9` (646 rows, 17 profiles), `ifInUcastPkts` `.11` (48, `asr9k`) and `ifOutUcastPkts` `.17` (48, `asr9k`).
 `findResponse` consults the cycler first, so all 742 were unreachable.
 `staticRowsOnCyclerOwnedIfTableColumns` now reads zero for every cycler-owned column except the two carve-outs below, so a non-zero entry is a regression rather than a backlog.
 
@@ -722,7 +722,7 @@ A guard builds a real device per profile and requires the serve path to answer a
 That is the test that fires on the defect.
 The corpus digests would only say "re-pin", which is how an unreachable column would become an unanswered one.
 
-**What the RFC actually says, and what is nl6's choice.** RFC 2863 does not define `ifInOctets` as the low 32 bits of `ifHCInOctets`, and an earlier version of this page said it did.
+**What the RFC actually says, and what is nl6's choice.** RFC 2863 does not define `ifInOctets` as the low 32 bits of `ifHCInOctets`.
 The ifXTable DESCRIPTION of `ifHCInOctets` calls it "a 64-bit version of `ifInOctets`", and §3.1.6 mandates only which *width* an agent must serve at which speed: 32-bit octet counters at or below 20 Mb/s, 64-bit octet counters above it, and 64-bit packet counters at or above 650 Mb/s.
 A conforming agent may hold the two counters independently.
 Deriving one from the other is nl6's deliberate choice.

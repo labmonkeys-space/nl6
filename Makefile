@@ -745,7 +745,7 @@ node_modules/.package-lock.json: package-lock.json | check-node
 docs-serve: node_modules/.package-lock.json
 	$(NPM) run start
 
-## docs-check-orphans: Fail if any docs/ page is missing from sidebars.ts (orphaned)
+## docs-check-orphans: Fail if a docs/ page is missing from sidebars.ts, lacks a description, or cites a tracker issue
 docs-check-orphans: check-node
 	node scripts/check-doc-orphans.mjs
 

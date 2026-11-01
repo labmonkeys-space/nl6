@@ -12,7 +12,7 @@ The metric vocabulary and the command output are modelled on DCGM.
 
 ## Pages
 
-- **[DCGM simulation](dcgm.md)**: how the simulator produces the data: metric OID types, the GPU cycler extension, device profiles, resource file layout, SSH commands and REST paths.
+- **[DCGM simulation](dcgm.md)**: per-GPU SNMP objects with types, units and value behaviour, the SSH commands and the REST paths.
 
 ## Supported GPU servers
 
@@ -80,9 +80,3 @@ Eight metrics times eight GPUs is 64 dynamic OIDs per device.
 
 The profiles also serve `system` (`1.3.6.1.2.1.1`), the IF-MIB interface tables (`1.3.6.1.2.1.2.2.1`, `1.3.6.1.2.1.31.1.1.1`) and Host Resources (`1.3.6.1.2.1.25`).
 The interface counters are served by the same cycler as every other device type; see [SNMP → Dynamic IF-MIB counters](../snmp.md).
-
-## Design-note provenance
-
-Every page in this section was originally authored as a design plan under the repository's `plans/` directory.
-Run `git log --follow docs/reference/gpu/dcgm.md` to see the full history including the original `plans/` entries.
-The two plans for external repositories, the `probler` protobuf model and the `l8parser` polling rules, are retired; their nl6-facing content is the collector OID contract above.
