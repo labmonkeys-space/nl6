@@ -561,7 +561,7 @@ func compileSyslogEntry(raw syslogCatalogEntryJSON, source string, idx int) (*Sy
 
 	if !validRole(raw.Role) {
 		return nil, fmt.Errorf("syslog catalog: %s entry %q: unknown role %q (allowed: %s)",
-			source, raw.Name, raw.Role, strings.Join(catalogRoles, ", "))
+			source, raw.Name, raw.Role, strings.Join(catalogRoles(), ", "))
 	}
 	// Warn (non-fatal) when an entry looks link-related (name or msgId mentions
 	// "link") but carries no role — such an entry keeps firing from the
