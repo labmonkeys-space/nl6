@@ -1,6 +1,7 @@
 # gNMI dial-in
 
-Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. Every device serves OpenConfig interface state and counter telemetry under `/interfaces/interface[name=*]/state/*`.
+Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339.
+Every device serves OpenConfig interface state and counter telemetry under `/interfaces/interface[name=*]/state/*`.
 Optical transport types add optical-channel paths under `/components`.
 The types that ship a gNMI catalogue serve further subtrees, such as `/system`, `/components`, subinterfaces and BGP neighbours (see [Catalogue-driven paths](#catalogue-driven-paths)).
 Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant.
@@ -22,7 +23,8 @@ To turn the subsystem off simulator-wide, pass `-gnmi-disable`.
 
 ## TLS
 
-**Dial-in is TLS by default.** The server presents the simulator's shared certificate (the same cert used by the HTTPS REST surface).
+**Dial-in is TLS by default.**
+The server presents the simulator's shared certificate (the same cert used by the HTTPS REST surface).
 A CA generated at startup signs it, and `GET /api/v1/tls/ca` serves that CA certificate.
 Client-certificate authentication is **not required**.
 Connect with `gnmic --skip-verify`.
@@ -609,9 +611,14 @@ The TLS counters are explained under [Troubleshooting](#troubleshooting), the st
 - **Read-only.** `Set` returns `Unimplemented`. The simulator's deterministic-state guarantee is incompatible with mutation.
 - **No POLL.** Returns `Unimplemented`. STREAM/SAMPLE and ONCE cover the common cases.
 - **No `suppress_redundant`.** A SAMPLE stream sends every interval, including the held value of an interface whose `oper-status` is not `up(1)` (see [Interface state](./interface-state.md)).
-- **Single shared certificate.** All devices present the same CA-signed cert. Real fleets have per-device PKI; the simulator does not.
+- **Single shared certificate.**
+  All devices present the same CA-signed cert.
+  Real fleets have per-device PKI; the simulator does not.
 - **No client-cert auth.** The simulator runs in lab contexts; mutual-TLS is out of scope.
-- **No subinterfaces, no `/system`, no LLDP without a catalogue.** A type without a catalogue serves only the interface state leaves listed above, plus `optical-channel` under `/components` on optical transport types. `juniper_mx10004` and `cisco_asr9902` also serve the subtrees their [catalogues](#catalogue-driven-paths) list, including subinterfaces and `/system`. No type serves LLDP.
+- **No subinterfaces, no `/system`, no LLDP without a catalogue.**
+  A type without a catalogue serves only the interface state leaves listed above, plus `optical-channel` under `/components` on optical transport types.
+  `juniper_mx10004` and `cisco_asr9902` also serve the subtrees their [catalogues](#catalogue-driven-paths) list, including subinterfaces and `/system`.
+  No type serves LLDP.
 
 ## Operational notes
 

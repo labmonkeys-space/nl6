@@ -371,7 +371,7 @@ But at `3 ms + 6.7 ms/message`, going from batch 1 to batch 4 is 103/s to 134/s 
 Neither is 2.2x.
 Held the other way the model overshoots: four workers at batch 1 predicts ~412/s against a measured 144/s.
 
-So the identity does not reproduce either row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood**.
+So the identity reproduces neither the 900/s row nor the 3000/s row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood**.
 The offered-rate effect is real and measured, but its cause is not established as batch size.
 The database was the most loaded component at these rates and is the standing candidate.
 Resolving it needs a run that varies per-device rate with batch size pinned, which this session did not do.
@@ -389,7 +389,7 @@ The number to check is not "how many messages per second will the fleet send" bu
 Two honest limits on the above.
 The three rows are measured.
 Applying them to a production fleet at rest, as the paragraphs above do, is **inference from them** and has not been run.
-It assumes only that the measured dependence on per-device rate continues down to 0.03/s.
+It assumes only that the measured dependence on per-device rate continues below the lowest measured rate of 0.32/s.
 It deliberately does not assume that batching causes it, since the paragraph above shows that attribution failing.
 It is consistent with the 160/s row (batch exactly 1.0) but unconfirmed at fleet scale.
 And the 320/s configuration is disqualified anyway on ordering grounds ([the check fired](#the-check-is-not-a-formality-it-fired)), so it bounds what the tuning *could* buy, not what it is safe to run.

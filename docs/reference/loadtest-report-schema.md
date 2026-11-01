@@ -150,9 +150,10 @@ All four waits share a single 60 s budget, and whatever did not complete is name
 Nothing is cancelled in either case, so a report carrying `incomplete_joins` or `drain_stragglers` is a lower bound over a set that was still moving.
 
 The barrier now gives up after a fixed ceiling of **60 s** and records how many sends were still outstanding in `drain_stragglers`.
-**The presence of that field is the only reliable signature of a give-up.** A `drain_end` about 60 s past `t1` is not sufficient.
+**The reliable signatures of a give-up are the fields `drain_stragglers` and `incomplete_joins`.**
+A `drain_end` about 60 s past `t1` is not sufficient.
 The budget starts when finalize begins, and the joins ahead of the barrier spend from it.
-A run whose joins used up the budget also ends there, and reports `incomplete_joins`.
+A run whose joins used up the budget also ends there, and reports `incomplete_joins` without `drain_stragglers`.
 **The stragglers are not cancelled**, because nothing can interrupt a write parked in the kernel.
 They keep running and keep moving ledger counters after the report was snapshotted.
 
@@ -362,8 +363,11 @@ Use `sent` (`in_window + drain`) as the number to reconcile against a collector'
 The report is a versioned contract.
 Consumers should tolerate unknown fields.
 
-- **Backward-compatible:** new fields may be **added** to `summary` or `counters`; a new top-level block may be added **after** `counters`. Existing field names, types, units, and the `summary`-before-`counters` order never change in a backward-compatible release.
-- **Breaking:** renaming/removing a field, changing a type or unit, or reordering the top-level blocks. While `nl6_version` is `0.x`, a breaking change ships in a minor bump, as SemVer allows for major version zero. It is called out under Upgrade notes in the release notes.
+- **Backward-compatible:** new fields may be **added** to `summary` or `counters`; a new top-level block may be added **after** `counters`.
+  Existing field names, types, units, and the `summary`-before-`counters` order never change in a backward-compatible release.
+- **Breaking:** renaming/removing a field, changing a type or unit, or reordering the top-level blocks.
+  While `nl6_version` is `0.x`, a breaking change ships in a minor bump, as SemVer allows for major version zero.
+  It is called out under Upgrade notes in the release notes.
 - The **ledger identity** above is a stability guarantee. It holds in every version that ships these fields.
 - `config_sha256` covers only the **submit config**, not the report shape; the report contract is tracked by `nl6_version`.
 - The **submit config** has no separate version of its own; it moves with `nl6_version` too, and a removed request field is a breaking change for harnesses. Removals are listed in the API reference's [Removed request fields](./loadtest-api.md#removed-request-fields) with the release that removed them, so a reader on an older binary can tell which one changed. So far: `drain`, refused with a `400`.

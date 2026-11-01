@@ -51,10 +51,10 @@ Out of scope:
 
 ## CLI flags
 
+The ranges and defaults of `-if-scenario` and `-if-failure-pct` are in [Interface-state scenarios](cli-flags.md#interface-state-scenarios).
+
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-if-scenario` | int `1` to `4` | `2` | **global** | Seeds the link and admin state of every interface once, when a device is created: 1=all-shutdown, 2=all-normal (as the resource files declare), 3=all-failure, 4=pct-failure. Applies to auto-start and REST-created devices alike. A value outside 1..4 is refused at startup. |
-| `-if-failure-pct` | int `0` to `100` | `10` | **global** | Percentage of interfaces seeded oper-down under `-if-scenario 4`. An interface is down when its ifIndex modulo 100 is below this value. A value outside 0..100 is refused at startup. |
 | `-if-flap-scenario` | `clean` \| `rare` \| `typical` \| `aggressive` | `clean` | **seed** | Per-device flap scenario for the auto-start batch. REST-created devices default to `clean`; opt in via `if_flap_scenario` POST body. |
 | `-if-flap-global-cap` | int (events/sec) | `0` | **global** | Simulator-wide rate ceiling on flap events. `0` is unlimited. |
 

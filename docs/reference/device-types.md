@@ -130,7 +130,9 @@ It takes exactly one of five strings; any other value matches no device type and
 - **`entAliasMappingTable`.** Physical-to-logical port mappings.
 - **Dynamic metrics.** CPU, memory, and temperature cycle through a 100-point sine-wave pattern per device. See [Architecture](../explanation/architecture.md).
 - **Dynamic HC interface counters.** `ifHCInOctets` / `ifHCOutOctets` are computed on-demand as monotonically increasing Counter64 values, with per-interface phase offsets. See [SNMP reference](snmp.md).
-- **GPU metrics via NVIDIA DCGM OIDs, on GPU servers only.** Per-GPU utilization, VRAM, temperature, power, fan, and clocks. See [GPU simulation](gpu/index.md).
+- **GPU metrics via NVIDIA DCGM OIDs, on GPU servers only.**
+  Per-GPU utilization, VRAM, temperature, power, fan, and clocks.
+  See [GPU simulation](gpu/index.md).
 - **SNMPv3 support.** Engine ID, MD5/SHA1 authentication and DES/AES128 privacy, RFC 3414 USM, verified against net-snmp. See [SNMP reference](snmp.md).
 - **Per-category baselines.** CPU / memory / temperature ranges and spike amplitudes are driven by per-category device profiles.
 - **Interface stats and operational status**, **system information**, **vendor-specific OIDs**, **CDP & LLDP**, and **OSPF / BGP / VRF** via SSH.

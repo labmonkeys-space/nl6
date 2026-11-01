@@ -20,10 +20,11 @@ On bare metal, install the prerequisites above; for large fleets see the host tu
 ```bash
 git clone https://github.com/labmonkeys-space/nl6.git
 cd nl6
-make build
+make build GOARCH=$(go env GOARCH)
 cd go/nl6
 ```
 
+The Makefile defaults to `GOARCH=amd64`, so passing the host architecture keeps the binary runnable on an arm64 host.
 `make build` stamps the version into the binary and writes it to `go/nl6/nl6`.
 
 ## Run the simulator

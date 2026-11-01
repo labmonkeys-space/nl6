@@ -277,7 +277,10 @@ The `format` query parameter selects the representation (default JSON):
 Returns the scenario's live state in **Prometheus text-exposition format** (`text/plain; version=0.0.4`).
 It needs no third-party client dependency. Scrape it directly.
 Deterministic ordering (participants sorted by source IP).
-`404` for an unknown id; valid in every phase (a `submitted` scenario has no participant rows yet, only the two gauges).
+`404` for an unknown id.
+It is valid in every phase.
+A `submitted` scenario has no participant rows yet.
+It shows only `nl6_scenario_phase` and `nl6_scenario_target_rate`, or only `nl6_scenario_phase` for `gnmi-dialout`.
 
 | Metric | Type | Labels | Meaning |
 |--------|------|--------|---------|

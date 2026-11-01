@@ -61,8 +61,10 @@ SSH appears twice because NETCONF reuses it as a transport: the same login and h
 
 - **gNMI dial-in**: `Capabilities`, `Get` and `Subscribe` in SAMPLE, ON_CHANGE and ONCE mode over `/interfaces` and `/components`. `cisco_asr9902` and `juniper_mx10004` add a per-type catalogue with native origins. See [gNMI dial-in](../reference/gnmi.md).
 - **gNMI dial-out**: the dial-in payload pushed to a collector over Arista `gnmireverse`, dropped on outage. See [gNMI dial-out](../reference/gnmi-dial-out.md).
-- **NETCONF**: on `cisco_catalyst_9500`, the IOS XE draft `establish-subscription` with `push-update` and `push-change-update` on interface state. No `get`, no `edit-config`, no RFC 8639.
-  On `juniper_mx10004`, the Junos dialect over SSH and TLS: `get`, `get-configuration` and `create-subscription` on the `NETCONF` stream, which carries mib2d link events. See [NETCONF](../reference/netconf.md).
+- **NETCONF**: on `cisco_catalyst_9500`, the IOS XE draft `establish-subscription` with `push-update` and `push-change-update` on interface state.
+  No `get`, no `edit-config`, no RFC 8639.
+  On `juniper_mx10004`, the Junos dialect over SSH and TLS: `get`, `get-configuration` and `create-subscription` on the `NETCONF` stream, which carries mib2d link events.
+  See [NETCONF](../reference/netconf.md).
 
 ## Package layout
 
