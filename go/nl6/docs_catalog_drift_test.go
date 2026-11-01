@@ -31,21 +31,35 @@ const (
 	webAPIDoc   = "../../docs/reference/web-api.md"
 )
 
-// flagRegistrars are the receiver.method pairs that register a flag. The name
-// is the first string literal among the call's first two arguments, which
-// covers flag.String(name, …), flag.StringVar(&p, name, …), flag.Var(v, name, …),
-// flag.Func(name, …) and the fs.Var helper in flag_seconds_or_duration.go.
-var flagRegistrars = map[string]bool{
-	"flag.String": true, "flag.Bool": true, "flag.Int": true, "flag.Int64": true,
-	"flag.Uint": true, "flag.Uint64": true, "flag.Float64": true, "flag.Duration": true,
-	"flag.StringVar": true, "flag.BoolVar": true, "flag.IntVar": true, "flag.Int64Var": true,
-	"flag.UintVar": true, "flag.Uint64Var": true, "flag.Float64Var": true, "flag.DurationVar": true,
-	"flag.Var": true, "flag.Func": true, "flag.BoolFunc": true,
-	"fs.Var": true,
+// flagNameArg maps each flag-registering method to the index of its name
+// argument: flag.String(name, …) and flag.Func(name, …) take it first, the
+// *Var forms (flag.StringVar(&p, name, …), flag.Var(v, name, …)) second.
+var flagNameArg = map[string]int{
+	"String": 0, "Bool": 0, "Int": 0, "Int64": 0, "Uint": 0, "Uint64": 0,
+	"Float64": 0, "Duration": 0, "Func": 0, "BoolFunc": 0,
+	"StringVar": 1, "BoolVar": 1, "IntVar": 1, "Int64Var": 1, "UintVar": 1,
+	"Uint64Var": 1, "Float64Var": 1, "DurationVar": 1, "Var": 1,
+}
+
+// flagReceiver reports whether expr is a flag set the simulator registers
+// flags on: the flag package itself, flag.CommandLine, or the fs FlagSet
+// parameter used by the helpers in flag_seconds_or_duration.go. A new FlagSet
+// under another name is not seen; the len(registered) floor in the test
+// catches a wholesale miss.
+func flagReceiver(expr ast.Expr) bool {
+	switch x := expr.(type) {
+	case *ast.Ident:
+		return x.Name == "flag" || x.Name == "fs"
+	case *ast.SelectorExpr:
+		id, ok := x.X.(*ast.Ident)
+		return ok && id.Name == "flag" && x.Sel.Name == "CommandLine"
+	}
+	return false
 }
 
 // registeredFlags parses every non-test Go file of the package and returns the
-// names of all flags registered through flagRegistrars.
+// names of all registered flags. A registration whose name is not a string
+// literal fails the test, because its name cannot be checked against the docs.
 func registeredFlags(t *testing.T) []string {
 	t.Helper()
 	files, err := filepath.Glob("*.go")
@@ -68,22 +82,24 @@ func registeredFlags(t *testing.T) []string {
 				return true
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
+			if !ok || !flagReceiver(sel.X) {
 				return true
 			}
-			recv, ok := sel.X.(*ast.Ident)
-			if !ok || !flagRegistrars[recv.Name+"."+sel.Sel.Name] {
+			idx, ok := flagNameArg[sel.Sel.Name]
+			if !ok || idx >= len(call.Args) {
 				return true
 			}
-			for _, arg := range call.Args[:min(2, len(call.Args))] {
-				if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					name, err := strconv.Unquote(lit.Value)
-					if err == nil {
-						seen[name] = true
-					}
-					break
-				}
+			lit, ok := call.Args[idx].(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				t.Errorf("%s: flag registered with a non-literal name; the docs check cannot read it", fset.Position(call.Pos()))
+				return true
 			}
+			name, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				t.Errorf("%s: unquote flag name: %v", fset.Position(lit.Pos()), err)
+				return true
+			}
+			seen[name] = true
 			return true
 		})
 	}

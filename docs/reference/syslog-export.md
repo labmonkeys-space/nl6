@@ -303,7 +303,7 @@ Omit it and the device doesn't emit syslog.
 | `collector` | string | required | Collector `host:port`. A bare host gets port 514, or 6514 under `tls`. |
 | `format` | string | `5424` | `5424` or `3164`. |
 | `transport` | string | `udp` | `udp`, `tcp` (RFC 6587) or `tls` (RFC 5425). |
-| `framing` | string | `octet-counting` under `tcp` and `tls` | `octet-counting` or `non-transparent`. `tcp` only. Rejected with 400 under `udp`. Under `tls` anything but `octet-counting` is rejected. |
+| `framing` | string | `octet-counting` under `tcp` and `tls` | `octet-counting` or `non-transparent` under `tcp`. Under `tls` only `octet-counting` is accepted; anything else is rejected with 400. Rejected with 400 under `udp`. |
 | `tls` | object | absent (verify against the host's root store) | Collector verification under `tls`: `ca_pem` (inline PEM) and `insecure_skip_verify`. `mtls` is rejected with 400. See [TLS](#tls-rfc-5425). |
 | `interval` | n/a | n/a | Rejected with 400. Use `-syslog-interval`. |
 
@@ -383,7 +383,7 @@ Three things differ:
 
 | | |
 |---|---|
-| **framing** | octet-counting is **forced**, not defaulted. RFC 5425 §4.3.1 mandates it, so any other framing is rejected at configuration rather than overridden. |
+| **framing** | only octet-counting is accepted. An empty framing defaults to it. RFC 5425 §4.3.1 mandates it, so any other framing is rejected with 400 at configuration rather than overridden. |
 | **default port** | **6514** where the other transports use 514 (RFC 5425 §4.1). |
 | **verification** | the collector's certificate is verified. |
 

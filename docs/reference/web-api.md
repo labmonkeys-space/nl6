@@ -45,7 +45,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/netconf/status` | GET | NETCONF subsystem status: listeners, sessions, subscriptions, notification counters. See [NETCONF reference](netconf.md#status-endpoint). |
 | `/api/v1/netconf/tls` | GET | NETCONF over TLS client trust: the client CA PEM, the identity table and the default username. `404` when the NETCONF subsystem is off. See [NETCONF reference](netconf.md#rest). |
 | `/api/v1/netconf/tls` | PUT | Replace the whole NETCONF over TLS client trust. An omitted field clears it. `404` when the subsystem is off, `400` for a bad body. |
-| `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. |
+| `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. `404` when no shared TLS certificate exists. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/api/v1/prometheus/sd` | GET | Prometheus HTTP service discovery: one target group per running device, for snmp_exporter. See [Prometheus service discovery](prometheus-sd.md). |
@@ -557,7 +557,7 @@ INFORM without per-device binding is a runtime attach failure, not a 400.
   "collector": "192.168.1.10:514",              // required; host:port (default port 514, 6514 under tls)
   "format":    "5424",                           // optional; "5424" | "3164"; default "5424"
   "transport": "udp",                            // optional; "udp" | "tcp" | "tls"; default "udp"
-  "framing":   "octet-counting",                 // optional; "octet-counting" | "non-transparent"; tcp only, forced to "octet-counting" under tls, rejected under udp
+  "framing":   "octet-counting",                 // optional; "octet-counting" | "non-transparent"; default "octet-counting" under tcp and tls; tls accepts only "octet-counting" (400 otherwise); rejected under udp
   "tls": {                                       // optional; read under transport tls
     "ca_pem": "",                                // PEM CA bundle INLINE verifying the collector; empty = system roots
     "insecure_skip_verify": false                // dev only

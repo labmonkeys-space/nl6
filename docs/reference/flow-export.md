@@ -404,7 +404,7 @@ Omit it and the device doesn't export.
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `collector` | string | required | Collector `host:port`. |
-| `protocol` | string | `netflow9` | `netflow9`, `ipfix`, `netflow5` or `sflow` (alias `sflow5`). |
+| `protocol` | string | `netflow9` | `netflow9`, `ipfix`, `netflow5` or `sflow`. Aliases `nf9`, `ipfix10`, `nf5` and `sflow5` are accepted and canonicalised to those names. |
 | `active_timeout` | duration | `30s` | Mean cap on a still-running flow's cache residency. Each flow's deadline carries ±25 % jitter. |
 | `inactive_timeout` | duration | `15s` | Idle time after a flow's last packet before export. |
 | `sub_agent_id` | uint | `0` | sFlow `sub_agent_id` in every datagram header. Ignored by other protocols. |

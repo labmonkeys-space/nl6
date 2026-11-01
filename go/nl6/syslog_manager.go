@@ -483,7 +483,9 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 		return fmt.Errorf("syslog export: encoder: %w", err)
 	}
 
-	collectorAddr, err := net.ResolveUDPAddr("udp4", cfg.Collector)
+	// A bare host passed Validate with the transport's default port appended,
+	// so resolve it the same way here.
+	collectorAddr, err := net.ResolveUDPAddr("udp4", syslogCollectorWithDefaultPort(cfg.Collector, SyslogTransportKind(cfg.Transport)))
 	if err != nil {
 		return fmt.Errorf("syslog export: resolve collector %q: %w", cfg.Collector, err)
 	}
