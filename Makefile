@@ -375,7 +375,7 @@ check-guard-file:
 	fi; \
 	echo "check-guard-file: nl6#577 guard present with all four checks"
 
-## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
+## test: Run the web JS unit tests and the fleet.sh import test (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go check-guard-file test-web test-fleet
 ifneq ($(UNAME_S),Linux)
 	@echo "Note: 'make test' runs Go tests on Linux only (CI parity). The suite"
@@ -543,6 +543,7 @@ test-interop-netconf-junos: check-go
 
 ## test-fleet: Run scripts/fleet.sh import against a local stub server (needs sh, curl, jq)
 test-fleet: check-node-runtime
+	@for tool in sh curl jq; do command -v $$tool >/dev/null 2>&1 || { echo "Error: $$tool not found (test-fleet runs scripts/fleet.sh, which needs sh, curl and jq)"; exit 1; }; done
 	$(NODE) scripts/fleet.test.mjs
 
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)

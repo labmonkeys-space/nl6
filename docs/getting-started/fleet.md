@@ -30,6 +30,20 @@ The output is the raw `GET /api/v1/devices` response.
 It holds one entry per device with its `ip`, `resource_file`, `snmp_port`, any configured `flow`, `traps`, `syslog` and `gnmi_dialout` blocks, and any `if_error_scenario`, `if_flap_scenario` and `optical_scenario` set at creation.
 Import carries all of these to the target simulator.
 Server-assigned and read-only fields (`id`, `interface`, `running`, `ssh_port`, `device_type`, `effective_intervals` and the location fields) stay in the file for reference and are dropped on import.
+Import does not carry `snmpv3` or `write_community`, because the device listing never returns them.
+Set them again on the target simulator if the fleet uses them.
+
+Import stops at the first device the target refuses.
+Two cases are refused on another simulator:
+
+- A `flow`, `traps`, `syslog` or `gnmi_dialout` collector whose host does not resolve on the target.
+- A `gnmi_dialout` block whose `tls.ca_pem` is over 64 KiB. A CA bundle loaded with `-gnmi-dialout-tls-ca` can be that large, while a create request is capped at 64 KiB.
+
+To import a fleet whose dial-out blocks are refused, drop them first:
+
+```bash
+jq 'del(.data[].gnmi_dialout)' nl6-inventory.json > nl6-inventory-no-dialout.json
+```
 
 If the file argument is omitted, `nl6-inventory.json` in the current directory is used.
 

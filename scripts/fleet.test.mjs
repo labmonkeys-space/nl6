@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Node test for scripts/fleet.sh import. Run with
- * `node scripts/fleet.test.mjs` (or `make test-scripts`).
+ * `node scripts/fleet.test.mjs` (or `make test-fleet`).
  *
  * It runs the real script against a stub server on 127.0.0.1 that records
  * every POST /api/v1/devices body, so the jq filter under test is the shipped
@@ -43,6 +43,18 @@ const listed = {
   location: 'Fulda',
 };
 
+// A plain device: no export blocks, no scenarios. Most real inventory entries
+// look like this, and the absent fields must reach the server as null, which
+// it reads as unset.
+const plain = {
+  ip: '10.42.0.8',
+  snmp_port: 161,
+  ssh_port: 22,
+  running: true,
+  resource_file: 'asr9k.json',
+  device_type: 'Cisco ASR 9000',
+};
+
 const posted = [];
 const server = createServer((req, res) => {
   let body = '';
@@ -58,18 +70,22 @@ const url = `http://127.0.0.1:${server.address().port}`;
 
 const dir = mkdtempSync(join(tmpdir(), 'nl6-fleet-test-'));
 const file = join(dir, 'inventory.json');
-writeFileSync(file, JSON.stringify({ success: true, data: [listed] }));
+writeFileSync(file, JSON.stringify({ success: true, data: [listed, plain] }));
 
 try {
-  const env = { ...process.env, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1' };
+  // RETRY_409_LIMIT=1 and the kill timer bound the run, so a stub or curl
+  // problem fails the test instead of hanging make test.
+  const env = { ...process.env, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', RETRY_409_LIMIT: '1', RETRY_409_DELAY: '0' };
   const child = spawn('sh', [script, 'import', url, file], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const timer = setTimeout(() => child.kill('SIGKILL'), 30_000);
   let output = '';
   child.stdout.on('data', (d) => { output += d; });
   child.stderr.on('data', (d) => { output += d; });
   const code = await new Promise((resolve) => child.on('close', resolve));
+  clearTimeout(timer);
   assert.equal(code, 0, `fleet.sh import exited ${code}:\n${output}`);
 
-  assert.equal(posted.length, 1, 'one create request per listed device');
+  assert.equal(posted.length, 2, 'one create request per listed device');
   assert.deepEqual(posted[0], {
     start_ip: '10.42.0.7',
     device_count: 1,
@@ -83,6 +99,20 @@ try {
     if_error_scenario: 'degraded',
     if_flap_scenario: 'typical',
     optical_scenario: 'failing',
+  });
+  assert.deepEqual(posted[1], {
+    start_ip: '10.42.0.8',
+    device_count: 1,
+    netmask: '16',
+    resource_file: 'asr9k.json',
+    snmp_port: 161,
+    flow: null,
+    traps: null,
+    syslog: null,
+    gnmi_dialout: null,
+    if_error_scenario: null,
+    if_flap_scenario: null,
+    optical_scenario: null,
   });
 } finally {
   server.close();
