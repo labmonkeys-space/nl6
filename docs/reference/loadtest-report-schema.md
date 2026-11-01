@@ -167,13 +167,11 @@ The counters are atomics, so nothing is corrupted and no participant's row is in
 A straggler sits between those two increments at the instant of the snapshot.
 On a healthy run the field is absent and none of this applies.
 
-An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead.
-Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`.
+Do not divide `sent` by the window plus the drain.
+`sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`.
 On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error.
-(The superseded sentence quoted 4.2 %, which is 5/120.
-That is the drain's share of the *window*, the quantity its own wrong model was about, not the error its own remedy introduced.)
 
-Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment, which is why an earlier capture misled).
+Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment).
 Template FlowSets subtracted, non-first fragments skipped.
 
 Part one ran at rate 4/device, seed 42, with capture and report taken on the same clock.

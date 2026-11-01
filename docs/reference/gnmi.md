@@ -171,7 +171,6 @@ Each device adds a 48-byte resolver.
 | `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature`, `tag:<name>` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
 
 An `interfaces` key with a `filter` outside that grammar fails to load, as does one with a repeated term, an empty name, or a name both kept and dropped.
-Before nl6#810 the loader accepted such a filter and ignored it.
 Names match `ifDescr` exactly, no globs: nothing on a device beyond `ifDescr` and `ifType` tells a Routing Engine port from a line-card port of the same `ifType`, so a generated profile names the ports it treats differently.
 An interface whose profile ships no `ifDescr` row is listed under the synthesised name the catalogue serves as its key, and a name term matches that name.
 A `subinterfaces` key with a `filter`, `names` or `parent` fails to load too.
@@ -228,7 +227,7 @@ A subscription to `/components/component/transceiver/state/` also carries `oper-
 That path is an alias carried by four subtrees; the two `oper-status` subtrees are `alias_only`, so `/components/component/state` does not repeat them.
 A `/components/component/transceiver` path on a device type without a catalogue is refused with `NotFound` naming the path.
 Each interface's out-queues carry exactly `queue-number`, `queued-bytes`, `queued-pkts`, `hp-red-drop-pkts` and `lp-red-drop-pkts`.
-That set comes from the MX10004 hardware reference set behind nl6#775, which is not public; the vJunos capture sent eleven buffer and drop leaves more.
+That set comes from an MX10004 hardware reference set; the vJunos capture sent eleven buffer and drop leaves more.
 A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
 The router's ONCE chunking of one interface into several notifications is not modelled.
 The subinterfaces are the device's five logical units: unit 0 (`xe-0/0/0.0`) and the VRF units `xe-0/0/0.100`, `xe-0/0/0.200` and `xe-0/0/0.999` on `xe-0/0/0`, which `show route instance detail` names, and `fxp0.0` on the management port `fxp0`.

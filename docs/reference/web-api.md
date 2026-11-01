@@ -896,7 +896,7 @@ Response fields:
 | `nbar2_catalogs_by_type` | Resolved NBAR2 application catalogs, keyed by `_universal` and per-type slug. Each value carries `entries`, `oversized` (entries the load-time dry render disabled, omitted when zero) and `source`. Absent when no NBAR2 catalog loaded. |
 
 Clients detect "no flow export configured" via `len(collectors) == 0`.
-The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed in phase 3; callers that depended on them must migrate to the array-of-collectors shape.
+The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed; callers that depended on them must migrate to the array-of-collectors shape.
 
 See [Flow export how-to](../ops/flow-export.md) and [Flow export reference](flow-export.md) for protocol-specific details.
 

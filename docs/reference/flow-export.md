@@ -43,7 +43,7 @@ Collectors that multiply sample rate by captured packet count to estimate link u
 Use sFlow mode for collector-plumbing validation, not for link-volume benchmarks.
 
 sFlow v5 emits one `FLOW_SAMPLE` per `FlowRecord` with a `sampled_header` flow-record carrying a synthesised IPv4 + UDP/TCP header derived from the 5-tuple.
-On every tick it also emits `COUNTERS_SAMPLE` records (Phase 2) for each interface's `if_counters`, a processor sample, and a memory sample.
+On every tick it also emits `COUNTERS_SAMPLE` records for each interface's `if_counters`, a processor sample, and a memory sample.
 
 ### sFlow sub-agent id
 
@@ -423,7 +423,7 @@ A REST-created device does not inherit the `-flow-*` seed flags.
 **Duration fields** (`active_timeout`, `inactive_timeout`) require **Go duration strings** (`"30s"`, `"1m30s"`).
 Integer seconds (`"active_timeout": 30`) are rejected with 400.
 The matching `-flow-*-timeout` CLI flags accept the same duration strings, and also a bare integer as seconds.
-A per-device `tick_interval` is rejected with 400 (nl6#445); the fleet-wide cadence is `-flow-tick-interval`.
+A per-device `tick_interval` is rejected with 400; the fleet-wide cadence is `-flow-tick-interval`.
 
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
 

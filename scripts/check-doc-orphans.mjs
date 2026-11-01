@@ -15,7 +15,8 @@
  * it (`'reference/x'` or `link: {id: 'reference/x'}`). We check that each
  * tracked doc's id appears as a quoted string in sidebars.ts.
  *
- * It also fails a page without a `description` in its front matter. Docusaurus
+ * It also fails a page without a `description` in its front matter, and a
+ * page that cites a tracker issue (`nl6#123`, `(#123)`, an issue or PR URL). Docusaurus
  * otherwise falls back to the first paragraph for the meta description and the
  * generated section index, which is often a warning or a code lead-in.
  */
@@ -90,4 +91,23 @@ if (undescribed.length > 0) {
   process.exit(1);
 }
 
-console.log(`✓ all ${files.length} doc page(s) are referenced in sidebars.ts and carry a description`);
+// Public pages cite no tracker issues: a reader needs the cause, not the
+// ticket, and release notes keep the history. Fenced code blocks are skipped,
+// so a sample that happens to contain `#123` is not flagged.
+const issueRef = /nl6#\d+|\(#\d+\)|github\.com\/[^\s)]*\/(?:issues|pull)\/\d+/;
+const withIssueRefs = [];
+for (const f of files) {
+  let inFence = false;
+  readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    else if (!inFence && issueRef.test(line)) withIssueRefs.push(`${f}:${i + 1}`);
+  });
+}
+if (withIssueRefs.length > 0) {
+  console.error(`\n✗ ${withIssueRefs.length} issue reference(s) in public doc pages:`);
+  for (const loc of withIssueRefs) console.error(`    - ${loc}`);
+  console.error(`\nState the cause in words instead of citing the issue.\n`);
+  process.exit(1);
+}
+
+console.log(`✓ all ${files.length} doc page(s) are referenced in sidebars.ts, carry a description, and cite no issues`);

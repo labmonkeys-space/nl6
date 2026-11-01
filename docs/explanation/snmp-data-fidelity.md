@@ -92,7 +92,7 @@ An unclassified loader failure still answers 500 with the raw error text.
 The full path is logged server-side on every rejection, so base-naming the body loses nothing.
 Full detail, including the response envelope, is in [Web API → `resource_file` failures](../reference/web-api.md#resource_file-failures).
 
-Rule 2 covers a value on an OID-typed leaf, today `sysObjectID` and `entPhysicalVendorType` (nl6#821): it must be an OID the encoder can represent.
+Rule 2 covers a value on an OID-typed leaf, today `sysObjectID` and `entPhysicalVendorType`: it must be an OID the encoder can represent.
 Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire.
 See [The first OID sub-identifier is a varint](../reference/snmp.md#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
 The sentinel rule is checked first, matching the order the encoder applies them, so a sentinel on `sysObjectID` is reported as a sentinel collision.
@@ -347,7 +347,7 @@ What the guard does **not** cover, and what remains outstanding:
 - **In the value position it sees `sysObjectID` and `entPhysicalVendorType`.**
   The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly two such rows.
   `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133.
-  It joined the table in nl6#821, so its 236 responses in 22 profiles now go out as OIDs and the main guard reads them.
+  It joined the table when the ENTITY-MIB chassis rows were corrected, so its 236 responses in 22 profiles now go out as OIDs and the main guard reads them.
   Reusing the production predicate is deliberate.
   Nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity.
   Widening it again means adding a row to `oidTypeTable`, which is a wire change.
@@ -418,8 +418,7 @@ A collector that gets nothing learns the truth about a profile that models no fa
 A collector that gets `C9300-SUP-1` from `ciscoEnvMonFanStatusDescr` is told a supervisor module is a fan.
 Do not restore a row to make the table non-empty.
 
-**The two `ciscoEnvMonTemperatureStatusValue` rows were reachable, and the walk is the path this change moved.** An earlier version of this section called them dead data and unreachable.
-That was drawn from the GET path alone and it was wrong.
+**The two `ciscoEnvMonTemperatureStatusValue` rows were reachable, and the walk is the path this change moved.**
 `vendorOIDs` maps the OID to `MetricTemperature` for all five Cisco profiles and `findResponse` consults `getMetricValue` before the static `oidIndex`, so a **GET** was already answered by the cycler and did not change.
 A **walk** is a different path: `findNextOIDWithServed` collects candidates and takes the lexicographically smallest with a strict less-than, so when a static row and a metric OID are the same OID the first candidate wins, and the static one is appended first from `precomputedNextOID`.
 Measured on a device with a live cycler at the parent revision, `findNextOID` from `…13.1.3.1.2.1` returned `…13.1.3.1.3.1 = "CAT9500-001"` on `cisco_catalyst_9500` and `"39"` on `cisco_nexus_9500`, while `findResponse` on the same devices returned `30` and `31`.
@@ -433,7 +432,7 @@ That does not change the deletion, but a collector written against the current M
 
 **Two OIDs were correct and were left alone**: `ciscoImageString` (a `DisplayString` holding an image-characteristic string, so a version is the right kind of value, with a one-sub-identifier INDEX that `…1.2.2` satisfies) and `cseSysCPUUtilization` (`Gauge32 (0..100)`, answering 28).
 
-**Eight Cisco OIDs are unaudited, and the reason differs per OID.** An earlier version of this section attributed all eight to `OLD-CISCO-CHASSIS-MIB` being unobtainable, which was wrong: that module is genuinely unobtainable, but it does not define four of them.
+**Eight Cisco OIDs are unaudited, and the reason differs per OID.** `OLD-CISCO-CHASSIS-MIB` is genuinely unobtainable, but it does not define four of them.
 
 | OID | status |
 |---|---|
@@ -690,7 +689,7 @@ One of the 13 misses is a **weak call** and is named below, so the strong-call r
 
 **The value-position denominator is 2, not 3, and the missing one is a known coverage gap.** `juniper_mx240` answers `entPhysicalVendorType.1` with a Juniper product OID too.
 The production predicate that decides whether a value reaches the wire as an OID is `snmpTypeTag`, and `oidTypeTable` had exactly one OBJECT IDENTIFIER row (`sysObjectID`) when this was measured, so that value went out as an OCTET STRING and sat outside every OID-position measurement in the package.
-nl6#821 added `entPhysicalVendorType` as a second OBJECT IDENTIFIER row, which closed the gap.
+A later change added `entPhysicalVendorType` as a second OBJECT IDENTIFIER row, which closed the gap.
 The value is pinned anyway, because it was already right.
 
 #### The finding that matters most to a collector
@@ -828,7 +827,7 @@ The polled data missed 13 of 15. The pinned Juniper trap reading pins the commen
 - **Semantic faithfulness of the mib-2 rows.**
   They are not under the Juniper arc, so they belong with an ENTITY-MIB sweep, which no arc audit has done.
   When this audit ran, `juniper_mx960` answered `entPhysicalModelName.1` with `MODEL123`.
-  nl6#821 corrected that row to `MX960`, together with the chassis `entPhysicalDescr.1` and `entPhysicalVendorType.1`.
+  A later change corrected that row to `MX960`, together with the chassis `entPhysicalDescr.1` and `entPhysicalVendorType.1`.
   The rest of the class is still open.
   The Arista audit left the same class open for the same reason.
 - **Which container index a Routing Engine occupies**, and therefore whether the renamed rows sit on the right row of a right-shaped table.
@@ -881,7 +880,7 @@ So the label states what is known and nothing more, and it says so in the file, 
 The fourteen, one arc each: `check_point_15600` (2620), `dell_emc_unity` (1139), `dell_poweredge_r750` (674), `dlink_dgs3630` (171), `extreme_vsp4450` (1916), `fortinet_fortigate_600e` (12356), `hpe_proliant_dl380` (232), `huawei_ne8000` (2011), `ibm_power_s922` (2), `nec_ix3315` (119), `netapp_ontap` (789), `nokia_7750_sr12` (6527), `pure_storage_flasharray` (40482), `sonicwall_nsa6700` (8741).
 
 **Fourteen profiles, twenty-five parts.** Eleven of them carry their arc in two parts and three in one.
-Nineteen parts were labelled first, and nl6#821 labelled six more.
+Nineteen parts were labelled first, and six more were labelled when `entPhysicalVendorType` became OID-typed.
 The marker is therefore **per part**, not per profile: a per-profile marker leaves that second file looking checked, and the label's entire value is that a reader who opens the file sees it.
 
 Each label states five things and claims nothing else:
