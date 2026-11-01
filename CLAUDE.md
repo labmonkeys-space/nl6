@@ -108,13 +108,13 @@ sudo ./nl6 [flags]
 
 # UDP syslog export flags (RFC 5424 / RFC 3164)
 -syslog-collector <host:port>     # [seed]   Seed collector for auto-start batch (default port 514)
--syslog-transport <t>             # [seed]   udp (default) | tcp (RFC 6587) | tls (RFC 5425: tcp inside TLS, port 6514 default, octet-counting FORCED). TCP is one connection PER DEVICE with capped-backoff reconnect and keepalives; per-device via REST `syslog.transport`.
--syslog-framing <f>               # [seed]   octet-counting (default) | non-transparent. TCP only — setting it under udp is REJECTED at startup, not ignored (nl6#445 failure mode).
+-syslog-transport <t>             # [seed]   udp (default) | tcp (RFC 6587) | tls (RFC 5425: tcp inside TLS, port 6514 default, octet-counting REQUIRED: any other framing is a 400 or fatal at startup). TCP is one connection PER DEVICE with capped-backoff reconnect and keepalives; per-device via REST `syslog.transport`.
+-syslog-framing <f>               # [seed]   octet-counting (default) | non-transparent. tcp and tls only (tls accepts octet-counting only); setting it under udp is REJECTED at startup, not ignored (nl6#445 failure mode).
 -syslog-format <fmt>              # [seed]   5424 (default, structured) | 3164 (legacy BSD)
 -syslog-interval <duration>       # [global] SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 10s). Per-device interval is REJECTED with 400; silence a fleet with -fidelity
 -syslog-global-cap <rate>         # [global] Simulator-wide rate ceiling (0 = unlimited)
 -syslog-catalog <path>            # [global] Override embedded universal 6-entry catalog
--syslog-source-per-device         # [global] Source IP = device IP (default: true; bind failure is non-fatal, falls back to shared socket)
+-syslog-source-per-device         # [global] Source IP = device IP (default: true). Under udp a bind failure is non-fatal and falls back to the shared socket; tcp and tls require it, so false fails their attach
 
 # Tests
 cd go
