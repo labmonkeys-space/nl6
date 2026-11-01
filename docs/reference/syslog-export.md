@@ -154,7 +154,7 @@ Per-entry:
 |-------|------|----------|---------|
 | `name` | string | yes | Unique within the catalog. Used by the HTTP fire-on-demand endpoint and for log attribution. |
 | `weight` | integer | no (default `1`) | Relative weight for weighted-random selection. `0` or omitted is coerced to `1`; a negative value fails catalog load. To keep an entry out of scheduled firing, give it a `role`. |
-| `role` | string | no | Tags the entry as state-driven. Allowed: `link-down`, `link-up`. Unknown values fail catalog load. A role-tagged entry is excluded from the scheduler's weighted pick and fires only through `EntriesByRole` on an interface oper-status transition. Empty means untagged, scheduler-driven. |
+| `role` | string | no | Tags the entry as state-driven. Allowed: `link-down`, `link-up`, `optical-sd-raise`, `optical-sd-clear`, `optical-sf-raise`, `optical-sf-clear`. Unknown values fail catalog load, and the error lists the allowed roles. A role-tagged entry is excluded from the scheduler's weighted pick. The link roles fire on an interface oper-status transition, the optical roles on an optical alarm raise or clear. Empty means untagged, scheduler-driven. |
 | `facility` | string or integer | yes | Canonical name (`kern`..`local7`) or integer 0..23. |
 | `severity` | string or integer | yes | Canonical name (`emerg`..`debug`) or integer 0..7. |
 | `appName` | string | yes | RFC 5424 APP-NAME / RFC 3164 TAG. 1..48 ASCII chars; sanitised at render time. |
