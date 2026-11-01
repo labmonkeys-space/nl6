@@ -70,9 +70,12 @@ nl6.local:53 {
 curl -s localhost:8080/api/v1/devices | jq -r '.data[].ip'
 dig @localhost -p 5353 nl6.local AXFR | grep ' A '   # the forward names + IPs
 
-# Forward + reverse against CoreDNS (host :53):
-dig @localhost core-rtr-01.nl6.local +short          # device name -> 10.42.0.x
+# Reverse against CoreDNS (host :53):
 dig @localhost -x 10.42.0.5 +short                   # 10.42.0.5  -> ip4.mgmt.<name>.nl6.local.
+
+# Take the device name from that PTR, then resolve it forward:
+NAME=$(dig @localhost -x 10.42.0.5 +short | sed 's/^ip4\.mgmt\.//')
+dig @localhost "$NAME" +short                        # <name>.nl6.local. -> 10.42.0.5
 
 # Publish + NOTIFY counters:
 curl -s localhost:8080/api/v1/dns/status | jq

@@ -356,7 +356,8 @@ A single Minion and a 4 vCPU Core with a single-partition sink is not a tuned pr
 A ceiling only earns its place in a capacity plan if it survives contact with the fleet it is meant to describe, and this one does not survive it intact.
 
 Capacity here **rises with offered rate**.
-Both rows below were measured on the same 500-device fleet at the same 4 partitions, so worker count is held fixed and only the per-device rate differs:
+The three rows below were measured on the same 500-device fleet.
+The 900/s and 3000/s rows ran at the same 4 partitions, so worker count is held fixed and only the per-device rate differs:
 
 | offered | per device | mean batch | drain rate |
 |---|---|---|---|
@@ -386,7 +387,8 @@ This inverts the usual sizing question.
 The number to check is not "how many messages per second will the fleet send" but **"how many messages per second will the busiest devices send during an incident"**, since that is both when volume peaks and where the measured capacity is highest.
 
 Two honest limits on the above.
-The three rows are measured; the 10,000-device extrapolation is **inference from them** and has not been run.
+The three rows are measured.
+Applying them to a production fleet at rest, as the paragraphs above do, is **inference from them** and has not been run.
 It assumes only that the measured dependence on per-device rate continues down to 0.03/s.
 It deliberately does not assume that batching causes it, since the paragraph above shows that attribution failing.
 It is consistent with the 160/s row (batch exactly 1.0) but unconfirmed at fleet scale.

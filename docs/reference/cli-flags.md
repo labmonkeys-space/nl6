@@ -193,7 +193,7 @@ The tick interval's upper bound stays a logged fallback: a value above 1h is rep
 The REST per-device blocks carry **no cadence field at all**: `flow.tick_interval`, `traps.interval` and `syslog.interval` are rejected with 400, and the error names the flag to use instead.
 The other REST durations (`active_timeout`, `inactive_timeout`, `inform_timeout`, `sample_interval`) are Go duration strings (`"30s"`); a bare integer is rejected with 400.
 
-See [Web API](web-api.md) for the per-device block schema and [Migration](../ops/migration-per-device-exports.md) for converting pre-per-device-config invocations.
+See [Web API](web-api.md) for the per-device block schema.
 
 ## Flow export flags
 

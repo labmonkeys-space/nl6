@@ -1,6 +1,8 @@
 # gNMI dial-in
 
-Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. The target serves OpenConfig interface state and counter telemetry, scoped to `/interfaces/interface[name=*]/state/*`.
+Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. Every device serves OpenConfig interface state and counter telemetry under `/interfaces/interface[name=*]/state/*`.
+Optical transport types add optical-channel paths under `/components`.
+The types that ship a gNMI catalogue serve further subtrees, such as `/system`, `/components`, subinterfaces and BGP neighbours (see [Catalogue-driven paths](#catalogue-driven-paths)).
 Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant.
 
 This page covers **dial-in**, the default, where the collector connects to the device.
@@ -20,9 +22,12 @@ To turn the subsystem off simulator-wide, pass `-gnmi-disable`.
 
 ## TLS
 
-**Dial-in is TLS by default.** The server presents the simulator's shared self-signed certificate (the same cert used by the HTTPS REST surface).
+**Dial-in is TLS by default.** The server presents the simulator's shared certificate (the same cert used by the HTTPS REST surface).
+A CA generated at startup signs it, and `GET /api/v1/tls/ca` serves that CA certificate.
 Client-certificate authentication is **not required**.
-Connect with `gnmic --skip-verify` for the easy path, or `gnmic --tls-ca <path>` if you want the cert chain validated.
+Connect with `gnmic --skip-verify`.
+`gnmic --tls-ca <path>` with that CA does not pass host verification.
+The certificate carries only the IP SANs `0.0.0.0` and `::`, never a device IP.
 
 > The shared-cert model is a simulator convention. Every simulated device presents the same certificate. The simulator does not pretend to model PKI.
 
@@ -39,7 +44,7 @@ See [Troubleshooting](#troubleshooting).
 
 ## Supported paths
 
-Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
+Every device serves these OpenConfig `interfaces` paths, read-only:
 
 | Path leaf | Type | Source |
 |---|---|---|
@@ -64,10 +69,10 @@ Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
 Wildcards (`name=*`) enumerate every ifIndex known to the device except subinterfaces whose names are `<interface>.<unit>` (see [interface state](interface-state.md#subinterfaces)); an interface stacked by `ifStackTable`, such as Nokia's `toWAN`, is still listed.
 A subinterface name returns `codes.NotFound`, and its state changes produce no ON_CHANGE update on these paths.
 Subtree subscribes (e.g. `/state/counters` with no leaf) flatten to all 12 counter leaves in one tick.
-Specific names (`name=GigabitEthernet0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.
+Specific names (`name=MgmtEth0/RP0/CPU0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.
 
 Paths outside the tables on this page return `codes.NotFound`.
-This includes `/interfaces/interface/config/*`, `/interfaces/interface/subinterfaces`, and anything outside `/interfaces/` and `/components/`.
+On a type without a catalogue, this includes `/interfaces/interface/config/*`, `/interfaces/interface/subinterfaces`, and anything outside `/interfaces/` and `/components/`.
 
 ## Optical channel paths (optical transport types)
 
@@ -351,7 +356,7 @@ gnmic -a 192.168.100.1:9339 --skip-verify capabilities
 
 # Get all counters for one interface
 gnmic -a 192.168.100.1:9339 --skip-verify get \
-    --path '/interfaces/interface[name=GigabitEthernet0/0]/state/counters'
+    --path '/interfaces/interface[name=MgmtEth0/RP0/CPU0/0]/state/counters'
 
 # Get in-octets across every interface (wildcard)
 gnmic -a 192.168.100.1:9339 --skip-verify get \
@@ -413,7 +418,7 @@ supported encodings:
 On an optical transport device the model list carries three more entries: `openconfig-terminal-device` (2026-01-14), `openconfig-platform` (2025-07-15) and `openconfig-platform-transceiver` (2026-03-25).
 Packet device types advertise only `openconfig-interfaces`, so a collector that generates subscriptions from `Capabilities` never subscribes optical paths against a device that cannot serve them.
 
-`--skip-verify` is required because every device presents the simulator's shared self-signed cert (see [TLS](#tls) above).
+`--skip-verify` is required because no device certificate carries the device IP as a SAN (see [TLS](#tls) above).
 
 ### 3. Get (confirm path resolution and counter shape)
 
@@ -421,7 +426,7 @@ Single leaf:
 
 ```bash
 gnmic -a 10.42.0.1:9339 --skip-verify get \
-    --path '/interfaces/interface[name=GigabitEthernet0/0]/state/counters/in-octets'
+    --path '/interfaces/interface[name=MgmtEth0/RP0/CPU0/0]/state/counters/in-octets'
 ```
 
 Expected output (timestamp and value differ on each call, because the counter is a sine-wave function of time):
@@ -433,7 +438,7 @@ Expected output (timestamp and value differ on each call, because the counter is
     "time": "2026-05-09T10:00:30Z",
     "updates": [
       {
-        "Path": "interfaces/interface[name=GigabitEthernet0/0]/state/counters/in-octets",
+        "Path": "interfaces/interface[name=MgmtEth0/RP0/CPU0/0]/state/counters/in-octets",
         "values": {
           "interfaces/interface/state/counters/in-octets": "12345678"
         }
@@ -503,9 +508,9 @@ The gNMI / SNMP / sFlow surfaces all read from the same `IfCounterCycler.GetDyna
 # Read ifHCInOctets.1 via SNMP
 snmpget -v2c -c public 10.42.0.1 1.3.6.1.2.1.31.1.1.1.6.1
 
-# Read /interfaces/interface[name=Gi0/0]/state/counters/in-octets via gNMI
+# Read /interfaces/interface[name=MgmtEth0/RP0/CPU0/0]/state/counters/in-octets via gNMI
 gnmic -a 10.42.0.1:9339 --skip-verify get \
-    --path '/interfaces/interface[name=GigabitEthernet0/0]/state/counters/in-octets'
+    --path '/interfaces/interface[name=MgmtEth0/RP0/CPU0/0]/state/counters/in-octets'
 ```
 
 The two values should agree within the sub-second elapsed between the two commands.
@@ -604,9 +609,9 @@ The TLS counters are explained under [Troubleshooting](#troubleshooting), the st
 - **Read-only.** `Set` returns `Unimplemented`. The simulator's deterministic-state guarantee is incompatible with mutation.
 - **No POLL.** Returns `Unimplemented`. STREAM/SAMPLE and ONCE cover the common cases.
 - **No `suppress_redundant`.** A SAMPLE stream sends every interval, including the held value of an interface whose `oper-status` is not `up(1)` (see [Interface state](./interface-state.md)).
-- **Single shared certificate.** All devices present the same self-signed cert. Real fleets have per-device PKI; the simulator does not.
+- **Single shared certificate.** All devices present the same CA-signed cert. Real fleets have per-device PKI; the simulator does not.
 - **No client-cert auth.** The simulator runs in lab contexts; mutual-TLS is out of scope.
-- **No subinterfaces, no `/system`, no LLDP.** The interface surface serves only the state leaves listed above. `/components` is served only for `optical-channel` on optical transport types.
+- **No subinterfaces, no `/system`, no LLDP without a catalogue.** A type without a catalogue serves only the interface state leaves listed above, plus `optical-channel` under `/components` on optical transport types. `juniper_mx10004` and `cisco_asr9902` also serve the subtrees their [catalogues](#catalogue-driven-paths) list, including subinterfaces and `/system`. No type serves LLDP.
 
 ## Operational notes
 

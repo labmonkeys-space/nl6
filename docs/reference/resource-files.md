@@ -2,8 +2,8 @@
 
 A device type ships as a directory under `go/nl6/resources/<slug>/` holding one or more JSON files, or as a legacy single file `go/nl6/resources/<slug>.json`.
 The directory wins when both exist.
-`resources.go` loads and caches a device type the first time a device of that type is created (the startup default, `asr9k`, at startup), merging the `snmp`, `ssh`, and (optionally) `api` sections of every `*.json` file in its directory.
-There are currently 409 JSON files across 31 device-type directories, plus 3 shared catalogs under `_common/`.
+`resources.go` loads and caches a device type the first time a device of that type is created (the startup default, `asr9k`, at startup), merging the `snmp`, `ssh`, and (optionally) `api` and `optical` sections of every `*.json` file in its directory.
+There are currently 414 JSON files across 31 device-type directories, plus 3 shared catalogs under `_common/`.
 
 **Editing a profile on a running simulator.** A cached profile is not re-read on its own.
 `POST /api/v1/resources/reload` evicts the cache so the next device creation reads the file as it is now; devices already created keep the set they were built from until they are recreated.
@@ -15,7 +15,8 @@ The loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup
 
 ## JSON schema
 
-Each file is a JSON object with up to three top-level keys:
+Each file is a JSON object with up to four top-level keys: `snmp`, `ssh`, `api` and `optical`.
+The example shows the first three:
 
 ```json
 {
@@ -47,6 +48,11 @@ There is no `status` field.
 The `api` section is optional and used primarily for storage device simulation.
 See [Device types → Storage systems](device-types.md#storage-systems).
 
+The `optical` section is the OCH inventory of an optical transport type.
+Each entry has `name`, `line_port`, `frequency_mhz`, `operational_mode` and `target_output_power_dbm`.
+Only `ciena_waveserver5` ships one, in `ciena_waveserver5_optical.json`.
+See [Optical telemetry](optical-telemetry.md).
+
 ### Junos CLI outputs agree with each other
 
 On a Junos profile, `show configuration`, `show interfaces terse` and `show route instance detail` describe one device, and a corpus test keeps them that way.
@@ -61,17 +67,22 @@ Each device type directory is split by concern so the files stay small and revie
 The loader is directory-based: any `*.json` file inside is merged, so split files however you like.
 A single `<slug>.json` beside the directories is still accepted and goes through the same load rules.
 
-A typical naming convention:
+The shipped `asr9k` directory:
 
 ```
 go/nl6/resources/asr9k/
-├── asr9k_snmp_system.json         # MIB-II system group
-├── asr9k_snmp_interfaces.json     # IF-MIB / IF-MIB-HC
-├── asr9k_snmp_entity.json         # Entity MIB
-├── asr9k_snmp_vendor.json         # vendor-specific OIDs
-├── asr9k_ssh.json                 # SSH command/response
-└── asr9k_api.json                 # (storage devices only)
+├── asr9k_snmp_1_1.json … asr9k_snmp_1_7.json   # MIB-II system group, ifTable
+├── asr9k_snmp_2_1.json, asr9k_snmp_2_2.json      # ifXTable
+├── asr9k_snmp_3_1.json … asr9k_snmp_3_7.json   # ENTITY-MIB
+├── asr9k_snmp_4.json, asr9k_snmp_5.json          # ENTITY-MIB
+├── asr9k_snmp_6.json                             # ipRouteTable
+├── asr9k_snmp_hcif.json                          # ifXTable high-capacity counters
+├── asr9k_snmp_ospf_bgp.json                      # OSPF-MIB and BGP4-MIB
+├── asr9k_ssh_1.json                              # SSH command/response
+└── asr9k_ssh_vrf.json                            # SSH command/response for VRFs
 ```
+
+Storage and GPU server types add a part carrying `api` entries for their REST responses.
 
 Browse [`go/nl6/resources/asr9k/`](https://github.com/labmonkeys-space/nl6/tree/main/go/nl6/resources/asr9k) for a representative example.
 
@@ -127,6 +138,7 @@ If you have hand-written resource files or scripts, check for these before upgra
 | A value that does not encode at its leaf's declared type (a non-numeric `Counter32`, an unparseable `IpAddress`, a `Counter64` with a sign, a numeric value with surrounding whitespace or units) | Served as an OCTET STRING, and a collector typing the OID per its MIB dropped the metric on every poll | Invalid content |
 
 Three rules are enforced on `snmp` values at load, and they cover resource files only.
+[SNMP data validation](snmp-data-validation.md) lists the rules, what they do not cover, and the vendor arc audit in one place.
 The typed-class rule is the most likely of the three to break a hand-written file: nl6's own shipped set carried 45 violations of it, and it is fatal at startup and a `400` over REST.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.
 See [SNMP reference → Resource values are validated at load](../explanation/snmp-data-fidelity.md#resource-values-are-validated-at-load) for the canonical description of all three, including what each covers and what stays uncovered.
@@ -180,7 +192,9 @@ See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-fi
 
 ## Round-robin and category selection
 
-The REST API's [`/api/v1/devices`](web-api.md#create-devices) endpoint supports `round_robin: true` (spread device creation across every registered resource file) and `category: "<name>"` (restrict to a single category).
+The REST API's [`/api/v1/devices`](web-api.md#create-devices) endpoint supports `round_robin: true` (spread device creation across the round-robin list) and `category: "<name>"` (restrict to a single category).
+The round-robin list holds 29 of the 31 types.
+It leaves out `cisco_asr9902` and `juniper_mx10004`, so a round-robin batch never creates them.
 `category` accepts exactly five strings: `Network Devices`, `GPU Servers`, `Storage`, `Servers`, `Optical Transport`.
 Anything else matches no device type and is rejected with 400. The catalog of categories and per-category device lists lives in [Device types](device-types.md).
 

@@ -19,11 +19,12 @@ On bare metal, install the prerequisites above; for large fleets see the host tu
 
 ```bash
 git clone https://github.com/labmonkeys-space/nl6.git
-cd nl6/go
-go mod tidy
 cd nl6
-go build -o nl6 .
+make build
+cd go/nl6
 ```
+
+`make build` stamps the version into the binary and writes it to `go/nl6/nl6`.
 
 ## Run the simulator
 
@@ -58,4 +59,4 @@ See [SNMP reference](../reference/snmp.md) for the protocol coverage and the dyn
 - **Change device state**: [Enable SNMP SET](snmp-set.md) to shut and unshut an interface over SNMP. Writes are off by default.
 - **Scale up**: [Scaling](../ops/scaling.md) covers the 30k-device tuning.
 - **Flow export**: [Flow export (operator guide)](../ops/flow-export.md) to plug nl6 into a NetFlow / IPFIX / sFlow collector.
-- **Device types**: [Device types](../reference/device-types.md) lists the 29 simulated devices across 9 categories.
+- **Device types**: [Device types](../reference/device-types.md) lists the 31 simulated device types across 9 categories.

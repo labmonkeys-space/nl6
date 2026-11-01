@@ -4,6 +4,7 @@ nl6 can publish the simulated fleet to DNS so consumers refer to devices by name
 nl6 acts as a **hidden DNS primary**: a [CoreDNS](https://coredns.io) secondary transfers the zones and serves clients.
 The subsystem is **off by default**.
 Enable it with `-dns-enable`.
+For a step-by-step setup with a CoreDNS secondary, see [Resolve devices with DNS](../getting-started/dns.md).
 
 ```
                      device create/delete

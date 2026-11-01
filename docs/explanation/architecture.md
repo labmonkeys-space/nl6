@@ -43,14 +43,14 @@ The namespace was `opensim` before the fork was renamed; see [Network namespace]
 
 | | gNMI dial-in | gNMI dial-out | NETCONF | SSH CLI |
 |---|---|---|---|---|
-| **Model** | OpenConfig, plus native origins from a per-type catalogue | Same as dial-in | Cisco native `Cisco-IOS-XE-interfaces-oper` | None, CLI text |
+| **Model** | OpenConfig, plus native origins from a per-type catalogue | Same as dial-in | Cisco native `Cisco-IOS-XE-interfaces-oper` (IOS XE dialect); Junos `NETCONF` event stream (Junos dialect) | None, CLI text |
 | **Encoding** | `JSON_IETF`, `PROTO` | Same as dial-in | XML | Plain text |
-| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem | SSH shell |
-| **Port (default)** | `9339` | Collector's port | `830` | `22` |
+| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem; TLS 1.2 on `juniper_mx10004` | SSH shell |
+| **Port (default)** | `9339` | Collector's port | `830` (SSH), `6513` (TLS) | `22` |
 | **Who connects** | Collector dials the device | Device dials the collector | Client dials the device | Client dials the device |
-| **Auth** | Shared self-signed server cert, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login | Device SSH login |
+| **Auth** | Shared server cert signed by the CA at `GET /api/v1/tls/ca`, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login; mutual TLS on `6513` | Device SSH login |
 | **Plaintext option** | `-gnmi-tls=false` | `tls.enabled=false` | Not available | Not available |
-| **Devices** | All | Opt-in per device | `cisco_catalyst_9500` only | All |
+| **Devices** | All | Opt-in per device | `cisco_catalyst_9500`, `juniper_mx10004` | All |
 | **Default** | On | Off | Off | On |
 | **Writes** | No, `Set` is `Unimplemented` | No | No | No |
 
@@ -61,7 +61,8 @@ SSH appears twice because NETCONF reuses it as a transport: the same login and h
 
 - **gNMI dial-in**: `Capabilities`, `Get` and `Subscribe` in SAMPLE, ON_CHANGE and ONCE mode over `/interfaces` and `/components`. `cisco_asr9902` and `juniper_mx10004` add a per-type catalogue with native origins. See [gNMI dial-in](../reference/gnmi.md).
 - **gNMI dial-out**: the dial-in payload pushed to a collector over Arista `gnmireverse`, dropped on outage. See [gNMI dial-out](../reference/gnmi-dial-out.md).
-- **NETCONF**: the IOS XE draft `establish-subscription` with `push-update` and `push-change-update` on interface state. No `get`, no `edit-config`, no RFC 8639. See [NETCONF](../reference/netconf.md).
+- **NETCONF**: on `cisco_catalyst_9500`, the IOS XE draft `establish-subscription` with `push-update` and `push-change-update` on interface state. No `get`, no `edit-config`, no RFC 8639.
+  On `juniper_mx10004`, the Junos dialect over SSH and TLS: `get`, `get-configuration` and `create-subscription` on the `NETCONF` stream, which carries mib2d link events. See [NETCONF](../reference/netconf.md).
 
 ## Package layout
 
@@ -80,6 +81,7 @@ The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile) is 
 | Device lifecycle | CLI entry, `SimulatorManager` with shared keys and certs, per-device startup and protocol server lifecycle | `simulator.go`, `manager.go`, `device.go` | |
 | SNMP stack | Request handling, OID lookup via `sync.Map`, response building, ASN.1 BER/DER | `snmp_server.go`, `snmp.go`, `snmp_handlers.go`, `snmp_response.go`, `snmp_encoding.go` | [SNMP](../reference/snmp.md) |
 | SNMPv3 | Message framing, DES / AES128 privacy, RFC 3414 USM key derivation, HMAC-MD5-96 / HMAC-SHA-96 and inbound verification, verified against net-snmp | `snmpv3.go`, `snmpv3_crypto.go`, `snmpv3_usm.go` | [SNMP](../reference/snmp.md) |
+| SNMP SET | `SetRequest` on `ifAdminStatus` through the RFC 3416 ladder, gated by a write community (v1/v2c) and a minimum security level (v3) | `snmp_set.go` | [Enable SNMP SET](../getting-started/snmp-set.md) |
 | Interface state | Link and admin state per ifIndex, flap scheduler, REST control, link traps and syslog | `interface_state.go`, `if_counters.go` | [Interface state](../reference/interface-state.md) |
 | Metrics engine | 100-point pre-generated sine-wave patterns per device, per-GPU metrics, per-category baselines | `metrics_cycler.go`, `gpu_metrics.go`, `device_profiles.go` | [GPU simulation](../reference/gpu/index.md) |
 | Network infrastructure | TUN interfaces, the `nl6sim` namespace, parallel pre-allocation (100 to 200 workers by default, sized by batch; `max_workers` overrides it, clamped to 500) | `tun.go`, `netns.go`, `prealloc.go` | [Network namespace](../ops/network-namespace.md) |
@@ -89,7 +91,11 @@ The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile) is 
 | Syslog export | Catalog-driven RFC 5424 / 3164 messages over UDP, TCP or TLS, same scheduler shape as traps | `syslog_*.go` | [Syslog export](../reference/syslog-export.md) |
 | gNMI dial-in | Path resolver, `Capabilities` / `Get` / `Subscribe` handlers, per-stream ticker with a bounded send buffer, per-device gRPC listener | `gnmi_paths.go`, `gnmi_handlers.go`, `gnmi_subscribe.go`, `gnmi_server.go`, `gnmi_manager.go` | [gNMI dial-in](../reference/gnmi.md) |
 | gNMI dial-out | Per-device gRPC client: one `ClientConn` and one `Publish` stream, reconnect with backoff, the same payload as dial-in with `Prefix.Target` set to the device IP | `gnmi_dialout_*.go` | [gNMI dial-out](../reference/gnmi-dial-out.md) |
-| NETCONF | Per-device SSH `netconf` subsystem on `cisco_catalyst_9500`, IOS XE draft subscriptions pushed from the interface state engine | `netconf_*.go` | [NETCONF](../reference/netconf.md) |
+| NETCONF | Per-device SSH `netconf` subsystem on `cisco_catalyst_9500` and `juniper_mx10004`, plus a mutual-TLS listener on `juniper_mx10004`; IOS XE draft subscriptions and Junos link events pushed from the interface state engine | `netconf_*.go` | [NETCONF](../reference/netconf.md) |
+| Optical engine | Received power, OSNR, pre-FEC BER and FEC block counters per OCH component, health bands and degradation episodes | `optical_*.go` | [Optical telemetry](../reference/optical-telemetry.md) |
+| Load-test scenarios | Armed, windowed experiments that gate push protocols and write a sent-ledger report | `scenario_*.go` | [Load-test scenarios](../reference/loadtest-overview.md) |
+| Continuous profiling | Runtime-togglable Pyroscope push and the gated `/debug/pprof/` surface, off by default | `profiling.go`, `profiling_api.go` | [Profiling](../ops/profiling.md) |
+| Prometheus service discovery | One HTTP SD target group per running device for snmp_exporter | `prometheus_sd.go` | [Prometheus service discovery](../reference/prometheus-sd.md) |
 | LLDP topology | Inter-device link graph and the dynamic LLDP-MIB provider | `topology.go`, `lldp_table.go` | [LLDP topology](../reference/lldp-topology.md) |
 | DNS service discovery | Hidden-primary zone over the live device map for a CoreDNS secondary | `dns_*.go` | [DNS service discovery](../reference/dns-service-discovery.md) |
 | Resource loading | Loads and caches a device type the first time a device of that type is created; only the auto-start default, `asr9k`, loads at startup | `resources.go` | [Resource files](../reference/resource-files.md) |

@@ -159,7 +159,7 @@ IF-MIB::ifAdminStatus.48 = INTEGER: up(1)
 ```
 
 The examples below use ifIndex 2, which on that profile is `TenGigE0/0/0/0`.
-Interface numbering is a property of the device profile, so check the walk before picking an index on a fleet built with `-round-robin` or your own resource files.
+Interface numbering is a property of the device profile, so check the walk before picking an index on a fleet created with the REST field `round_robin: true` or from your own resource files.
 
 ### With SNMPv1 or v2c
 
@@ -241,7 +241,8 @@ SNMPv1 has a smaller set of error values, so those four collapse under `-v1`: `w
 
 ### Confirm the policy took effect
 
-Every boot prints the policy in one line, before any device exists:
+Every boot prints the policy in one line, before any device exists.
+A boot with `-snmp-write-community` and `-snmpv3-engine-id` set prints:
 
 ```
 SNMP write admission (auto-start batch; REST-created devices use the create body, not these flags) — v1/v2c SET: admitted with the configured write community; v3 SET: minimum security level authNoPriv

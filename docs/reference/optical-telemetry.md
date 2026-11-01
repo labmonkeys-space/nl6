@@ -248,6 +248,16 @@ If your pipeline parses BER as a float, this is where you find out.
 
 ### 7. Negative and edge handling
 
+The last command needs a packet device at `10.42.0.2`.
+Create one first:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H "Content-Type: application/json" \
+  -d '{"start_ip":"10.42.0.2","device_count":1,"netmask":"16",
+       "resource_file":"asr9k.json"}'
+```
+
 ```bash
 # Unknown component -> NotFound
 gnmic -a 10.42.0.1:9339 --skip-verify get \

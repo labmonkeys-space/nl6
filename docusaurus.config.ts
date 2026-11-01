@@ -114,6 +114,8 @@ const config: Config = {
           {from: '/reference/loadtest-collector-ceiling', to: '/explanation/loadtest-collector-ceiling'},
           {from: '/reference/loadtest-scenarios', to: '/ops/loadtest-scenarios'},
           {from: '/reference/loadtest-runbooks', to: '/ops/loadtest-runbooks'},
+          // Retired: migration guide for flags removed in v0.5.0.
+          {from: '/ops/migration-per-device-exports', to: '/reference/cli-flags'},
           // Retired: design plans for external repositories (probler, l8parser).
           {from: ['/reference/gpu/proto-model', '/reference/gpu/pollaris'], to: '/reference/gpu'},
         ],

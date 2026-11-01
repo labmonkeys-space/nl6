@@ -42,13 +42,13 @@ Run these before a large deployment:
 - **`ulimit -Hn` / `ulimit -Sn`** must exceed the device count by a comfortable margin (each device opens several sockets).
 - **`htop`** during bring-up shows a short CPU spike, which is normal as TUN interfaces come up in parallel. Steady-state load should be near-idle.
 - **`ip netns exec nl6sim ip addr`** confirms TUN interfaces exist inside the namespace. Unexpected entries in the host namespace usually mean `-no-namespace` was used.
-- **`/api/v1/system-stats`** returns the current file-descriptor count, memory, and load average. See [Web API](../reference/web-api.md#endpoint-catalog).
+- **`/api/v1/system-stats`** returns process and host memory, CPU usage, and load average. See [Web API](../reference/web-api.md#endpoint-catalog).
 
 ## Scale in a container
 
 When running under Docker, pair the host tuning above with:
 
-- `--cap-add=NET_ADMIN` + `--device=/dev/net/tun` so the container can manage TUN / netns.
+- `--cap-add=NET_ADMIN` + `--cap-add=SYS_ADMIN` + `--device=/dev/net/tun` so the container can manage TUN / netns. `SYS_ADMIN` lets the simulator enter the `nl6sim` namespace with `setns`.
 - `--network=host` so per-device TUN IPs are reachable from outside the container.
 - A memory budget of about `16 KiB * device_count` of live heap plus a comfortable buffer for the Go runtime.
 
