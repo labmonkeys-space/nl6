@@ -26,6 +26,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -71,6 +72,14 @@ const (
 	roleOpticalSFClear = "optical-sf-clear"
 )
 
+// catalogRoles is every accepted non-empty role, in the order the loader errors
+// list them. validRole and both unknown-role errors read it, so the message
+// cannot fall behind the check.
+var catalogRoles = []string{
+	roleLinkDown, roleLinkUp,
+	roleOpticalSDRaise, roleOpticalSDClear, roleOpticalSFRaise, roleOpticalSFClear,
+}
+
 // opticalRoleFor maps an evaluator transition onto the catalog role that
 // publishes it. Keeping the mapping here, next to the constants, means the
 // detection side never has to know catalog vocabulary.
@@ -90,12 +99,7 @@ func opticalRoleFor(cond opticalCondition, raised bool) string {
 // validRole reports whether a catalog `role` value is recognized. Empty is
 // valid (untagged). Used by both trap and syslog catalog loaders.
 func validRole(role string) bool {
-	switch role {
-	case "", roleLinkDown, roleLinkUp,
-		roleOpticalSDRaise, roleOpticalSDClear, roleOpticalSFRaise, roleOpticalSFClear:
-		return true
-	}
-	return false
+	return role == "" || slices.Contains(catalogRoles, role)
 }
 
 // linkTrapOIDs are the well-known linkDown/linkUp snmpTrapOIDs, used only to
@@ -823,8 +827,8 @@ func compileEntry(raw catalogEntryJSON, source string, idx int) (*CatalogEntry, 
 	}
 
 	if !validRole(raw.Role) {
-		return nil, fmt.Errorf("trap catalog: %s entry %q: unknown role %q (allowed: link-down, link-up)",
-			source, raw.Name, raw.Role)
+		return nil, fmt.Errorf("trap catalog: %s entry %q: unknown role %q (allowed: %s)",
+			source, raw.Name, raw.Role, strings.Join(catalogRoles, ", "))
 	}
 	entry := &CatalogEntry{
 		Name:        raw.Name,
