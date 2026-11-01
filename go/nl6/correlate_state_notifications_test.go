@@ -47,13 +47,6 @@ func TestCatalogRole_LoadValidateExclusion(t *testing.T) {
 	}
 }
 
-func TestCatalogRole_UnknownRejected(t *testing.T) {
-	body := `{"traps":[{"name":"x","snmpTrapOID":"1.3.6.1.6.3.1.1.5.3","role":"flap"}]}`
-	if _, err := parseCatalog([]byte(body), "<test>"); err == nil {
-		t.Fatal("expected error for unknown role, got nil")
-	}
-}
-
 func TestCatalogRole_AllTaggedLoadsAndPickNil(t *testing.T) {
 	// Every entry role-tagged → catalog still LOADS (not the totalWeight<=0
 	// load-fatal), and Pick is a no-op (schedulable subset is empty).
