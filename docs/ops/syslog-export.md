@@ -1,7 +1,7 @@
 # Syslog export (operator guide)
 
-nl6 can emit UDP syslog messages in either **RFC 5424** (the modern structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy BSD format most network gear still defaults to) from every simulated device to a single collector such as `rsyslog`, `syslog-ng`, or an NMS syslog daemon.
-Each device uses its own IP as the UDP source by default, so collectors that key on source-IP → node mapping attribute messages correctly without extra work.
+nl6 can emit syslog messages in either **RFC 5424** (the modern structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy BSD format most network gear still defaults to) from every simulated device to a single collector such as `rsyslog`, `syslog-ng`, or an NMS syslog daemon.
+Each device uses its own IP as the source address by default, so collectors that key on source-IP → node mapping attribute messages correctly without extra work.
 
 UDP is the default transport.
 `-syslog-transport tcp` (RFC 6587) and `-syslog-transport tls` (RFC 5425) switch the auto-start batch to one connection per device.
@@ -59,7 +59,11 @@ Choose 3164 for downstream testing against legacy collectors or when the message
 ## Per-device source IP binding
 
 `-syslog-source-per-device=true` (the default) binds a UDP socket per device inside the `nl6sim` network namespace so the UDP source address on the wire matches the simulated device's IP.
-Per-device bind failures are **non-fatal**.
+The rest of this section applies to `udp`.
+Under `tcp` and `tls` each device dials its own connection from inside the namespace, and there is no shared-socket fallback.
+See [TCP refuses where UDP degrades](../reference/syslog-export.md#tcp-refuses-where-udp-degrades).
+
+Under `udp`, per-device bind failures are **non-fatal**.
 Unlike trap export's INFORM mode, syslog has no ack path that depends on symmetric source IPs.
 When a bind fails:
 
@@ -70,6 +74,7 @@ When a bind fails:
 Setting `-syslog-source-per-device=false` skips per-device binding entirely.
 Every device's messages arrive with the simulator host's IP as the source.
 Use this if the collector side doesn't care about source IP (e.g., it keys on `HOSTNAME` field or `structuredData` instead).
+Under `tcp` and `tls` this setting makes every attach fail, because a stream transport has no shared socket to fall back to.
 
 ## Rate cap and scheduling
 
@@ -84,6 +89,11 @@ Sizing guidance:
 - **Under-cap deliberately** to leave headroom for on-demand HTTP-API fires you inject for fault injection. On-demand fires **bypass the global cap** (test-harness use case).
 - `-syslog-global-cap 0` (the default) means unlimited.
 
+To silence the fleet's scheduled syslog without changing its configuration, start with `-fidelity` or toggle it with `POST /api/v1/fidelity`.
+Do not stretch `-syslog-interval` for this.
+On-demand fires still go through.
+See [Fidelity mode](loadtest-scenarios.md#fidelity-mode).
+
 ## Prerequisites inherited from flow / trap export
 
 Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow and trap export.
@@ -92,7 +102,7 @@ Three conditions apply:
 
 - **`iptables FORWARD` rule.** At startup the simulator inserts `FORWARD -i veth-sim-host -j ACCEPT` so Docker-present hosts (which default FORWARD to drop) allow per-device egress. Walkthrough: [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
 - **Route to the collector from inside the namespace.** Same default route via `veth-sim-host` (`10.254.0.1`); if you've customised host routing, verify with `sudo ip netns exec nl6sim ip route get <collector-ip>`.
-- **Collector-side `rp_filter`.** Reverse-path filtering on the collector host may drop UDP/514 packets whose source IP (`10.0.0.x`, `10.42.0.x`, whatever subnet your devices live in) isn't reachable back through the receiving interface. Loose mode fixes it:
+- **Collector-side `rp_filter`.** Reverse-path filtering on the collector host may drop syslog packets whose source IP (`10.0.0.x`, `10.42.0.x`, whatever subnet your devices live in) isn't reachable back through the receiving interface. Loose mode fixes it:
   ```bash
   sudo sysctl -w net.ipv4.conf.all.rp_filter=2
   sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
@@ -119,7 +129,7 @@ To see them, add `-if-flap-scenario typical` or `POST /api/v1/devices/{ip}/inter
 
 For vendor-flavoured content (e.g., Cisco `%LINK-3-UPDOWN:` or Juniper `MIB2D_IFD_IFL_ENCAPS_MISMATCH:`), select a device type with a per-type overlay.
 See [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays).
-Shipped overlays: `cisco_ios` (8 entries), `juniper_mx240` (7) and `ciena_waveserver5` (4 role-tagged optical pre-FEC alarms).
+Shipped overlays: `cisco_ios` (8 entries), `cisco_asr9902` (5), `juniper_mx240` (7), `juniper_mx10004` (7) and `ciena_waveserver5` (4 role-tagged optical pre-FEC alarms).
 
 If you need a specific message on demand:
 
@@ -145,10 +155,12 @@ See [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a
 | `subsystem_active: true` with `collectors: []` in `/api/v1/syslog/status` | No device has a `syslog` block | Pass `-syslog-collector` for the auto-start batch, or add a `syslog` block to the REST request |
 | `subsystem_active: true`, `sent` is 0 | Scheduler idle (no devices yet) | Wait for device creation to finish |
 | Messages sent but collector sees nothing | FORWARD rule missing or `rp_filter` blocking | See [Flow export → Flow troubleshooting](flow-export.md#flow-troubleshooting). The netns diagnostic steps apply verbatim |
-| Source IP on the wire is the host, not the device | Per-device bind failed for that device (non-fatal) | Check simulator logs for `per-device bind failed`; expected when run without netns (`-no-namespace`) |
+| Source IP on the wire is the host, not the device (`udp`) | Per-device bind failed for that device (non-fatal under `udp`) | Check simulator logs for `per-device bind failed`; expected when run without netns (`-no-namespace`) |
 | Collector parser chokes on the message format | Collector and simulator disagree on 5424 vs 3164 | Match `-syslog-format` to the collector's expected form |
 | `structuredData` missing from emitted messages | Running `-syslog-format 3164`. RFC 3164 doesn't support SD | Switch to 5424 or accept the loss |
-| `send_failures` climbing | Collector unreachable or firewalled | Verify collector listening on UDP/514; check firewall rules |
+| `send_failures` climbing on a `udp` row | Collector unreachable or firewalled | Verify the collector listens on UDP/514; check firewall rules |
+| `send_failures` climbing on a `tcp` or `tls` row | The device has no connection, so every fire fails until the reconnect loop succeeds | Verify the collector listens on TCP/514 (`tcp`) or TCP/6514 (`tls`). Under `tls`, check that the collector's certificate verifies against `-syslog-tls-ca` or `tls.ca_pem` |
+| No `syslog` config on a `tcp` or `tls` device, log says `requires -syslog-source-per-device` | Started with `-syslog-source-per-device=false` | Remove the flag. A stream transport has no shared-socket fallback |
 | Catalog load fails at startup naming a `resources/<slug>/syslog.json` | Malformed per-type JSON or a reserved template field | See [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays) for the schema and vocabulary |
 
 For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshooting](troubleshooting.md).

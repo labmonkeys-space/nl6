@@ -217,7 +217,7 @@ The load-time budget check is measured at the fleet's **own** wire format, so th
 
 RFC 3416 §4.2.6 mandates the first two varbinds of every SNMPv2 notification.
 The encoder always prepends them automatically.
-Catalog authors supply only body varbinds, and the catalog loader rejects entries that list either reserved OID:
+Catalog authors supply only body varbinds, and the catalog loader rejects entries that list any of the three reserved OIDs below:
 
 | Position | OID | Type | Source |
 |----------|-----|------|--------|
@@ -266,6 +266,7 @@ Top-level object:
 |-------|------|----------|---------|
 | `traps` | array | yes | List of catalog entries. Must contain at least one. |
 | `extends` | bool | no (default `true`) | **Per-type overlays only.** Controls whether the per-type catalog merges on top of the universal (`true`) or fully replaces it for devices of that type (`false`). Ignored on the universal catalog itself. |
+| `comment` | string | no | Free text for the catalog author. Ignored by the loader. Any other unknown top-level key fails catalog load. |
 
 Per-entry object:
 
@@ -282,7 +283,7 @@ Per-varbind object:
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `oid` | string | yes | Dotted-decimal OID. Templates allowed. Must not be `1.3.6.1.2.1.1.3.0` (`sysUpTime.0`) or `1.3.6.1.6.3.1.1.4.1.0` (`snmpTrapOID.0`). |
+| `oid` | string | yes | Dotted-decimal OID. Templates allowed. Must not be `1.3.6.1.2.1.1.3.0` (`sysUpTime.0`), `1.3.6.1.6.3.1.1.4.1.0` (`snmpTrapOID.0`) or `1.3.6.1.6.3.1.1.4.3.0` (`snmpTrapEnterprise.0`; use the entry's `snmpTrapEnterprise` field). |
 | `type` | string | yes | One of `integer`, `octet-string`, `oid`, `counter32`, `gauge32`, `timeticks`, `counter64`, `ipaddress`. |
 | `value` | string | yes | Literal value, type-parsed against the `type` field. Templates allowed. |
 
@@ -366,6 +367,7 @@ Operators tuning the distribution should check `GET /api/v1/traps/status` → `c
 |------|-------|-----------------|
 | `cisco_ios` | 7 Cisco-MIB entries (merged total 12) | `ciscoConfigManEvent`, `ciscoEnvMonSupplyStatusChangeNotif`, `ciscoEnvMonTemperatureNotification`, `cefcModuleStatusChange`, `cefcFanTrayStatusChangeNotif`, `ciscoEntSensorThresholdNotification`, `ciscoFlashDeviceChangeTrap`. All with `snmpTrapEnterprise` set to `1.3.6.1.4.1.9.9.<mib-root>`. |
 | `juniper_mx240` | 7 JUNIPER-MIB entries (merged total 12) | `jnxPowerSupplyFailure`, `jnxFanFailure`, `jnxOverTemperature`, `jnxFruRemoval`, `jnxFruInsertion`, `jnxFruPowerOff`, `jnxFruFailed` (all `jnxChassisTraps` family). `snmpTrapEnterprise` = `1.3.6.1.4.1.2636` on all entries. |
+| `juniper_mx10004` | 7 JUNIPER-MIB entries (merged total 12) | The same seven `jnxChassisTraps` entries as `juniper_mx240`. `snmpTrapEnterprise` = `1.3.6.1.4.1.2636` on all entries. |
 | `ciena_waveserver5` | 4 CIENA-WS entries (merged total 9) | `opticalPreFecSdRaise`, `opticalPreFecSdClear`, `opticalPreFecSfRaise`, `opticalPreFecSfClear`. All role-tagged (`optical-sd-*`, `optical-sf-*`), so they fire on a pre-FEC threshold crossing and never from the scheduler. |
 
 Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`, `cisco_nexus_9500`, `asr9k`, `cisco_asr9902`), `juniper_mx960`, Arista, Linux, and Palo Alto fall back to the universal catalog.
@@ -452,6 +454,18 @@ To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at r
 
 The `traps` block is **optional** on every request.
 Omit it and the device doesn't fire traps.
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `collector` | string | required | Collector `host:port`. |
+| `mode` | string | `trap` | `trap` (fire-and-forget) or `inform` (acknowledged). `inform` requires `-trap-source-per-device=true`. |
+| `community` | string | `public` | SNMPv2c community. |
+| `inform_timeout` | duration | `5s` | Per-retry timeout in INFORM mode. |
+| `inform_retries` | int | `2` | Maximum retransmissions per INFORM. `0` or omitted uses the default. A negative value is rejected with 400. |
+| `interval` | n/a | n/a | Rejected with 400. Use `-trap-interval`. |
+
+The wire version and the SNMPv3 settings are fleet-wide.
+Set them with `-trap-snmp-version` and the `-trap-snmpv3-*` flags.
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
 
 **Duration fields** (`inform_timeout`) require **Go duration strings** (`"2s"`, `"5s"`, `"1m30s"`).

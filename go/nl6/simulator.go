@@ -129,7 +129,7 @@ func main() {
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
 		trapCollector   = flag.String("trap-collector", "", "SNMP trap collector address (host:port, e.g. 10.0.0.50:162); enables trap export when non-empty")
 		trapMode        = flag.String("trap-mode", "trap", "SNMP notification mode: trap (default, fire-and-forget) or inform (acknowledged)")
-		trapInterval    = flag.Duration("trap-interval", 30*time.Second, "Per-device mean firing interval (Poisson-distributed); default 30s")
+		trapInterval    = flag.Duration("trap-interval", 30*time.Second, "Simulator-wide mean firing interval (Poisson-distributed); default 30s")
 		trapGlobalCap   = flag.Int("trap-global-cap", 0, "Simulator-wide tps ceiling for trap fires + retries (0 = unlimited)")
 		trapCatalog     = flag.String("trap-catalog", "", "Path to a JSON trap catalog; overrides the embedded universal 5-trap catalog when set")
 		gnmiCatalog     = flag.String("gnmi-catalog", "", "Path to a JSON gNMI path catalogue; replaces the catalogue of every device type that carries one (resources/<type>/gnmi.json) when set; types without a catalogue keep none")
@@ -157,7 +157,7 @@ func main() {
 		syslogTLSCA           = flag.String("syslog-tls-ca", "", "PEM CA bundle used to verify the syslog collector when -syslog-transport=tls (empty = system roots). Read once at startup; per-device REST config carries the PEM inline instead of a path")
 		syslogTLSInsecure     = flag.Bool("syslog-tls-insecure", false, "Skip verification of the syslog collector's certificate (development only)")
 		syslogFraming         = flag.String("syslog-framing", "", "RFC 6587 framing when -syslog-transport=tcp: octet-counting (default) or non-transparent (LF-terminated). Rejected under udp; forced to octet-counting under tls")
-		syslogInterval        = flag.Duration("syslog-interval", 10*time.Second, "Per-device mean firing interval (Poisson-distributed); default 10s")
+		syslogInterval        = flag.Duration("syslog-interval", 10*time.Second, "Simulator-wide mean firing interval (Poisson-distributed); default 10s")
 		syslogGlobalCap       = flag.Int("syslog-global-cap", 0, "Simulator-wide rate ceiling for syslog fires (0 = unlimited)")
 		syslogCatalog         = flag.String("syslog-catalog", "", "Path to a JSON syslog catalog; overrides the embedded universal 6-entry catalog when set")
 		syslogSourcePerDevice = flag.Bool("syslog-source-per-device", true, "Bind a per-device UDP socket in the nl6sim ns so syslog packets use the device IP as source (default true). Bind failures fall back to shared socket with a warning (never fatal for syslog)")

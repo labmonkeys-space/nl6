@@ -9,8 +9,8 @@ For enabling the feature, CLI flags, and troubleshooting see [Syslog export (ope
 ## Architecture
 
 - **Central scheduler goroutine** (`syslog_scheduler.go`) owns a min-heap of `(nextFire, deviceIP)` entries. Single goroutine regardless of device count, the same design as [trap export](snmp-traps.md#architecture).
-- **Per-device `SyslogExporter`** (`syslog_exporter.go`) owns the device's UDP socket and stats. Class 1 device-context fields (`SysName`, `Model`, `Serial`, `ChassisID`) are captured at exporter construction and stay stable for the device's lifetime.
-- **Shared `SyslogEncoder` interface** (`syslog_wire.go`) with two implementations: `RFC5424Encoder` and `RFC3164Encoder`. Both produce a single UDP datagram per message.
+- **Per-device `SyslogExporter`** (`syslog_exporter.go`) owns the device's transport and stats. Class 1 device-context fields (`SysName`, `Model`, `Serial`, `ChassisID`) are captured at exporter construction and stay stable for the device's lifetime.
+- **Shared `SyslogEncoder` interface** (`syslog_wire.go`) with two implementations: `RFC5424Encoder` and `RFC3164Encoder`. Both produce one message per fire, which the transport sends as one datagram or one framed stream record.
 - **Embedded catalog** loaded via `go:embed` from `resources/_common/syslog.json` at startup. `-syslog-catalog <path>` replaces the entire catalog surface (universal + per-type overlays) with a single user-supplied JSON file.
 - **Per-device-type catalog overlays** loaded from `resources/<slug>/syslog.json` when present. Each device of type `<slug>` fires from the merged catalog (universal + per-type). See [Per-type catalog overlays](#per-type-catalog-overlays).
 - **Global rate limiter** (`golang.org/x/time/rate`) gates scheduled fires. On-demand fires via the HTTP endpoint **bypass** the cap. They're for fault injection, not load shaping.
@@ -19,7 +19,7 @@ For enabling the feature, CLI flags, and troubleshooting see [Syslog export (ope
 
 UDP is the default transport and the one most collector tests exercise.
 TCP (RFC 6587) and TLS (RFC 5425) are documented under [TCP transport](#tcp-transport-rfc-6587) below.
-They are deliberately not symmetric with UDP: a TCP or TLS device owns one connection, refuses to attach when the collector is unreachable, and has no shared-socket fallback.
+They are deliberately not symmetric with UDP: a TCP or TLS device owns one connection and has no shared-socket fallback.
 
 ## RFC 5424 wire format
 
@@ -146,6 +146,7 @@ Top-level:
 |-------|------|----------|---------|
 | `entries` | array | yes | List of catalog entries. Must contain at least one. |
 | `extends` | bool | no (default `true`) | **Per-type overlays only.** Controls whether the per-type catalog merges on top of the universal (`true`) or fully replaces it for devices of that type (`false`). Ignored on the universal catalog itself. |
+| `comment` | string | no | Free text for the catalog author. Ignored by the loader. Any other unknown top-level key fails catalog load. |
 
 Per-entry:
 
@@ -221,11 +222,14 @@ The default is `"extends": true`.
 | Slug | Count | Notable entries |
 |------|-------|-----------------|
 | `cisco_ios` | 8 Cisco-format entries (merged total 14) | `cisco-link-updown-up/down` (`%LINK-3-UPDOWN:`), `cisco-lineproto-updown-up/down` (`%LINEPROTO-5-UPDOWN:`), `cisco-sys-config` (`%SYS-5-CONFIG_I:`), `cisco-snmp-coldstart`, `cisco-sys-restart` (uses `{{.Model}}` / `{{.Serial}}` / `{{.ChassisID}}`), `cisco-envmon-temp-ok` |
+| `cisco_asr9902` | 5 IOS XR-format entries (merged total 11) | `xr-link-updown-up/down` (`%PKT_INFRA-LINK-3-UPDOWN :`), `xr-lineproto-updown-up/down` (`%PKT_INFRA-LINEPROTO-5-UPDOWN :`), `xr-config-commit` (`%MGBL-CONFIG-6-DB_COMMIT :`) |
 | `juniper_mx240` | 7 Junos-format entries (merged total 13) | `juniper-snmp-link-up/down` (`SNMP_TRAP_LINK_*`), `juniper-mib2d-encaps-mismatch` (`MIB2D_IFD_IFL_ENCAPS_MISMATCH`), `juniper-chassisd-temp-critical` (`CHASSISD_FRU_TEMP_CRITICAL`), `juniper-chassisd-eeprom-fail` (uses `{{.ChassisID}}` / `{{.Serial}}`), `juniper-license-expired`, `juniper-ui-commit-complete` |
+| `juniper_mx10004` | 7 Junos-format entries (merged total 13) | The same seven entry names as `juniper_mx240`. |
 | `ciena_waveserver5` | 4 optical entries (merged total 10) | `optical-prefec-sd-raise` / `-clear`, `optical-prefec-sf-raise` / `-clear`. Fired by the optical pre-FEC threshold evaluator; not scheduled. |
 
 Message bodies match the vendor's canonical shape verbatim so collector-side pattern matchers tuned for Cisco / Juniper strings fire correctly.
-Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`, etc.), `juniper_mx960`, Arista, Linux, and Palo Alto fall back to the universal catalog in this epic.
+Every other type falls back to the universal catalog.
+That includes the other Cisco types (`asr9k`, `cisco_catalyst_9500`, `cisco_crs_x`, `cisco_nexus_9500`), `juniper_mx960`, `arista_7280r3`, `linux_server` and `palo_alto_pa3220`.
 Their realistic content depends on Class 2 random fields deferred to a follow-up.
 
 Family-catalog concept (one catalog shared by all `cisco_*` slugs, one by all `juniper_*`) is also a follow-up refactor.
@@ -289,10 +293,21 @@ A per-device `interval` in the `syslog` block is **rejected with 400** (nl6#445)
 Every device fires at the simulator-wide `-syslog-interval` cadence, which the device read-back reports under `effective_intervals`.
 To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 
-`/api/v1/syslog/status` reports both batches as separate records keyed by `(collector, format)`.
+`/api/v1/syslog/status` reports both batches as separate records keyed by `(collector, format, transport)`.
 
 The `syslog` block is **optional** on every request.
 Omit it and the device doesn't emit syslog.
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `collector` | string | required | Collector `host:port`. A bare host gets port 514, or 6514 under `tls`. |
+| `format` | string | `5424` | `5424` or `3164`. |
+| `transport` | string | `udp` | `udp`, `tcp` (RFC 6587) or `tls` (RFC 5425). |
+| `framing` | string | `octet-counting` under `tcp` and `tls` | `octet-counting` or `non-transparent`. `tcp` only. Rejected with 400 under `udp`. Under `tls` anything but `octet-counting` is rejected. |
+| `tls` | object | absent (verify against the host's root store) | Collector verification under `tls`: `ca_pem` (inline PEM) and `insecure_skip_verify`. `mtls` is rejected with 400. See [TLS](#tls-rfc-5425). |
+| `interval` | n/a | n/a | Rejected with 400. Use `-syslog-interval`. |
+
+On the command line, `-syslog-transport` seeds the transport, `-syslog-framing` the framing, and `-syslog-tls-ca` and `-syslog-tls-insecure` the `tls` block.
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
 
 The `-syslog-interval` CLI flag takes a Go duration string (`10s`, `1m30s`), not integer seconds.
@@ -318,6 +333,7 @@ LF framing is only unambiguous because the message body cannot contain a bare li
 It holds today, but it is a precondition, and the default should not depend on one.
 
 Setting `framing` while the transport is `udp` is **rejected**, not ignored.
+The CLI equivalent, `-syslog-framing`, seeds the auto-start batch and is rejected at startup under `udp` in the same way.
 
 ### TCP refuses where UDP degrades
 
@@ -329,7 +345,7 @@ A shared connection would multiplex several devices into **one framed byte strea
 
 Two consequences:
 
-- A device whose connection cannot be established does not attach.
+- A device never shares a connection with another device.
 - `-syslog-source-per-device=false` makes a TCP attach **fail**, because the fallback it selects does not exist for a stream transport.
 
 The dial itself is asynchronous: attach succeeds once the reconnect loop is running.
@@ -395,7 +411,7 @@ It answers "who is connecting", which nothing here asks.
 |---|---|
 | `tls.ca_pem` | PEM bundle used to verify the collector, **inline** |
 | *(omitted)* | verify against the host's root store |
-| `tls.insecure_skip_verify` | disable verification (development only) |
+| `tls.insecure_skip_verify` | disable verification (development only). The CLI seed equivalent is `-syslog-tls-insecure`. |
 | `tls.mtls` | **not implemented**, rejected at configuration rather than ignored |
 
 The CA is inline PEM rather than a file path, and that is deliberate.
@@ -471,7 +487,7 @@ On-demand fires **do not** consume global rate-cap tokens.
 
 `GET /api/v1/syslog/status` returns a current snapshot of the syslog subsystem.
 
-**Response shape** (array-of-collectors aggregated by `(collector, format)`):
+**Response shape** (array-of-collectors aggregated by `(collector, format, transport)`):
 
 ```json
 {
@@ -509,13 +525,13 @@ Fields:
 | Field | Meaning |
 |-------|---------|
 | `subsystem_active` | `true` after `StartSyslogSubsystem` runs. During normal operation of the HTTP server this value is always `true`: the subsystem initialises in `main()` and the only path that flips it to `false` is `StopSyslogExport`, which runs at process exit alongside the HTTP server. A `false` value is therefore only observable programmatically (e.g. a test harness calling `GetSyslogStatus` without starting the subsystem). |
-| `collectors[]` | One record per `(collector, format)` tuple that ever had a device. |
+| `collectors[]` | One record per `(collector, format, transport)` tuple that ever had a device. |
 | `collectors[].collector` | Target `host:port` (canonicalised). |
 | `collectors[].format` | `"5424"` or `"3164"`. |
 | `collectors[].transport` | `"udp"`, `"tcp"` or `"tls"`. Keeps a TCP outage from merging into a row of healthy UDP devices sending the same format to the same collector. |
 | `collectors[].devices` | Count of LIVE devices emitting to this tuple. `0` means no live device but the aggregate remembers prior fires (monotonic within subsystem lifecycle). |
 | `collectors[].sent` | Cumulative wire emissions across all devices (live + deleted) for this tuple. |
-| `collectors[].send_failures` | UDP write errors (collector unreachable, socket-level failure). |
+| `collectors[].send_failures` | Fires that did not reach the transport, on every transport: a resolve or encode error, a refused write, or a `tcp` or `tls` device with no connection. |
 | `devices_exporting` | Total count of LIVE devices with a `SyslogExporter` across all tuples. |
 | `rate_limiter_tokens_available` | Present only when `-syslog-global-cap` is set; instantaneous snapshot, not synchronised with concurrent waits. |
 | `catalogs_by_type` | Map of `<slug>` → `{entries, source}` showing the merged-catalog state. `_universal` key is always present when the subsystem is running. `source` is `"embedded"`, `"file:<path>"`, or `"override:<path>"` when `-syslog-catalog` was supplied. |

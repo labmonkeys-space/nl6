@@ -73,6 +73,11 @@ Sizing guidance:
 - **Under-cap deliberately** to leave headroom for INFORM retransmissions and for any on-demand fires you inject through the HTTP endpoint.
 - `-trap-global-cap 0` (the default) means unlimited.
 
+To silence the fleet's scheduled traps without changing its configuration, start with `-fidelity` or toggle it with `POST /api/v1/fidelity`.
+Do not stretch `-trap-interval` for this.
+On-demand fires still go through.
+See [Fidelity mode](loadtest-scenarios.md#fidelity-mode).
+
 ## Prerequisites inherited from flow export
 
 Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow export.
@@ -153,6 +158,7 @@ Use lab credentials only.
 For vendor-flavoured content (e.g., Cisco `ciscoConfigManEvent` or Juniper `jnxPowerSupplyFailure`), select a device type with a per-type overlay.
 See [SNMP trap reference → Per-type catalog overlays](../reference/snmp-traps.md#per-type-catalog-overlays).
 `cisco_ios` devices fire from 12 merged entries (universal 5 + 7 Cisco), `juniper_mx240` devices fire from a comparable 12-entry Juniper set.
+`juniper_mx10004` devices fire from the same 12-entry Juniper set.
 `ciena_waveserver5` adds 4 role-tagged optical pre-FEC alarm entries (`opticalPreFecSdRaise` / `Clear`, `opticalPreFecSfRaise` / `Clear`).
 
 To fire a trap on demand:

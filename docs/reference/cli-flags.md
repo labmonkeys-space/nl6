@@ -183,6 +183,8 @@ Export flags (flow / trap / syslog) fall into two categories:
 
 - **seed**: applies only to devices created by the `-auto-start-ip` batch at startup. Devices subsequently created via `POST /api/v1/devices` do NOT inherit these values; they must opt in by including a `flow` / `traps` / `syslog` block in the request body.
 - **global**: applies simulator-wide regardless of how the device was created. Shared sockets, catalogs, rate-limiter, and network-namespace bind policy sit here.
+  So do the three cadence flags `-flow-tick-interval`, `-trap-interval` and `-syslog-interval`.
+  Each drives one simulator-wide scheduler, so it applies to REST-created devices too.
 
 **Duration flags.** Every time-valued CLI flag accepts a Go duration string: `-trap-interval 30s`, `-trap-inform-timeout 5s`, `-syslog-interval 10s`, `-gnmi-dialout-interval 10s`, `-dns-debounce 1s`, `-flow-tick-interval 5s`.
 The four flow flags `-flow-tick-interval`, `-flow-active-timeout`, `-flow-inactive-timeout` and `-flow-template-interval` also accept a bare integer, read as seconds (`-flow-tick-interval 5`), because that was their only form in earlier releases.
@@ -203,7 +205,7 @@ See [Flow export (operator guide)](../ops/flow-export.md) for prerequisites and 
 |------|------|---------|-------|---------|
 | `-flow-collector` | string | empty | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
-| `-flow-tick-interval` | seconds or duration | `5s` | **seed** | Flow ticker cadence. Sets **batching, not volume**. See the note below. Applied at construction and not runtime-mutable. This flag is the only cadence: a per-device `tick_interval` in a REST `flow` block is rejected with 400. |
+| `-flow-tick-interval` | seconds or duration | `5s` | **global** | Flow ticker cadence. Sets **batching, not volume**. See the note below. Applied at construction and not runtime-mutable. This flag is the only cadence: a per-device `tick_interval` in a REST `flow` block is rejected with 400. |
 | `-flow-active-timeout` | seconds or duration | `30s` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30s` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#emission-shape). |
 | `-flow-inactive-timeout` | seconds or duration | `15s` | **seed** | Idle time after a flow's last packet before it is exported. |
 | `-flow-template-interval` | seconds or duration | `1m0s` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
@@ -247,7 +249,7 @@ See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) for prere
 |------|------|---------|-------|---------|
 | `-trap-collector` | string | empty | **seed** | Enable trap export to this UDP collector (e.g. `192.168.1.10:162`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `traps` block. |
 | `-trap-mode` | `trap` \| `inform` | `trap` | **seed** | Notification mode. TRAP is fire-and-forget; INFORM is acknowledged and retried. |
-| `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence. This flag is the only cadence: a per-device `interval` in a REST `traps` block is rejected with 400. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
+| `-trap-interval` | duration | `30s` | **global** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence. This flag is the only cadence: a per-device `interval` in a REST `traps` block is rejected with 400. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-trap-global-cap` | int (tps) | `0` | **global** | Simulator-wide rate ceiling across fires + INFORM retries. `0` is unlimited. |
 | `-trap-catalog` | string | empty | **global** | Path to a JSON catalog; empty uses the embedded universal 5-trap catalog + per-type overlays from `resources/<slug>/traps.json`. Setting this flag **disables per-type overlays**. The file becomes the sole catalog for every device. |
 | `-trap-community` | string | `public` | **seed** | SNMPv2c community string. **Ignored under `-trap-snmp-version=v3`**. An SNMPv3 message carries no community string anywhere; nl6 warns at startup if you set it explicitly. |
@@ -291,16 +293,24 @@ See [gNMI dial-in reference](gnmi.md) for path coverage, subscribe semantics, an
 | `-gnmi-port` | int | `9339` | **global** | TCP port for the gNMI dial-in listener on each device. The listener serves **TLS** unless `-gnmi-tls=false`. |
 | `-gnmi-disable` | bool | `false` | **global** | Disable the subsystem; no device listens on the gNMI port. |
 | `-gnmi-tls` | bool | `true` | **global** | Serve dial-in over TLS with the simulator's shared self-signed certificate; clients need `--skip-verify` or `--tls-ca`. `false` serves plaintext gRPC instead. A client whose transport does not match the listener gets a completed TCP connection and no bytes. See [gNMI troubleshooting](gnmi.md#troubleshooting). |
+| `-gnmi-catalog` | path | empty (shipped catalogues) | **global** | JSON gNMI path catalogue that replaces the catalogue of every device type that carries one (`resources/<type>/gnmi.json`). Types without a catalogue keep none. Read once at startup; a file that fails to load is fatal. See [gNMI → Catalogue-driven paths](gnmi.md#catalogue-driven-paths). |
 
 ## NETCONF flags
 
-NETCONF over SSH is off by default and served only by `cisco_catalyst_9500` devices.
+NETCONF is off by default.
+When enabled, two device types serve it.
+`cisco_catalyst_9500` serves it over SSH.
+`juniper_mx10004` serves it over SSH and over TLS (TLS 1.2, mutual authentication).
 See [NETCONF reference](netconf.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF over SSH subsystem. |
-| `-netconf-port` | int | `830` | **global** | TCP port of the per-device NETCONF listener. |
+| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF subsystem: `cisco_catalyst_9500` over SSH on `-netconf-port`, `juniper_mx10004` over SSH on `-netconf-port` and over TLS on `-netconf-tls-port`. |
+| `-netconf-port` | int | `830` | **global** | TCP port of the per-device NETCONF over SSH listener. |
+| `-netconf-tls-port` | int | `6513` | **global** | TCP port of the per-device NETCONF over TLS listener. |
+| `-netconf-tls-client-ca` | path | empty | **global** | PEM file with the CA that must have signed NETCONF TLS client certificates. Requires `-netconf-enable`. With no CA the TLS listeners still bind, but every handshake is refused. Also settable at runtime with `PUT /api/v1/netconf/tls`. |
+| `-netconf-tls-client-identity` | `fingerprint=username` | empty | **global** | One entry of the client identity table: the SHA-256 fingerprint of a client certificate, with or without the `04:` prefix, mapped to a NETCONF user. Repeat the flag for more entries. Requires `-netconf-enable`. |
+| `-netconf-tls-default-username` | string | empty | **global** | NETCONF user for a client certificate missing from the identity table. Empty refuses such a certificate. Requires `-netconf-enable`. |
 
 ## gNMI dial-out flags
 
@@ -329,7 +339,7 @@ See [UDP syslog export (operator guide)](../ops/syslog-export.md) for prerequisi
 |------|------|---------|-------|---------|
 | `-syslog-collector` | string | empty | **seed** | Enable syslog export to this UDP collector (e.g. `192.168.1.10:514`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `syslog` block. |
 | `-syslog-format` | `5424` \| `3164` | `5424` | **seed** | Wire format. RFC 5424 is structured (recommended); RFC 3164 is legacy BSD. Per-device as of phase 5, so different devices can emit different formats to the same collector; the shared-socket pool is keyed by `(collector, format)` so streams never interleave. |
-| `-syslog-interval` | duration | `10s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence. This flag is the only cadence: a per-device `interval` in a REST `syslog` block is rejected with 400. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
+| `-syslog-interval` | duration | `10s` | **global** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence. This flag is the only cadence: a per-device `interval` in a REST `syslog` block is rejected with 400. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-syslog-global-cap` | int (rate) | `0` | **global** | Simulator-wide rate ceiling across scheduled fires. On-demand HTTP fires bypass the cap. `0` is unlimited. |
 | `-syslog-catalog` | string | empty | **global** | Path to a JSON catalog; empty uses the embedded universal 6-entry catalog + per-type overlays from `resources/<slug>/syslog.json`. Setting this flag **disables per-type overlays**. The file becomes the sole catalog for every device. |
 | `-syslog-transport` | `udp` \| `tcp` \| `tls` | `udp` | **seed** | Transport for the auto-start batch. `tls` is RFC 5425 (TCP inside TLS, port **6514** by default, octet-counting forced); it verifies the collector and presents no certificate of its own. `tcp` is RFC 6587 syslog-over-TCP: one connection per device, reconnecting with capped backoff. Per-device via the REST `syslog.transport` field. See [Syslog export → TCP transport](syslog-export.md#tcp-transport-rfc-6587). |
@@ -389,13 +399,13 @@ See [Continuous profiling](../ops/profiling.md).
 ## Examples
 
 ```bash
-# Start server only (all interfaces up/up by default)
+# Start the API server only, with no devices
 sudo ./nl6
 
 # Auto-create 5 devices starting from 192.168.100.1
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5
 
-# Custom API port and subnet
+# Custom API port and start IP
 sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 100 -port 9090
 
 # Non-privileged SNMP port (no CAP_NET_BIND_SERVICE needed)
