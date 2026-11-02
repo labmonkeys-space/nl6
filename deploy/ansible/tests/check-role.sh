@@ -86,30 +86,34 @@ t_package() {
   ver=$(sed -nE 's/^nl6_version:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p' "$ROLE/defaults/main.yml")
   base="https://github.com/labmonkeys-space/nl6/releases/download/v$ver"
   mkdir -p "$ROOT/build"
-  # Each supported platform as its real facts: os_family, distribution,
-  # major version, architecture.
+  # Each supported platform as Ansible reports it, fields split on ":":
+  # os_family, distribution, major version, full version, architecture.
   for case in \
-    "Debian Debian 13 x86_64|deb $base/nl6_${ver}_amd64.deb" \
-    "Debian Ubuntu 24 aarch64|deb $base/nl6_${ver}_arm64.deb" \
-    "Debian Ubuntu 26 x86_64|deb $base/nl6_${ver}_amd64.deb" \
-    "RedHat CentOS 10 x86_64|rpm $base/nl6-${ver}-1.x86_64.rpm" \
-    "RedHat Rocky 10 aarch64|rpm $base/nl6-${ver}-1.aarch64.rpm"; do
-    read -r fam dist major arch <<<"${case%%|*}"
+    "Debian:Debian:13:13.1:x86_64|deb $base/nl6_${ver}_amd64.deb" \
+    "Debian:Ubuntu:24:24.04:aarch64|deb $base/nl6_${ver}_arm64.deb" \
+    "Debian:Ubuntu:26:26.04:x86_64|deb $base/nl6_${ver}_amd64.deb" \
+    "RedHat:CentOS:10:10:x86_64|rpm $base/nl6-${ver}-1.x86_64.rpm" \
+    "RedHat:Rocky:10:10.0:aarch64|rpm $base/nl6-${ver}-1.aarch64.rpm" \
+    "RedHat:AlmaLinux:10:10.0:x86_64|rpm $base/nl6-${ver}-1.x86_64.rpm"; do
+    IFS=: read -r fam dist major full arch <<<"${case%%|*}"
     want=${case#*|}
-    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","architecture":"%s"}}' "$fam" "$dist" "$major" "$arch")
+    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","distribution_version":"%s","architecture":"%s"}}' "$fam" "$dist" "$major" "$full" "$arch")
     rm -f "$dest"
     ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml >/dev/null \
-      || { echo "$dist $major $arch: play failed"; return 1; }
+      || { echo "$dist $full $arch: play failed"; return 1; }
     got=$(cat "$dest")
-    [ "$got" = "$want" ] || { echo "$dist $major $arch: got '$got', want '$want'"; return 1; }
+    [ "$got" = "$want" ] || { echo "$dist $full $arch: got '$got', want '$want'"; return 1; }
   done
-  # Unsupported releases and derivatives, in both families, are refused.
-  for case in "RedHat Rocky 9" "Debian Debian 12" "Debian Ubuntu 22" "Debian Linuxmint 22"; do
-    read -r fam dist major <<<"$case"
-    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","architecture":"x86_64"}}' "$fam" "$dist" "$major")
+  # Unsupported releases and derivatives in both families are refused,
+  # including releases that share an allowed major version.
+  for case in "RedHat:Rocky:9:9.4" "RedHat:OracleLinux:10:10.0" \
+    "Debian:Debian:12:12.8" "Debian:Ubuntu:22:22.04" "Debian:Ubuntu:24:24.10" \
+    "Debian:Linux Mint:22:22.1"; do
+    IFS=: read -r fam dist major full <<<"$case"
+    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","distribution_version":"%s","architecture":"x86_64"}}' "$fam" "$dist" "$major" "$full")
     out=$(ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml 2>&1) \
-      && { echo "$dist $major was accepted"; return 1; }
-    echo "$out" | grep -q 'Unsupported platform' || { echo "$dist $major failed for another reason:"; echo "$out" | tail -5; return 1; }
+      && { echo "$dist $full was accepted"; return 1; }
+    echo "$out" | grep -q 'Unsupported platform' || { echo "$dist $full failed for another reason:"; echo "$out" | tail -5; return 1; }
   done
 }
 t_extra_args() {

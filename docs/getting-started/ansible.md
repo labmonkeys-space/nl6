@@ -17,8 +17,8 @@ It then sets the sysctls, writes `/etc/nl6/nl6.conf` and enables the packaged `n
 
 Both amd64 (x86_64) and arm64 (aarch64) are supported.
 Any other host fails before the role downloads anything.
-That includes other Debian and Ubuntu releases and Debian derivatives such as Linux Mint.
-Install the `.deb` by hand there.
+That includes other Debian and Ubuntu releases, interim Ubuntu releases such as 24.10, and derivatives such as Linux Mint and Oracle Linux.
+Install the package by hand there.
 It installs the same package as [Install packages](./install-packages.md).
 It also sets the sysctls and runs the checks below, which the manual install leaves to you.
 
