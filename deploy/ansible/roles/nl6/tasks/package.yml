@@ -16,7 +16,8 @@
     msg: >-
       Unsupported platform '{{ ansible_facts.distribution | default(ansible_facts.os_family) }}
       {{ ansible_facts.distribution_major_version }}'. The nl6 role supports
-      Ubuntu and EL 10 (CentOS Stream 10, Rocky Linux 10, AlmaLinux 10).
+      Debian 13, Ubuntu 24.04 and 26.04, and EL 10 (CentOS Stream 10,
+      Rocky Linux 10, AlmaLinux 10).
   when: nl6_pkg_format | length == 0
 
 # The .deb uses Debian architecture names, the .rpm keeps the kernel's.

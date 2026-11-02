@@ -60,6 +60,7 @@ jobs:
           cache-dependency-path: go/go.sum
 
       # ubuntu-24.04 runners ship Docker, which `make smoke` uses to install
-      # the amd64 packages in debian/ubuntu/rocky/alma/centos-stream containers.
+      # the amd64 packages in the SMOKE_DEB_IMAGES and SMOKE_RPM_IMAGES containers
+      # listed in the Makefile.
       - name: Build packages and smoke-test installation
         run: make smoke

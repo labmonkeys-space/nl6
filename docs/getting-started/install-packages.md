@@ -33,7 +33,7 @@ The `iproute2` (`ip`), `iptables`, and `procps` (`sysctl`) dependencies are pull
 
 ## Debian / Ubuntu (`.deb`)
 
-Tested on Debian 13 and Ubuntu 26.04 LTS (`amd64` and `arm64`).
+Tested on Debian 13, Ubuntu 24.04 LTS and Ubuntu 26.04 LTS (`amd64` and `arm64`).
 
 1. Download the `.deb` for your architecture from the [latest release](https://github.com/labmonkeys-space/nl6/releases/latest): `nl6_<version>_amd64.deb` or `nl6_<version>_arm64.deb`.
 

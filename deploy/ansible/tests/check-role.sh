@@ -86,19 +86,22 @@ t_package() {
   ver=$(sed -nE 's/^nl6_version:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p' "$ROLE/defaults/main.yml")
   base="https://github.com/labmonkeys-space/nl6/releases/download/v$ver"
   mkdir -p "$ROOT/build"
+  # Each supported platform as its real facts: os_family, distribution,
+  # major version, architecture.
   for case in \
-    "Debian 24 x86_64|deb $base/nl6_${ver}_amd64.deb" \
-    "Debian 24 aarch64|deb $base/nl6_${ver}_arm64.deb" \
-    "RedHat 10 x86_64|rpm $base/nl6-${ver}-1.x86_64.rpm" \
-    "RedHat 10 aarch64|rpm $base/nl6-${ver}-1.aarch64.rpm"; do
-    read -r fam major arch <<<"${case%%|*}"
+    "Debian Debian 13 x86_64|deb $base/nl6_${ver}_amd64.deb" \
+    "Debian Ubuntu 24 aarch64|deb $base/nl6_${ver}_arm64.deb" \
+    "Debian Ubuntu 26 x86_64|deb $base/nl6_${ver}_amd64.deb" \
+    "RedHat CentOS 10 x86_64|rpm $base/nl6-${ver}-1.x86_64.rpm" \
+    "RedHat Rocky 10 aarch64|rpm $base/nl6-${ver}-1.aarch64.rpm"; do
+    read -r fam dist major arch <<<"${case%%|*}"
     want=${case#*|}
-    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","architecture":"%s"}}' "$fam" "$fam" "$major" "$arch")
+    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","architecture":"%s"}}' "$fam" "$dist" "$major" "$arch")
     rm -f "$dest"
     ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml >/dev/null \
-      || { echo "$fam $major $arch: play failed"; return 1; }
+      || { echo "$dist $major $arch: play failed"; return 1; }
     got=$(cat "$dest")
-    [ "$got" = "$want" ] || { echo "$fam $major $arch: got '$got', want '$want'"; return 1; }
+    [ "$got" = "$want" ] || { echo "$dist $major $arch: got '$got', want '$want'"; return 1; }
   done
   facts='{"ansible_facts":{"os_family":"RedHat","distribution":"Rocky","distribution_major_version":"9","architecture":"x86_64"}}'
   out=$(ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml 2>&1) \
