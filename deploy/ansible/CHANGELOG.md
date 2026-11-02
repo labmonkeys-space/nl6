@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Breaking:** the role refuses a Debian-family host that is not Debian 13, Ubuntu 24.04 or Ubuntu 26.04, as it already refused RedHat-family hosts other than EL 10. Debian 12, Ubuntu 22.04 and derivatives such as Linux Mint now fail before the download. Install the `.deb` by hand there.
 - The role metadata lists Debian 13 (`trixie`) next to Ubuntu 24.04 and 26.04, matching the docs, and the unsupported-platform message names Debian 13, Ubuntu 24.04 and 26.04, and EL 10. The role still installs the `.deb` on any Debian-family host.
 
 ## 0.38.1

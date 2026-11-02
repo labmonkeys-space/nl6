@@ -1,13 +1,15 @@
 # Copyright 2026 Ronny Trommer <ronny@no42.org>
 # SPDX-License-Identifier: Apache-2.0
 ---
-# Each release ships a .deb for Debian and an .rpm smoke-tested on EL 10.
-# Set unconditionally, so a variable of the same name from the inventory
-# cannot skip the gate below.
-- name: Select the package format from the OS family
+# Each release ships a .deb smoke-tested on Debian 13 and Ubuntu 24.04 and
+# 26.04, and an .rpm smoke-tested on EL 10. Any other release, including a
+# Debian derivative, is refused. Set unconditionally, so a variable of the
+# same name from the inventory cannot skip the gate below.
+- name: Select the package format from the platform
   ansible.builtin.set_fact:
     nl6_pkg_format: >-
-      {{ 'deb' if ansible_facts.os_family == 'Debian'
+      {{ 'deb' if (ansible_facts.distribution, ansible_facts.distribution_major_version)
+      in [('Debian', '13'), ('Ubuntu', '24'), ('Ubuntu', '26')]
       else 'rpm' if ansible_facts.os_family == 'RedHat' and ansible_facts.distribution_major_version == '10'
       else '' }}
 

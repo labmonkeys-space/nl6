@@ -103,10 +103,14 @@ t_package() {
     got=$(cat "$dest")
     [ "$got" = "$want" ] || { echo "$dist $major $arch: got '$got', want '$want'"; return 1; }
   done
-  facts='{"ansible_facts":{"os_family":"RedHat","distribution":"Rocky","distribution_major_version":"9","architecture":"x86_64"}}'
-  out=$(ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml 2>&1) \
-    && { echo "RedHat 9 was accepted"; return 1; }
-  echo "$out" | grep -q 'Unsupported platform' || { echo "RedHat 9 failed for another reason:"; echo "$out" | tail -5; return 1; }
+  # Unsupported releases and derivatives, in both families, are refused.
+  for case in "RedHat Rocky 9" "Debian Debian 12" "Debian Ubuntu 22" "Debian Linuxmint 22"; do
+    read -r fam dist major <<<"$case"
+    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","architecture":"x86_64"}}' "$fam" "$dist" "$major")
+    out=$(ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml 2>&1) \
+      && { echo "$dist $major was accepted"; return 1; }
+    echo "$out" | grep -q 'Unsupported platform' || { echo "$dist $major failed for another reason:"; echo "$out" | tail -5; return 1; }
+  done
 }
 t_extra_args() {
   grep -q 'nl6_extra_args is not string' "$TASKS" || return 1
