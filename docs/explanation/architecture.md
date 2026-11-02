@@ -34,7 +34,7 @@ flowchart LR
     simulator -->|creates, writes<br/><small>ioctl</small>| tun
     simulator -->|runs inside| netns
     nms -->|"polls devices<br/><small>SNMP / SSH / gNMI /<br/>NETCONF / HTTPS</small>"| tun
-    simulator -->|"exports<br/><small>NetFlow, IPFIX, sFlow,<br/>traps, syslog, gNMI dial-out</small>"| nms
+    simulator -->|"exports and dials<br/><small>NetFlow, IPFIX, sFlow,<br/>traps, syslog, gNMI dial-out,<br/>NETCONF call home</small>"| nms
 
     classDef person fill:#08427b,stroke:#052e56,color:#fff
     classDef ext fill:#999,stroke:#666,color:#fff
@@ -46,21 +46,23 @@ The namespace was `opensim` before the fork was renamed; see [Network namespace]
 
 ## Management surfaces
 
-| | gNMI dial-in | gNMI dial-out | NETCONF | SSH CLI |
-|---|---|---|---|---|
-| **Model** | OpenConfig, plus native origins from a per-type catalogue | Same as dial-in | Cisco native `Cisco-IOS-XE-interfaces-oper` (IOS XE dialect); Junos `NETCONF` event stream (Junos dialect) | None, CLI text |
-| **Encoding** | `JSON_IETF`, `PROTO` | Same as dial-in | XML | Plain text |
-| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem; TLS 1.2 on `juniper_mx10004` | SSH shell |
-| **Port (default)** | `9339` | Collector's port | `830` (SSH), `6513` (TLS) | `22` |
-| **Who connects** | Collector dials the device | Device dials the collector | Client dials the device | Client dials the device |
-| **Auth** | Shared server cert signed by the CA at `GET /api/v1/tls/ca`, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login; mutual TLS on `6513` | Device SSH login |
-| **Plaintext option** | `-gnmi-tls=false` | `tls.enabled=false` | Not available | Not available |
-| **Devices** | All | Opt-in per device | `cisco_catalyst_9500`, `juniper_mx10004` | All |
-| **Default** | On | Off | Off | On |
-| **Writes** | No, `Set` is `Unimplemented` | No | No | No |
+| | gNMI dial-in | gNMI dial-out | NETCONF | NETCONF call home | SSH CLI |
+|---|---|---|---|---|---|
+| **Model** | OpenConfig, plus native origins from a per-type catalogue | Same as dial-in | Cisco native `Cisco-IOS-XE-interfaces-oper` (IOS XE dialect); Junos `NETCONF` event stream (Junos dialect) | Same as NETCONF, Junos dialect | None, CLI text |
+| **Encoding** | `JSON_IETF`, `PROTO` | Same as dial-in | XML | XML | Plain text |
+| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem; TLS 1.2 on `juniper_mx10004` | SSH `netconf` subsystem after the Junos `outbound-ssh` preamble | SSH shell |
+| **Port (default)** | `9339` | Collector's port | `830` (SSH), `6513` (TLS) | Client's port (`4334`, RFC 8071) | `22` |
+| **Who connects** | Collector dials the device | Device dials the collector | Client dials the device | Device dials the client | Client dials the device |
+| **Auth** | Shared server cert signed by the CA at `GET /api/v1/tls/ca`, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login; mutual TLS on `6513` | Device SSH login; the device stays the SSH server | Device SSH login |
+| **Plaintext option** | `-gnmi-tls=false` | `tls.enabled=false` | Not available | Not available | Not available |
+| **Devices** | All | Opt-in per device | `cisco_catalyst_9500`, `juniper_mx10004` | `juniper_mx10004`, opt-in per device | All |
+| **Default** | On | Off | Off | Off | On |
+| **Writes** | No, `Set` is `Unimplemented` | No | No | No | No |
 
 gNMI and NETCONF both carry YANG-modelled data, OpenConfig or a vendor's native model.
-SSH appears twice because NETCONF reuses it as a transport: the same login and host key, a different subsystem, a different port.
+SSH appears in three columns because NETCONF reuses it as a transport: the same login and host key, a different subsystem.
+The listener waits on its own port.
+Call home runs the session on a connection the device opens.
 
 ### Scope
 
@@ -70,6 +72,10 @@ SSH appears twice because NETCONF reuses it as a transport: the same login and h
   No `get`, no `edit-config`, no RFC 8639.
   On `juniper_mx10004`, the Junos dialect over SSH and TLS: `get`, `get-configuration` and `create-subscription` on the `NETCONF` stream, which carries mib2d link events.
   See [NETCONF reference](../reference/netconf.md).
+- **NETCONF call home**: `juniper_mx10004` dials a NETCONF client as Junos `outbound-ssh` does, with its preamble before the SSH banner, and serves the same Junos session.
+  It holds one session per client and redials on a fixed 15 s cycle.
+  SSH only, no TLS call home.
+  See [NETCONF reference](../reference/netconf.md#call-home).
 
 ## Package layout
 

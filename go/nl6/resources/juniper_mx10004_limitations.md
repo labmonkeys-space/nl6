@@ -1,6 +1,6 @@
 # Juniper MX10004 NETCONF Limitations
 
-The `juniper_mx10004` profile serves NETCONF over SSH and over mutual TLS when you start nl6 with `-netconf-enable`.
+The `juniper_mx10004` profile serves NETCONF over SSH and over mutual TLS when you start nl6 with `-netconf-enable`, and can call home to a NETCONF client over SSH.
 It emulates the Junos dialect of a vJunos-router.
 This page says where the simulation ends.
 See the [NETCONF reference](../../../docs/reference/netconf.md) for the wire behavior.
@@ -61,3 +61,16 @@ The `rfc-compliant` and `version-1.1` settings are not emulated.
 - The server sends its own certificate only. Junos sends its certificate and the CA.
 - The shared server certificate carries only a `0.0.0.0` IP SAN. A client that verifies the host name against the device IP fails. Skip host-name verification and pin the CA from `GET /api/v1/tls/ca`.
 - With no client CA configured, every handshake is refused. The listener is still open.
+
+## Call home
+
+Call home follows a vJunos-router 25.4R1.12 capture of `outbound-ssh` with `services netconf`.
+These parts differ or were not captured:
+
+- TLS call home on port 4335 is not served, and Junos does not offer it.
+- One client per device. Junos allows several addresses per client and several clients.
+- The `secret` option, which adds the host key and an HMAC to the preamble, is not emulated.
+- The SSH identification string and host key are the listener's, `SSH-2.0-Go` and the shared RSA key, where vJunos sends `SSH-2.0-JSSH_4.1` with an ed25519 key.
+- The keepalive request is `keepalive@openssh.com`, because the name Junos uses was not visible in the encrypted capture.
+- While a keepalive is unanswered nl6 sends no further one, where Junos sends one every interval, and both close the connection after 3 intervals.
+- The 15 s redial cycle is fixed, and whether Junos derives it from `keep-alive timeout` was not tested.

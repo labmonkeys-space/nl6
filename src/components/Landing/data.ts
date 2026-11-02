@@ -28,7 +28,7 @@ export const CATEGORY_COUNT = CATEGORIES.length;
 
 export const FEATURES: Feature[] = [
   { icon: 'scale', title: '30,000 devices', body: 'Tested scale on a single host. Parallel TUN pre-allocation, lock-free sync.Map for O(1) OID lookups, pre-computed next-OID mappings.' },
-  { icon: 'proto', title: 'Protocols', body: 'SNMP v1/v2c/v3 (MD5/SHA1 · DES/AES128) with opt-in SET, SSH with VT100, HTTPS REST, gNMI (OpenConfig plus per-type catalogues), NETCONF on Catalyst 9500 and MX10004, LLDP topology. Push exporters: NetFlow v5 / v9 / IPFIX with NBAR2, sFlow v5 (experimental), SNMP traps/informs, syslog over UDP/TCP/TLS, gNMI dial-out.' },
+  { icon: 'proto', title: 'Protocols', body: 'SNMP v1/v2c/v3 (MD5/SHA1 · DES/AES128) with opt-in SET, SSH with VT100, HTTPS REST, gNMI (OpenConfig plus per-type catalogues), NETCONF on Catalyst 9500 and MX10004, NETCONF call home over SSH on MX10004, LLDP topology. Push exporters: NetFlow v5 / v9 / IPFIX with NBAR2, sFlow v5 (experimental), SNMP traps/informs, syslog over UDP/TCP/TLS, gNMI dial-out.' },
   { icon: 'metric', title: 'Load-test fidelity', body: 'Arm → run a bounded push experiment over 7 protocols → get an exact sent-ledger. Diff it against your monitor to localize missed or duplicated telemetry. Fidelity mode, loss localization, run tagging, nl6-reconcile CLI, HTML report.' },
   { icon: 'devices', title: `${TYPE_COUNT} device types`, body: `Routers, switches, firewalls, servers, GPU servers (DGX/HGX), storage systems and optical transport, across ${CATEGORY_COUNT} categories.` },
   { icon: 'gpu', title: 'GPU simulation', body: 'NVIDIA DGX-A100 / H100 / HGX-H200 with per-GPU DCGM OIDs — utilization, VRAM, temp, power, fan, SM/memory clocks.' },
@@ -66,7 +66,7 @@ export const DOCS: DocGroup[] = [
 ];
 
 export const STATUS: StatusGroup[] = [
-  { k: 'Stable',        items: ['SNMP v1/v2c/v3 + SET', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX + NBAR2', 'gNMI (dial-in + dial-out)', 'NETCONF (Catalyst 9500, MX10004)', 'SNMP trap + syslog export', 'LLDP topology', 'DNS + Prometheus service discovery', 'Load-test scenarios', 'TUN + netns isolation', 'Web UI + REST API'] },
+  { k: 'Stable',        items: ['SNMP v1/v2c/v3 + SET', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX + NBAR2', 'gNMI (dial-in + dial-out)', 'NETCONF (Catalyst 9500, MX10004, call home)', 'SNMP trap + syslog export', 'LLDP topology', 'DNS + Prometheus service discovery', 'Load-test scenarios', 'TUN + netns isolation', 'Web UI + REST API'] },
   { k: 'Experimental',  items: ['sFlow v5 (synthetic)'] },
   { k: 'Tested scale',  items: ['30,000 concurrent devices / host', '~50 MB base + ~1 KB / device', 'CPU: minimal in steady state'] },
 ];
