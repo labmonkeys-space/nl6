@@ -13,7 +13,9 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -70,6 +72,11 @@ func (c *DeviceNetconfCallHomeConfig) Validate() error {
 	if p, err := strconv.Atoi(port); err != nil || p < 1 || p > 65535 {
 		return fmt.Errorf("netconf_callhome: client %q has an invalid port (must be 1..65535)", c.Client)
 	}
+	// Devices dial from an IPv4-only namespace, so an IPv6 client would
+	// fail every attempt.
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		return fmt.Errorf("netconf_callhome: client %q is IPv6; devices dial over IPv4 only", c.Client)
+	}
 	if len(c.DeviceID) > netconfCallHomeMaxDeviceID {
 		return fmt.Errorf("netconf_callhome: device_id is %d bytes, at most %d", len(c.DeviceID), netconfCallHomeMaxDeviceID)
 	}
@@ -117,7 +124,6 @@ func netconfCallHomeDefaultID(sysName string) string {
 // stops the session the same way a listener's Close does.
 type netconfCallHomeExporter struct {
 	client   string
-	deviceID string
 	preamble []byte
 	srv      *netconfServer
 	dial     func(ctx context.Context) (net.Conn, error)
@@ -175,6 +181,8 @@ func (e *netconfCallHomeExporter) run() {
 }
 
 // attempt dials once and, on success, serves the session until it ends.
+// The server's onHandshake marks the session up, so a connection whose SSH
+// handshake fails counts as a handshake failure, not as a session.
 func (e *netconfCallHomeExporter) attempt() {
 	e.agg.connectAttempts.Add(1)
 	conn, err := e.dial(e.ctx)
@@ -183,8 +191,13 @@ func (e *netconfCallHomeExporter) attempt() {
 		return
 	}
 	if len(e.preamble) > 0 {
+		// close cancels ctx before it closes srv, and srv does not track
+		// conn yet, so ctx must interrupt a stalled write.
+		stop := context.AfterFunc(e.ctx, func() { _ = conn.Close() })
 		_ = conn.SetWriteDeadline(time.Now().Add(netconfCallHomePreambleTimeout))
-		if _, err := conn.Write(e.preamble); err != nil {
+		_, err := conn.Write(e.preamble)
+		stop()
+		if err != nil {
 			e.agg.connectFailures.Add(1)
 			_ = conn.Close()
 			return
@@ -195,10 +208,12 @@ func (e *netconfCallHomeExporter) attempt() {
 		_ = conn.Close()
 		return
 	}
-	e.sessionUp.Store(true)
 	e.srv.serveConn(conn)
-	e.sessionUp.Store(false)
-	e.agg.sessionsEnded.Add(1)
+	if e.sessionUp.Swap(false) {
+		e.agg.sessionsEnded.Add(1)
+	} else {
+		e.agg.handshakeFailures.Add(1)
+	}
 }
 
 // netconfCallHomeAggregate holds a client's counters, live and deleted
@@ -206,6 +221,7 @@ func (e *netconfCallHomeExporter) attempt() {
 type netconfCallHomeAggregate struct {
 	connectAttempts    atomic.Uint64
 	connectFailures    atomic.Uint64
+	handshakeFailures  atomic.Uint64
 	sessionsEnded      atomic.Uint64
 	devicesUnsupported atomic.Uint64
 }
@@ -264,20 +280,22 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 	srv.cfg = newDeviceSSHConfig(sm.sharedSSHSigner)
 	srv.keepAlive = netconfCallHomeKeepAlive
 	srv.keepAliveMisses = netconfCallHomeKeepAliveMisses
+	// A client that accepts and never speaks SSH is as dead as one that
+	// misses every keepalive, so it gets the same time.
+	srv.handshakeTimeout = netconfCallHomeKeepAlive * time.Duration(netconfCallHomeKeepAliveMisses)
 
 	ns, ip, client := d.netNamespace, d.IP, cfg.Client
 	if !sm.useNamespace {
 		ns = nil
 	}
 	dial := func(ctx context.Context) (net.Conn, error) {
-		return dialFromDevice(ctx, ns, ip, client)
+		return dialFromDevice(ctx, netconfCallHomeDialSem, ns, ip, client)
 	}
 
 	cycle := netconfCallHomeCycle
 	ctx, cancel := context.WithCancel(context.Background())
 	e := &netconfCallHomeExporter{
 		client:   cfg.Client,
-		deviceID: id,
 		preamble: preamble,
 		srv:      srv,
 		dial:     dial,
@@ -287,6 +305,7 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	srv.onHandshake = func() { e.sessionUp.Store(true) }
 	d.netconfCallHome = e
 	e.start()
 	return nil
@@ -319,6 +338,7 @@ type NetconfCallHomeClientStatus struct {
 	SessionsUp         int    `json:"sessions_up"`
 	ConnectAttempts    uint64 `json:"connect_attempts"`
 	ConnectFailures    uint64 `json:"connect_failures"`
+	HandshakeFailures  uint64 `json:"handshake_failures"`
 	SessionsEnded      uint64 `json:"sessions_ended"`
 	DevicesUnsupported uint64 `json:"devices_unsupported"`
 }
@@ -355,6 +375,7 @@ func (sm *SimulatorManager) GetNetconfCallHomeStatus() NetconfCallHomeStatus {
 		r := row(k.(string))
 		r.ConnectAttempts += agg.connectAttempts.Load()
 		r.ConnectFailures += agg.connectFailures.Load()
+		r.HandshakeFailures += agg.handshakeFailures.Load()
 		r.SessionsEnded += agg.sessionsEnded.Load()
 		r.DevicesUnsupported += agg.devicesUnsupported.Load()
 		return true
@@ -366,6 +387,9 @@ func (sm *SimulatorManager) GetNetconfCallHomeStatus() NetconfCallHomeStatus {
 	for _, r := range rows {
 		st.Clients = append(st.Clients, *r)
 	}
+	slices.SortFunc(st.Clients, func(a, b NetconfCallHomeClientStatus) int {
+		return strings.Compare(a.Client, b.Client)
+	})
 	return st
 }
 
@@ -415,4 +439,24 @@ func netconfCallHomeSeedFromFlags(client, deviceID string, netconfEnabled bool, 
 // batch from dialing at one instant.
 func netconfCallHomePhase(cycle time.Duration) time.Duration {
 	return rand.N(cycle) // #nosec G404 -- spreads attempts, not a secret
+}
+
+// netconfCallHomeIncapableRequest reports whether a creation request with a
+// netconf_callhome block resolves only to profiles without call home, and
+// returns one of them to name. Same shape as flowIncapableRequest: a mixed
+// round-robin batch is accepted and its incapable devices are counted as
+// unsupported.
+func netconfCallHomeIncapableRequest(req CreateDevicesRequest) (string, bool) {
+	capable := func(rf string) bool { return netconfDialects[resourceDirName(rf)].CallHome }
+	if req.ResourceFile != "" {
+		return req.ResourceFile, !capable(req.ResourceFile)
+	}
+	if !req.RoundRobin {
+		return "", false
+	}
+	types := roundRobinTypesForCategory(req.Category)
+	if len(types) == 0 || slices.ContainsFunc(types, capable) {
+		return "", false
+	}
+	return types[0], true
 }

@@ -645,6 +645,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("NETCONF call home: %v", err)
 	}
+	if netconfCallHomeSeed != nil && *autoStartIP == "" {
+		log.Println("WARNING: -netconf-callhome-client seeds only the auto-start batch, and -auto-start-ip is empty. No device will call home; use the netconf_callhome block of POST /api/v1/devices.")
+	}
 
 	// Start the optical SD/SF alarm evaluator unconditionally, before any
 	// device exists, so optical devices created later (auto-start batch or

@@ -12,28 +12,36 @@ import (
 )
 
 const (
-	// deviceDialMaxConcurrent bounds concurrent in-namespace dials across
-	// every outbound subsystem (gNMI dial-out, NETCONF call home).
-	// DialContextInNamespace pins an OS thread for the connect duration, so
-	// this cap, not the device count, sets the worst-case pinned-thread count
-	// when a peer is unreachable. Without it 30k devices re-dialing a
-	// blackholed peer would hit Go's 10k-thread limit and crash.
+	// deviceDialMaxConcurrent bounds concurrent in-namespace dials per
+	// outbound subsystem. DialContextInNamespace pins an OS thread for the
+	// connect duration, so these caps, not the device count, set the
+	// worst-case pinned-thread count when a peer is unreachable. Without
+	// them 30k devices re-dialing a blackholed peer would hit Go's 10k-thread
+	// limit and crash.
 	deviceDialMaxConcurrent = 64
 	// deviceDialTimeout hard-bounds a single dial, so a blackholed peer
 	// releases the thread promptly.
 	deviceDialTimeout = 10 * time.Second
 )
 
-// deviceDialSem throttles concurrent in-namespace dials. Excess dials wait on
-// it as parked goroutines, not pinned threads.
-var deviceDialSem = make(chan struct{}, deviceDialMaxConcurrent)
+// deviceDialSem is one subsystem's dial slots. Excess dials wait on it as
+// parked goroutines, not pinned threads.
+type deviceDialSem chan struct{}
+
+// Each subsystem has its own slots, so a blackholed peer of one cannot
+// starve the dials of the other. Together they pin at most
+// 2 * deviceDialMaxConcurrent threads.
+var (
+	gnmiDialoutDialSem     = make(deviceDialSem, deviceDialMaxConcurrent)
+	netconfCallHomeDialSem = make(deviceDialSem, deviceDialMaxConcurrent)
+)
 
 // dialFromDevice opens a TCP connection to addr from inside ns with the
-// device IP as source, under deviceDialSem and deviceDialTimeout. With no
-// namespace (tests, -no-namespace) it dials from the default namespace
-// without a source binding, as gNMI dial-out always has.
-func dialFromDevice(ctx context.Context, ns *NetNamespace, localIP net.IP, addr string) (net.Conn, error) {
-	release, err := acquireDeviceDialSlot(ctx)
+// device IP as source, under sem and deviceDialTimeout. With no namespace
+// (tests, -no-namespace) it dials from the default namespace without a
+// source binding, as gNMI dial-out always has.
+func dialFromDevice(ctx context.Context, sem deviceDialSem, ns *NetNamespace, localIP net.IP, addr string) (net.Conn, error) {
+	release, err := sem.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -47,11 +55,11 @@ func dialFromDevice(ctx context.Context, ns *NetNamespace, localIP net.IP, addr 
 	return ns.DialContextInNamespace(dctx, "tcp", addr, &net.TCPAddr{IP: localIP})
 }
 
-// acquireDeviceDialSlot waits for a free dial slot or for ctx to end.
-func acquireDeviceDialSlot(ctx context.Context) (release func(), err error) {
+// acquire waits for a free dial slot or for ctx to end.
+func (sem deviceDialSem) acquire(ctx context.Context) (release func(), err error) {
 	select {
-	case deviceDialSem <- struct{}{}:
-		return func() { <-deviceDialSem }, nil
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

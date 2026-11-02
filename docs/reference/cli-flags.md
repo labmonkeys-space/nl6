@@ -249,7 +249,7 @@ See [NETCONF reference](netconf.md).
 | `-netconf-tls-client-ca` | path | empty | **global** | PEM file with the CA that must have signed NETCONF TLS client certificates. Requires `-netconf-enable`. With no CA the TLS listeners still bind, but every handshake is refused. Also settable at runtime with `PUT /api/v1/netconf/tls`. |
 | `-netconf-tls-client-identity` | `fingerprint=username` | empty | **global** | One entry of the client identity table: the SHA-256 fingerprint of a client certificate, with or without the `04:` prefix, mapped to a NETCONF user. Repeat the flag for more entries. Requires `-netconf-enable`. |
 | `-netconf-tls-default-username` | string | empty | **global** | NETCONF user for a client certificate missing from the identity table. Empty refuses such a certificate. Requires `-netconf-enable`. |
-| `-netconf-callhome-client` | `host:port` | empty | **seed** | NETCONF client that auto-started `juniper_mx10004` devices dial with call home over SSH. Empty means no call home. Requires `-netconf-enable`. See [NETCONF reference](netconf.md#call-home). |
+| `-netconf-callhome-client` | `host:port` | empty | **seed** | NETCONF client that auto-started `juniper_mx10004` devices dial with call home over SSH. Empty means no call home. Requires `-netconf-enable`. Applies only with `-auto-start-ip`. See [NETCONF reference](netconf.md#call-home). |
 | `-netconf-callhome-device-id` | string | empty | **seed** | `DEVICE-ID` the call-home preamble carries. Empty means each device's sysName. Requires `-netconf-callhome-client`. |
 
 ## gNMI dial-out flags
