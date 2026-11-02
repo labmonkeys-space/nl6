@@ -65,17 +65,13 @@ With the three Host Resources OIDs under [Standard MIBs](#standard-mibs), each d
 ### Value behaviour
 
 Each GPU holds a pre-generated cycle of 100 points per metric, seeded per device and per GPU.
-Every read of a dynamic column returns the next point, so the value moves per read, not per unit of time.
-Two collectors polling the same OID share one cursor.
-SM clock and memory clock share a cursor too, so a read of either advances both.
-VRAM total is constant and never advances.
+The point served depends on the time since the device was created: one point per minute, so a cycle lasts 100 minutes.
+Reading a column does not move it, so two collectors polling the same OID read the same value, and a walk that reads a dynamic OID without returning it changes nothing.
+Every metric of every GPU of a device reads the same point at the same instant, so power, temperature, fan speed and both clocks follow the utilization they were derived from.
+VRAM total is constant.
 
-A GETNEXT can advance a cursor without returning its OID.
-GETNEXT reads the first dynamic OID after the requested OID as a candidate, even when a static OID sorts first and is returned.
-This happens on every GETNEXT and GETBULK step whose next static OID sorts after `hrStorageSize.1` and whose requested OID sorts before the last GPU metric OID.
-A walk of the static GPU columns 1 to 4 is 32 GETNEXT steps, and each one reads GPU 0 utilization.
-That column has moved 32 points by the time the walk returns it.
-Do not expect a dynamic OID to move one step per poll when the collector also walks neighbouring columns.
+Each OID reads the clock on its own, so a request that straddles a minute boundary can read two adjacent points.
+Up to v0.38.1 every read returned the next point and each metric had its own cursor, so the value moved per read and the derived metrics drifted apart from utilization.
 
 The per-profile ranges the cycles are drawn from:
 

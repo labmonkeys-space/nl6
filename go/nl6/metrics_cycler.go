@@ -20,20 +20,28 @@ import (
 	"math"
 	"math/rand"
 	"sync/atomic"
+	"time"
 )
 
 const numDataPoints = 100
 
+// metricsPointInterval is how long each pre-generated point is served, so a
+// full cycle of numDataPoints lasts 100 minutes. A collector polling every
+// minute reads every point; one polling every five minutes reads every fifth.
+const metricsPointInterval = time.Minute
+
 // MetricsCycler holds 100 pre-generated CPU, memory, and temperature data points per device.
-// Each SNMP GET advances the index, round-robining after 100 points.
+// The point served is a function of the time since the cycler was built, never
+// of how often it is read (nl6#970). Every metric of a device, its GPUs
+// included, reads the same point at the same instant: memory used + free is the
+// total, a GPU's power follows its utilization, and a second collector or a
+// GETNEXT that evaluates a metric OID without returning it moves nothing.
 type MetricsCycler struct {
 	cpuPoints  [numDataPoints]int   // CPU utilization % (0-100)
 	memUsed    [numDataPoints]int64 // Memory used in KB
 	tempPoints [numDataPoints]int   // Temperature in Celsius
 	memTotal   int64                // Total memory in KB (constant)
-	cpuIndex   uint32               // atomic, current position
-	memIndex   uint32               // atomic, current position
-	tempIndex  uint32               // atomic, current position
+	startTime  time.Time            // origin of the served point, set by NewMetricsCycler
 	gpuMetrics []*GPUMetrics        // Per-GPU cycling metrics (nil for non-GPU devices)
 	// ifCounters holds the per-interface HC counter cycler (nil if no HC OIDs).
 	//
@@ -56,7 +64,8 @@ type MetricsCycler struct {
 // given seed and device profile. Each device gets a unique curve.
 func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 	c := &MetricsCycler{
-		memTotal: profile.MemTotalKB,
+		memTotal:  profile.MemTotalKB,
+		startTime: time.Now(),
 	}
 
 	rng := rand.New(rand.NewSource(seed))
@@ -114,22 +123,37 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 	return c
 }
 
-// GetCPUPercent returns the current CPU% as a string and advances the index.
+// point is the index of the data point served now. Each getter reads the clock
+// itself, so a multi-varbind request that straddles a minute boundary reads two
+// adjacent points, as the per-OID IF-MIB counter path does (context/if-counters.md).
+func (c *MetricsCycler) point() int {
+	return metricsPointAt(time.Since(c.startTime))
+}
+
+// metricsPointAt is the index served at elapsed time since startTime. A cycler
+// built without NewMetricsCycler has a zero startTime; time.Since saturates for
+// it, so it still yields a valid index.
+func metricsPointAt(elapsed time.Duration) int {
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	return int((elapsed / metricsPointInterval) % numDataPoints)
+}
+
+// GetCPUPercent returns the CPU% served now as a string.
 func (c *MetricsCycler) GetCPUPercent() string {
-	idx := atomic.AddUint32(&c.cpuIndex, 1) - 1
-	return fmt.Sprintf("%d", c.cpuPoints[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.cpuPoints[c.point()])
 }
 
-// GetMemUsed returns the current memory-used in KB as a string and advances the index.
+// GetMemUsed returns the memory used in KB served now as a string.
 func (c *MetricsCycler) GetMemUsed() string {
-	idx := atomic.AddUint32(&c.memIndex, 1) - 1
-	return fmt.Sprintf("%d", c.memUsed[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.memUsed[c.point()])
 }
 
-// GetMemFree returns total - used in KB as a string (uses same index as GetMemUsed).
+// GetMemFree returns total - used in KB as a string, from the same point as
+// GetMemUsed, so the two read in one request sum to GetMemTotal.
 func (c *MetricsCycler) GetMemFree() string {
-	idx := atomic.AddUint32(&c.memIndex, 1) - 1
-	used := c.memUsed[idx%numDataPoints]
+	used := c.memUsed[c.point()]
 	free := c.memTotal - used
 	if free < 0 {
 		free = 0
@@ -144,16 +168,14 @@ func (c *MetricsCycler) GetMemTotal() string {
 
 // GetMemUsedPercent returns memory utilization as a percentage string.
 func (c *MetricsCycler) GetMemUsedPercent() string {
-	idx := atomic.AddUint32(&c.memIndex, 1) - 1
-	used := c.memUsed[idx%numDataPoints]
+	used := c.memUsed[c.point()]
 	pct := float64(used) / float64(c.memTotal) * 100
 	return fmt.Sprintf("%d", int(math.Round(pct)))
 }
 
-// GetTemperature returns the current temperature in Celsius as a string and advances the index.
+// GetTemperature returns the temperature in Celsius served now as a string.
 func (c *MetricsCycler) GetTemperature() string {
-	idx := atomic.AddUint32(&c.tempIndex, 1) - 1
-	return fmt.Sprintf("%d", c.tempPoints[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.tempPoints[c.point()])
 }
 
 func clampInt(val, min, max int) int {

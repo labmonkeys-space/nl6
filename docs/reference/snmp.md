@@ -592,6 +592,8 @@ watch -n 5 "snmpget -v2c -c public 10.42.0.1 \
 ## Dynamic CPU / memory / temperature metrics
 
 CPU, memory, and temperature OIDs cycle through a 100-point pre-generated sine-wave pattern per device.
+The point served depends on the time since the device was created, one point per minute, and reading an OID does not move it.
+All of a device's metrics read the same point at the same instant, so memory used plus memory free is the total on every profile that serves both.
 Per-category device profiles define the baseline ranges and spike amplitudes.
 GPU servers add per-GPU metric cycling on top of this.
 See [GPU simulation](gpu/index.md).
