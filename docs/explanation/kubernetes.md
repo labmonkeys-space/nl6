@@ -30,6 +30,8 @@ Out of the box the simulator needs:
   With `-netconf-enable` it also binds TCP/830 on `cisco_catalyst_9500` and `juniper_mx10004` devices.
   gNMI on TCP/9339, NETCONF over TLS on TCP/6513 and HTTPS REST on TCP/8443 are above 1024 and need no capability.
   Trap and syslog export bind an ephemeral source port; 162 and 514 are the collector's ports, not nl6's.
+  NETCONF call home and gNMI dial-out also dial out from an ephemeral port and bind nothing.
+  4334 is the NETCONF client's port, not nl6's.
 - `/dev/net/tun` mounted into the container.
 
 `CAP_SYS_ADMIN` is effectively the "new root".
