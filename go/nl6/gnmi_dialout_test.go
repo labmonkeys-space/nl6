@@ -6,8 +6,10 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -462,6 +464,41 @@ func TestGnmiDialoutStatusAggregatePersist(t *testing.T) {
 	c := st.Collectors[0]
 	if c.UpdatesSent != 42 || c.Reconnects != 3 {
 		t.Fatalf("aggregate mismatch: %+v", c)
+	}
+}
+
+func TestGnmiDialoutStatusSortedByCollector(t *testing.T) {
+	// Rows come from live exporters and from the persisted aggregates of
+	// deleted devices. 192.0.2.30 is in both and must merge into one row.
+	sm := &SimulatorManager{devices: map[string]*DeviceSimulator{}}
+	for i, k := range []gnmiDialoutKey{
+		{collector: "192.0.2.30:9340", flavor: "gnmireverse"},
+		{collector: "192.0.2.10:9340", flavor: "zeta"},
+	} {
+		sm.devices[fmt.Sprint(i)] = &DeviceSimulator{
+			gnmiDialoutExporter: &GnmiDialoutExporter{collectorStr: k.collector, flavor: k.flavor},
+		}
+	}
+	for _, k := range []gnmiDialoutKey{
+		{collector: "192.0.2.30:9340", flavor: "gnmireverse"},
+		{collector: "192.0.2.20:9340", flavor: "gnmireverse"},
+		{collector: "192.0.2.10:9340", flavor: "gnmireverse"},
+	} {
+		sm.gnmiDialoutAggregates.Store(k, &gnmiDialoutAggregate{})
+	}
+	want := []string{
+		"192.0.2.10:9340/gnmireverse",
+		"192.0.2.10:9340/zeta",
+		"192.0.2.20:9340/gnmireverse",
+		"192.0.2.30:9340/gnmireverse",
+	}
+	st := sm.GetGnmiDialoutStatus()
+	got := make([]string, 0, len(st.Collectors))
+	for _, c := range st.Collectors {
+		got = append(got, c.Collector+"/"+c.Flavor)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("collectors out of order:\n got %v\nwant %v", got, want)
 	}
 }
 

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -14,6 +15,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -324,6 +327,9 @@ func (sm *SimulatorManager) GetGnmiDialoutStatus() GnmiDialoutStatus {
 		collectors = append(collectors, *rec)
 		total += rec.Devices
 	}
+	slices.SortFunc(collectors, func(a, b GnmiDialoutCollectorStatus) int {
+		return cmp.Or(strings.Compare(a.Collector, b.Collector), strings.Compare(a.Flavor, b.Flavor))
+	})
 	return GnmiDialoutStatus{
 		SubsystemActive:  active,
 		Collectors:       collectors,
