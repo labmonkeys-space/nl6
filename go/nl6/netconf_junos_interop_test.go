@@ -50,6 +50,15 @@ import (
 //   - NL6_NETCONF_JUNOS_REF_IF: the reference interface the test disables
 //     and enables. nl6 moves the admin status of xe-0/0/0 (ifIndex 1).
 //
+// NL6_NETCONF_JUNOS_TRANSPORTS optionally picks the transports, a comma list
+// of tls, ssh and callhome (default tls,ssh). callhome needs
+// NL6_NETCONF_JUNOS_CALLHOME_LISTEN, the host:port the reference's
+// outbound-ssh client dials: the test listens there, and the in-process
+// device calls home to a loopback port. Over call home the test also
+// compares the preamble with the device id masked, and checks that each side
+// dials within one cycle plus netconfJunosCallHomeSlack of the listener
+// opening, after a close-session too.
+//
 // Phases, per transport: the hello; the RPC table of the Junos session
 // (without kill-session, which would need a second session to kill) ending
 // in close-session and its trailer; then create-subscription and one
@@ -207,6 +216,12 @@ type junosInteropTarget struct {
 	name             string
 	reference        bool
 	tlsAddr, sshAddr string
+	// chListen is where this side's call home arrives. chPreambles and
+	// chWaits record, per call-home connection, the bytes before the SSH
+	// banner and the time from opening the listener to the accept.
+	chListen         string
+	chPreambles      []string
+	chWaits          []time.Duration
 	sshUser, sshPass string
 	clientCert       tls.Certificate
 	iface            string
@@ -216,6 +231,9 @@ type junosInteropTarget struct {
 
 func (tg *junosInteropTarget) dial(t *testing.T, transport string) *junosInteropConn {
 	t.Helper()
+	if transport == "callhome" {
+		return tg.dialCallHome(t)
+	}
 	if transport == "tls" {
 		cfg := &tls.Config{Certificates: []tls.Certificate{tg.clientCert}, InsecureSkipVerify: true} //nolint:gosec // neither server certificate names the tunnel or loopback address the test dials
 		c, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", tg.tlsAddr, cfg)
@@ -248,6 +266,95 @@ func (tg *junosInteropTarget) dial(t *testing.T, transport string) *junosInterop
 		t.Fatalf("%s: netconf subsystem: %v", tg.name, err)
 	}
 	return newJunosInteropConn(out, in, func() { _ = cl.Close() })
+}
+
+// netconfJunosCallHomeSlack is how much later than one cycle a call-home
+// dial may arrive after the listener opens.
+const netconfJunosCallHomeSlack = 2 * time.Second
+
+// dialCallHome opens tg.chListen, waits for the device to dial, records the
+// preamble, then runs the SSH client and the netconf subsystem on the
+// connection. The listener is open only while waiting, so the device's
+// earlier attempts are refused and none sits stale in the backlog.
+func (tg *junosInteropTarget) dialCallHome(t *testing.T) *junosInteropConn {
+	t.Helper()
+	ln, err := net.Listen("tcp", tg.chListen)
+	if err != nil {
+		t.Fatalf("%s: call-home listen %s: %v", tg.name, tg.chListen, err)
+	}
+	opened := time.Now()
+	_ = ln.(*net.TCPListener).SetDeadline(opened.Add(3 * netconfCallHomeCycle))
+	conn, err := ln.Accept()
+	_ = ln.Close()
+	if err != nil {
+		t.Fatalf("%s: no call home on %s: %v", tg.name, tg.chListen, err)
+	}
+	tg.chWaits = append(tg.chWaits, time.Since(opened))
+	// The preamble ends in an empty line. A strict RFC 8071 device would
+	// send the SSH banner first, which this reader would not stop at, so it
+	// gives up after 1 KiB and reports what it read.
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	var pre []byte
+	b := make([]byte, 1)
+	for !bytes.HasSuffix(pre, []byte("\r\n\r\n")) && len(pre) < 1024 {
+		if _, err := conn.Read(b); err != nil {
+			_ = conn.Close()
+			t.Fatalf("%s: call-home preamble after %q: %v", tg.name, pre, err)
+		}
+		pre = append(pre, b[0])
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+	tg.chPreambles = append(tg.chPreambles, string(pre))
+	sc, chans, reqs, err := ssh.NewClientConn(conn, tg.chListen, &ssh.ClientConfig{
+		User:            tg.sshUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(tg.sshPass)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // a lab device and an in-process test device
+		Timeout:         10 * time.Second,
+	})
+	if err != nil {
+		_ = conn.Close()
+		t.Fatalf("%s: ssh over call home: %v", tg.name, err)
+	}
+	cl := ssh.NewClient(sc, chans, reqs)
+	s, err := cl.NewSession()
+	if err != nil {
+		_ = cl.Close()
+		t.Fatalf("%s: call-home session: %v", tg.name, err)
+	}
+	in, _ := s.StdinPipe()
+	out, _ := s.StdoutPipe()
+	if err := s.RequestSubsystem("netconf"); err != nil {
+		_ = cl.Close()
+		t.Fatalf("%s: netconf subsystem over call home: %v", tg.name, err)
+	}
+	return newJunosInteropConn(out, in, func() { _ = cl.Close() })
+}
+
+var ncjDeviceID = regexp.MustCompile(`(DEVICE-ID: )[^\r\n]+`)
+
+// checkJunosCallHome compares the call-home preambles of nl6 and the
+// reference with the device id masked, and checks every dial wait.
+func checkJunosCallHome(t *testing.T, nl6, ref *junosInteropTarget) {
+	t.Helper()
+	for _, tg := range []*junosInteropTarget{nl6, ref} {
+		if len(tg.chPreambles) == 0 {
+			t.Errorf("%s: no call-home connection recorded", tg.name)
+		}
+		for i, w := range tg.chWaits {
+			t.Logf("%s call home %d: dialed %s after the listener opened, preamble %q", tg.name, i, w.Round(time.Millisecond), tg.chPreambles[i])
+			if w > netconfCallHomeCycle+netconfJunosCallHomeSlack {
+				t.Errorf("%s call home %d: dialed after %s, want within %s", tg.name, i, w, netconfCallHomeCycle+netconfJunosCallHomeSlack)
+			}
+		}
+	}
+	if len(nl6.chPreambles) == 0 || len(ref.chPreambles) == 0 {
+		return
+	}
+	a := ncjDeviceID.ReplaceAllString(nl6.chPreambles[0], "${1}ID")
+	r := ncjDeviceID.ReplaceAllString(ref.chPreambles[0], "${1}ID")
+	if a != r {
+		t.Errorf("call-home preambles differ\n  nl6: %q\n  ref: %q", a, r)
+	}
 }
 
 // junosInteropRow is one message of one phase, raw.
@@ -305,6 +412,9 @@ func (tg *junosInteropTarget) run(t *testing.T, transport string) []junosInterop
 	}
 	t.Logf("%s %s close trailer raw: %q", tg.name, transport, m.b)
 	rows = append(rows, junosInteropRow{"rpc/close-session-trailer", "trailer", m.b})
+	// Close the connection now, not at return: over call home the device
+	// holds one connection per client and dials again only once it ends.
+	c.close()
 
 	ev := tg.dial(t, transport)
 	defer ev.close()
@@ -657,11 +767,32 @@ func TestNetconfJunosInteropAgainstReference(t *testing.T) {
 	if err != nil || dev.netconfListener == nil || dev.netconfTLSListener == nil {
 		t.Fatalf("mx10004 listeners: %v", err)
 	}
+	transports := []string{"tls", "ssh"}
+	if v := env("NL6_NETCONF_JUNOS_TRANSPORTS"); v != "" {
+		transports = strings.Split(v, ",")
+	}
+	var nl6CallHome, refCallHome string
+	if slices.Contains(transports, "callhome") {
+		if refCallHome = env("NL6_NETCONF_JUNOS_CALLHOME_LISTEN"); refCallHome == "" {
+			t.Skip("callhome transport: set NL6_NETCONF_JUNOS_CALLHOME_LISTEN to where the reference's outbound-ssh client dials")
+		}
+		// A free loopback port for the in-process device to call home to.
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		nl6CallHome = l.Addr().String()
+		_ = l.Close()
+		dev.netconfCallHomeConfig = &DeviceNetconfCallHomeConfig{Client: nl6CallHome}
+		if err := mgr.startDeviceNetconfCallHome(dev); err != nil {
+			t.Fatalf("nl6 call home: %v", err)
+		}
+	}
 	st := netconfIfCounters(dev).State()
 	ncLink(st, netconfJunosNl6IfIndex, OperUp)
 	ncAdmin(st, netconfJunosNl6IfIndex, AdminUp)
 	nl6 := &junosInteropTarget{
-		name: "nl6", tlsAddr: dev.netconfTLSListener.Addr().String(), sshAddr: dev.netconfListener.Addr().String(),
+		name: "nl6", tlsAddr: dev.netconfTLSListener.Addr().String(), sshAddr: dev.netconfListener.Addr().String(), chListen: nl6CallHome,
 		sshUser: USERNAME, sshPass: PASSWORD, clientCert: cert, iface: netconfJunosNl6If, settle: netconfJunosNl6Settle,
 		toggle: func(down bool) error {
 			// set interfaces ... disable is an admin change, so nl6 moves the
@@ -677,7 +808,7 @@ func TestNetconfJunosInteropAgainstReference(t *testing.T) {
 
 	cli, cliUser, cliPass, refIf := env("NL6_NETCONF_JUNOS_CLI"), env("NL6_NETCONF_JUNOS_CLI_USER"), env("NL6_NETCONF_JUNOS_CLI_PASSWORD"), env("NL6_NETCONF_JUNOS_REF_IF")
 	ref := &junosInteropTarget{
-		name: "reference", reference: true, tlsAddr: env("NL6_NETCONF_JUNOS_REF"), sshAddr: env("NL6_NETCONF_JUNOS_REF_SSH"),
+		name: "reference", reference: true, tlsAddr: env("NL6_NETCONF_JUNOS_REF"), sshAddr: env("NL6_NETCONF_JUNOS_REF_SSH"), chListen: refCallHome,
 		sshUser: cliUser, sshPass: cliPass, clientCert: cert, iface: refIf, settle: netconfJunosRefSettle,
 		toggle: func(down bool) error { return junosInteropRefToggle(cli, cliUser, cliPass, refIf, down) },
 	}
@@ -687,7 +818,6 @@ func TestNetconfJunosInteropAgainstReference(t *testing.T) {
 	}
 	// nl6 first: it takes seconds, and a broken nl6 should not cost a round
 	// on the device.
-	transports := []string{"tls", "ssh"}
 	nl6Rows := map[string][]junosInteropRow{}
 	for _, tr := range transports {
 		nl6Rows[tr] = nl6.run(t, tr)
@@ -723,6 +853,9 @@ func TestNetconfJunosInteropAgainstReference(t *testing.T) {
 			continue
 		}
 		t.Logf("%s: %d rows equal after normalisation", tr, len(a))
+	}
+	if slices.Contains(transports, "callhome") {
+		checkJunosCallHome(t, nl6, ref)
 	}
 	if failed {
 		t.FailNow()

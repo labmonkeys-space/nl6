@@ -41,6 +41,12 @@ type netconfServer struct {
 	reg    *netconfSessionRegistry
 	ctx    context.Context
 	cancel context.CancelFunc
+	// keepAlive, when set, makes the device send an SSH keepalive request at
+	// this interval and close the connection after keepAliveMisses requests
+	// in a row get no reply. Only call home sets it; listeners rely on TCP
+	// keepalive.
+	keepAlive       time.Duration
+	keepAliveMisses int
 
 	mu        sync.Mutex
 	conns     map[net.Conn]struct{}
@@ -117,6 +123,8 @@ func (d *DeviceSimulator) stopNetconfServer() {
 	if d == nil {
 		return
 	}
+	// Call home first: its server shares the session registry closed below.
+	d.stopNetconfCallHome()
 	reg := d.netconfSessions
 	listeners := []net.Listener{d.netconfListener, d.netconfTLSListener}
 	d.netconfListener, d.netconfTLSListener, d.netconfSessions = nil, nil, nil
@@ -137,7 +145,10 @@ func (s *netconfServer) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		s.cancel()
-		err = s.Listener.Close()
+		// A call-home server has no listener, only the connection it dialed.
+		if s.Listener != nil {
+			err = s.Listener.Close()
+		}
 		s.mu.Lock()
 		s.closed = true
 		conns := make([]net.Conn, 0, len(s.conns))
@@ -216,7 +227,56 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 		_ = tc.SetKeepAlive(true)
 		_ = tc.SetKeepAlivePeriod(netconfKeepAlivePeriod)
 	}
+	if s.keepAlive > 0 {
+		stop := make(chan struct{})
+		defer close(stop)
+		// This goroutine is counted, so Add may run alongside Wait.
+		s.wg.Add(1)
+		go s.sshKeepAlive(conn, sc, stop)
+	}
 	s.dispatch(conn, sc, chans, reqs)
+}
+
+// sshKeepAlive sends a keepalive request every s.keepAlive and closes conn
+// after s.keepAliveMisses ticks in a row find the request still unanswered.
+// Any reply counts, a refusal too: a client that refuses an unknown request
+// is alive. It ends when stop closes or the connection fails.
+//
+// Junos sends one keepalive per interval even while earlier ones are
+// unanswered. x/crypto/ssh holds a lock in SendRequest until the reply, so
+// only one global request can be in flight per connection, and nl6 sends the
+// next one only after the reply. The close comes at the same time either way.
+func (s *netconfServer) sshKeepAlive(conn net.Conn, sc ssh.Conn, stop <-chan struct{}) {
+	defer s.wg.Done()
+	t := time.NewTicker(s.keepAlive)
+	defer t.Stop()
+	var replied chan error // nil while no request is outstanding
+	misses := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case err := <-replied:
+			if err != nil {
+				return
+			}
+			replied, misses = nil, 0
+		case <-t.C:
+			if replied != nil {
+				misses++
+				if misses >= s.keepAliveMisses {
+					_ = conn.Close()
+					return
+				}
+				continue
+			}
+			replied = make(chan error, 1)
+			go func(ch chan<- error) {
+				_, _, err := sc.SendRequest("keepalive@openssh.com", true, nil)
+				ch <- err
+			}(replied)
+		}
+	}
 }
 
 // dispatch is the connection's one control loop. It refuses global requests,

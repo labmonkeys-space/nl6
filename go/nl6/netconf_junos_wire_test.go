@@ -125,3 +125,16 @@ func TestJunosGetReplies(t *testing.T) {
 		t.Errorf("reduced body has %d version/host-name elements, want 2", n)
 	}
 }
+
+// TestJunosCallHomePreamble pins the bytes vJunos 25.4R1.12 wrote before its
+// SSH banner on an outbound-ssh call-home connection (device-id vj-r1).
+func TestJunosCallHomePreamble(t *testing.T) {
+	captured := "MSG-ID: DEVICE-CONN-INFO\r\nMSG-VER: V1\r\nDEVICE-ID: vj-r1\r\n\r\n"
+	if got := string(junosCallHomePreamble("vj-r1")); got != captured || len(got) != 59 {
+		t.Errorf("preamble = %q (%d bytes), want the 59 captured bytes %q", got, len(got), captured)
+	}
+	got := junosCallHomePreamble("mx-0001")
+	if len(got) != 61 || !strings.HasSuffix(string(got), "DEVICE-ID: mx-0001\r\n\r\n") {
+		t.Errorf("preamble for mx-0001 = %q (%d bytes), want 61 ending in an empty CRLF line", got, len(got))
+	}
+}

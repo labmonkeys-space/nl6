@@ -731,6 +731,10 @@ func applyExportSeed(device *DeviceSimulator, seed *ExportSeed) {
 		}
 		device.gnmiDialoutConfig = &g
 	}
+	if seed.NetconfCallHome != nil {
+		c := *seed.NetconfCallHome
+		device.netconfCallHomeConfig = &c
+	}
 	// IfErrorScenario has value semantics; copy directly. Empty string
 	// on the seed maps to "" on the device, which InitIfCounters later
 	// canonicalises via ParseIfErrorScenario ("" → "clean").

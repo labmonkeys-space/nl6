@@ -10,6 +10,7 @@ nl6 serves NETCONF on two device profiles.
 A client opens an IOS XE style `establish-subscription` and receives a notification each time the interface state engine changes an interface.
 `juniper_mx10004` serves a Junos dialect over SSH and over mutual TLS (RFC 7589).
 A client opens a `create-subscription` on the `NETCONF` stream and receives the mib2d link events of the interface state engine.
+`juniper_mx10004` can also dial a NETCONF client itself with [call home](#call-home).
 The subsystem is off by default.
 A default fleet behaves exactly as without it.
 
@@ -23,6 +24,8 @@ A default fleet behaves exactly as without it.
 | `-netconf-tls-client-ca` | path | empty | PEM file with the CA that must have signed the client certificates. The path is flag-only. Requires `-netconf-enable`. |
 | `-netconf-tls-client-identity` | `fingerprint=username` | none | One entry of the client identity table. Repeat the flag for more entries. The fingerprint is the SHA-256 of the client certificate, with or without the `04:` prefix. Requires `-netconf-enable`. |
 | `-netconf-tls-default-username` | string | empty | NETCONF user for a client certificate that is not in the identity table. Empty means such a client is refused. Requires `-netconf-enable`. |
+| `-netconf-callhome-client` | `host:port` | empty | NETCONF client the auto-started `juniper_mx10004` devices dial with call home. Empty means no call home. Requires `-netconf-enable`. |
+| `-netconf-callhome-device-id` | string | empty | `DEVICE-ID` in the call-home preamble. Empty means each device's sysName. Requires `-netconf-callhome-client`. |
 
 Only `cisco_catalyst_9500` and `juniper_mx10004` devices open NETCONF ports.
 Other device types never do.
@@ -357,6 +360,104 @@ Skip host-name verification and pin the CA from `GET /api/v1/tls/ca` instead.
 curl -s http://localhost:8080/api/v1/tls/ca > nl6-ca.pem
 ```
 
+## Call home
+
+A `juniper_mx10004` device can open the NETCONF connection itself and dial a NETCONF client, as Junos `outbound-ssh` with `services netconf` does.
+On that connection the device is the SSH server and the NETCONF server, with the same host key, login and Junos dialect as its port `-netconf-port` listener.
+The listeners keep running, and all sessions of a device share one session space, so `kill-session` works across them.
+Other profiles have no call home. A batch that includes them creates them without it and counts them in `devices_unsupported`.
+
+Enable it for the auto-start batch with `-netconf-callhome-client`, or per request with a `netconf_callhome` block:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "start_ip": "10.0.0.1",
+    "device_count": 100,
+    "resource_file": "juniper_mx10004.json",
+    "netconf_callhome": {"client": "192.0.2.10:4334"}
+  }'
+```
+
+`device_id` in the block sets the `DEVICE-ID` of the preamble. It defaults to each device's sysName.
+
+### Wire format
+
+Junos call home is not strict RFC 8071.
+Before its SSH identification string the device writes a preamble, each line ending in CRLF:
+
+```text
+MSG-ID: DEVICE-CONN-INFO
+MSG-VER: V1
+DEVICE-ID: <device id>
+<empty line>
+```
+
+A client that expects the SSH banner as the first bytes, as RFC 8071 describes, rejects the device.
+A client for Junos reads the preamble, takes the device id from it, and then starts the SSH client handshake.
+nl6 sends the preamble because vJunos-router 25.4R1.12 sent it.
+
+### Timing
+
+nl6 reproduces what vJunos did with `keep-alive retry 3 timeout 15`:
+
+- One session per client. While it is up the device does not dial again.
+- Connect attempts happen on a fixed 15 s cycle, with no backoff and no retry limit. After a session ends, for any reason, the device dials on the next tick, 0 to 15 s later.
+- Each device has its own random offset into the cycle, so a large batch does not dial at one instant.
+- While a session is up the device sends an SSH keepalive every 15 s and closes the connection when 3 intervals pass without a reply.
+
+Dials leave from the device IP inside the device namespace and share a limit of 64 concurrent dials with gNMI dial-out.
+
+### Matching Junos configuration
+
+This vJunos configuration produced the reference capture:
+
+```text
+set system services netconf ssh
+set system services netconf notification
+set system services outbound-ssh client nms device-id vj-r1
+set system services outbound-ssh client nms services netconf
+set system services outbound-ssh client nms keep-alive retry 3 timeout 15
+set system services outbound-ssh client nms reconnect-strategy sticky
+set system services outbound-ssh client nms 192.0.2.10 port 4334
+```
+
+In containerlab the vrnetlab image puts `fxp0` in the `mgmt_junos` instance.
+Add `set system services outbound-ssh routing-instance mgmt_junos`, or the device never dials.
+
+### Call-home status
+
+`GET /api/v1/netconf/callhome/status` reports one row per client.
+
+```json
+{
+  "subsystem_active": true,
+  "clients": [
+    {
+      "client": "192.0.2.10:4334",
+      "devices": 100,
+      "sessions_up": 98,
+      "connect_attempts": 412,
+      "connect_failures": 14,
+      "sessions_ended": 300,
+      "devices_unsupported": 0
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `devices` | Devices with call home to this client. |
+| `sessions_up` | Devices whose call-home connection is open. |
+| `connect_attempts` | Dials, including those of deleted devices. |
+| `connect_failures` | Dials that failed, or whose preamble could not be written. |
+| `sessions_ended` | Call-home connections that ended after they opened. |
+| `devices_unsupported` | Devices created with a call-home block whose profile has no call home. |
+
+Call-home sessions also count in `sessions` of `GET /api/v1/netconf/status`.
+
 ## Status endpoint
 
 `GET /api/v1/netconf/status` reports the subsystem.
@@ -409,3 +510,12 @@ The main points are these.
 - The TLS alert bytes differ from Junos. The refusal is the same.
 
 `make test-interop-netconf-junos` diffs the Junos dialect against a real vJunos-router over TLS and SSH: the hello, the RPCs and the link events of one interface disable and enable.
+
+Call home has these limits:
+
+- SSH only. TLS call home (port 4335) is not served.
+- One client per device. Junos allows several.
+- The Junos `secret` option, which adds the host key and an HMAC to the preamble, is not emulated.
+- The SSH identification string and the host key are those of the listener, `SSH-2.0-Go` and the shared RSA key. vJunos sends `SSH-2.0-JSSH_4.1` with an ed25519 key.
+- The keepalive request is `keepalive@openssh.com`. The name Junos uses was not visible in the encrypted capture.
+- While a keepalive is unanswered nl6 sends no further one, because its SSH library allows one outstanding request per connection. Junos sends one every interval. The connection closes after the same 3 intervals.

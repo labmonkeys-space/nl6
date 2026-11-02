@@ -29,7 +29,7 @@ When a session ends, the whole SSH connection closes.
 
 - D1: nl6 is the integration target for the OpenNMS NETCONF client.
 - D2: SSH first, TLS second.
-- D3: "broader TLS support" is false in general and true only for Nokia Lightspan.
+- D3: "broader TLS support" is false in general and true only for Nokia Lightspan. Out of date since SR OS 26.7: Nokia's public SR OS YANG adds `transport tls` to NETCONF call home and a `tls-client-identity` table. SR OS 25.3 to 26.3 has SSH call home only, 24.10 and older none.
 - D4: Orange reads Altiplano's northbound interface, which nl6 cannot honestly emulate.
 - D5: Emulate the IOS XE dialect byte for byte, not the RFC 8639 shape.
 - D6: TLS moves to the Junos profiles.
@@ -175,3 +175,53 @@ The captures, the lab files and the probe client live in the planning artifacts 
 - Each link event arrives in both forms, with the same `eventTime`. Delivery lagged by 21 to 23 s on vJunos.
 - A logical unit sends `SNMP_TRAP_LINK_UP` at INFORMATIONAL on enable. No unit down was seen on disable.
 - Not probed: `kill-session`, `version-1.1` framing, replay, `get-schema`, a cabled carrier loss (vrnetlab passes no carrier), unit down on disable, idle keepalive behaviour.
+
+## Call home
+
+`juniper_mx10004` dials a NETCONF client and serves the Junos session on that connection (`netconf_callhome.go`).
+The exporter dials, writes the dialect's preamble, and hands the connection to `netconfServer.serveConn`, the same path an accepted connection takes.
+That server owns no listener, shares the device's session registry, and is closed by `stopNetconfServer` before the listeners.
+Operator reference: `docs/reference/netconf.md#call-home`.
+
+### Capture record
+
+Reference: the `vj` lab above, vJunos-router 25.4R1.12, 2026-11-02, with `outbound-ssh client ... device-id vj-r1, services netconf, keep-alive retry 3 timeout 15, reconnect-strategy sticky` to the lab bridge on port 4334.
+The captures live in the planning artifacts, not in this repo.
+
+- vrnetlab puts `fxp0` in `mgmt_junos`. Without `set system services outbound-ssh routing-instance mgmt_junos` the device never dials and `telnet` from the CLI reports "Can't assign requested address".
+- Junos has no separate call-home statement. Call home is `outbound-ssh` with `services netconf`.
+- Before the SSH banner: `MSG-ID: DEVICE-CONN-INFO\r\nMSG-VER: V1\r\nDEVICE-ID: vj-r1\r\n\r\n`, 59 bytes. Not strict RFC 8071.
+- Banner `SSH-2.0-JSSH_4.1`, ed25519 host key, `aes128-ctr`, `hmac-sha2-256`. The client authenticates to the device by password.
+- The call-home hello equals the port 830 hello except the session id. The four notification capabilities follow `set system services netconf notification` on both. An early capture suggested call home drops them; that session raced the commit.
+- `create-subscription` over call home streams the same syslog feed as the listener.
+- Idle session: one keepalive exchange per 15 s, no NETCONF bytes.
+- Attempts land on a 15 s grid: after `close-session`, after a TCP drop, after a listener-side close, and while the listener is down (one SYN per 15 s, no backoff, no give-up in 75 s).
+- The device keeps one connection per client. While the client holds the SSH connection open after `close-session`, the device does not dial again.
+- Not probed: the `secret` option (host key and HMAC in the preamble), several addresses under one client, whether the cycle follows `keep-alive timeout`, the keepalive request name (encrypted).
+
+### Decisions
+
+- D18: Call home is a dialer feeding the listener's `serveConn`, so the two transports cannot drift apart.
+- D19: The dialect table carries `CallHome` and `CallHomePreamble`. Only `juniper_mx10004` sets them. Other profiles in a call-home batch are skipped and counted as `devices_unsupported`, not refused.
+- D20: Fixed 15 s cycle with a random per-device phase, no backoff, as captured. The phase also spreads a batch: 10,000 devices dial at most about 670 per second.
+- D21: The device sends `keepalive@openssh.com` every 15 s and closes after 3 intervals with the last request unanswered. Any reply counts, a refusal too. Listeners keep TCP keepalive only. Junos keeps sending one per interval while earlier ones are unanswered; x/crypto/ssh allows one outstanding global request per connection (SendRequest holds a lock until the reply), so nl6 cannot. The close time is the same.
+- D26 (review): a `device_id` is refused for more than one device, so a batch never announces one DEVICE-ID twice. The sysName fallback is sanitised to printable ASCII, at most 255 bytes.
+- D27 (review): exporters count straight into the per-client aggregate, so status never counts a device that is deleted mid-read twice.
+- D22: Config mirrors gNMI dial-out: `-netconf-callhome-client` and `-netconf-callhome-device-id` seed flags, a `netconf_callhome` REST block, no attach after creation. The REST block is a 400 when `-netconf-enable` is off.
+- D23: Call-home and gNMI dial-out dials share `dialFromDevice` (`device_dial.go`): one 64-slot semaphore and a 10 s timeout, because each in-namespace dial pins an OS thread.
+- D24: Call home attaches after `device.Start`, unlike the other exporters, because it needs the session registry the listener creates.
+- D25: The banner and host key stay the listener's (`SSH-2.0-Go`, shared RSA). Aligning both transports with Junos is a separate change.
+
+### Interop
+
+`make test-interop-netconf-junos-callhome` runs the Junos interop test over the `callhome` transport.
+It needs the listener on a host the reference can reach, so on the `vj` lab it runs on mad-monkey with `NL6_NETCONF_JUNOS_CALLHOME_LISTEN=172.20.20.1:4334`.
+2026-11-02 first run: PASS, 16 rows equal, preambles equal with the device id masked, dials 3.6 to 15.0 s after the listener opened on both sides.
+The first attempt failed on the harness: it held the first connection open after `close-session`, and the reference correctly did not dial again. The test now closes it first.
+
+### Scale
+
+`BenchmarkNetconfCallHomeIdleSessions` (2026-11-02, darwin arm64, Go 1.27.3, 1000 `juniper_mx10004` devices on loopback, each with one subscribed call-home session, clients in a child process): 7.0 goroutines and 37.2 KB heap per device.
+`BenchmarkNetconfIdleSessions` in the same run: 5.0 goroutines and 32.6 KB per session.
+The two are not like for like: the listener benchmark puts 1000 sessions on one device, so they share one state dispatcher.
+A call-home device has its own session, so it pays for its own dispatcher plus the keepalive loop, which are the two extra goroutines and most of the 14% heap difference.

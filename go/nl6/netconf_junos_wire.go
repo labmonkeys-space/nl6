@@ -90,6 +90,14 @@ func junosServerHello(sessionID uint32, user string) []byte {
 	return []byte(b.String())
 }
 
+// junosCallHomePreamble renders what Junos outbound-ssh writes before its
+// SSH banner on a call-home connection. vJunos 25.4R1.12 sent exactly these
+// lines, so a strict RFC 8071 client that expects the banner first rejects
+// the device.
+func junosCallHomePreamble(deviceID string) []byte {
+	return []byte("MSG-ID: DEVICE-CONN-INFO\r\nMSG-VER: V1\r\nDEVICE-ID: " + deviceID + "\r\n\r\n")
+}
+
 func junosReplyOpen(version, messageID string) string {
 	return fmt.Sprintf("\n<rpc-reply xmlns:junos=\"http://xml.juniper.net/junos/%s/junos\" xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"%s\">\n", version, netconfEscape(messageID))
 }

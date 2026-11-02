@@ -808,6 +808,11 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			sm.mu.Unlock()
 			sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
 
+			// NETCONF call home dials into the session registry the NETCONF
+			// listener created in Start, so it attaches after Start, unlike
+			// the exporters above. Mirror in createSingleDevice.
+			sm.attachNetconfCallHome(device)
+
 			// A new device may resolve a peer that an existing device's
 			// topology link referenced before it existed, changing that
 			// device's LLDP view. (Mirror in createSingleDevice.)
@@ -1149,6 +1154,9 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	sm.mu.Unlock()
 	sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
 
+	// NETCONF call home attaches after Start (mirrors the sequential path).
+	sm.attachNetconfCallHome(device)
+
 	// A new device may resolve a peer that an existing device's topology link
 	// referenced before it existed, changing that device's LLDP view.
 	// (Mirror in CreateDevicesWithOptions.)
@@ -1242,6 +1250,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.gnmiServer == nil &&
 		d.netconfListener == nil &&
 		d.netconfTLSListener == nil &&
+		d.netconfCallHome == nil &&
 		d.flowExporter == nil &&
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&

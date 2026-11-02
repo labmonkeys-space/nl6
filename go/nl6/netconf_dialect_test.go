@@ -16,6 +16,12 @@ func TestNetconfDialectTable(t *testing.T) {
 	if !ok || mx.Name != "junos" || !mx.SSH || !mx.TLS || mx.NewSession == nil {
 		t.Errorf("juniper_mx10004 = %+v, %v; want junos over SSH and TLS", mx, ok)
 	}
+	if !mx.CallHome || mx.CallHomePreamble == nil {
+		t.Errorf("juniper_mx10004 has no call home: %+v", mx)
+	}
+	if cat.CallHome || cat.CallHomePreamble != nil {
+		t.Errorf("cisco_catalyst_9500 has call home: %+v", cat)
+	}
 	if _, ok := netconfDialectFor(&DeviceSimulator{resourceFile: "juniper_mx960.json"}); ok {
 		t.Error("juniper_mx960 has a dialect")
 	}
