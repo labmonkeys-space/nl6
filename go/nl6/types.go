@@ -132,6 +132,12 @@ type DeviceSimulator struct {
 	// the dial-in gNMI listener, so the fleet can run mixed.
 	gnmiDialoutConfig   *DeviceGnmiDialoutConfig
 	gnmiDialoutExporter *GnmiDialoutExporter // nil if dial-out disabled
+	// netconfCallHomeConfig is the per-device NETCONF call-home
+	// configuration (nil = no call home), set at creation from the CLI seed
+	// or the `netconf_callhome` block in POST /api/v1/devices.
+	// netconfCallHome is its running exporter, stopped by stopNetconfServer.
+	netconfCallHomeConfig *DeviceNetconfCallHomeConfig
+	netconfCallHome       *netconfCallHomeExporter
 	// IfErrorScenario controls the ppm bands the per-device counter
 	// cycler draws errors and discards from. One of "clean" | "typical"
 	// | "degraded" | "failing"; empty defaults to "clean". Set at device
@@ -755,6 +761,9 @@ type SimulatorManager struct {
 	// deletion, mirroring the flow/trap/syslog status pattern.
 	gnmiDialoutSubsystemActive atomic.Bool
 	gnmiDialoutAggregates      sync.Map // key: gnmiDialoutKey, value: *gnmiDialoutAggregate
+	// netconfCallHomeAggregates keeps per-client call-home counters across
+	// device deletion. Key: client address, value: *netconfCallHomeAggregate.
+	netconfCallHomeAggregates sync.Map
 
 	// DNS service-discovery subsystem. The server (dns_server.go) reads the
 	// live device map through the manager's zoneDataProvider implementation, so
@@ -847,6 +856,8 @@ type CreateDevicesRequest struct {
 	Traps       *DeviceTrapConfig        `json:"traps,omitempty"`
 	Syslog      *DeviceSyslogConfig      `json:"syslog,omitempty"`
 	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
+	// NetconfCallHome opts the created devices into NETCONF call home.
+	NetconfCallHome *DeviceNetconfCallHomeConfig `json:"netconf_callhome,omitempty"`
 
 	// IfErrorScenario selects the per-device error / discard counter
 	// scenario: "clean" | "typical" | "degraded" | "failing". Empty
@@ -954,10 +965,11 @@ type DeviceInfo struct {
 	// reported SEPARATELY in EffectiveIntervals — nesting it here made the
 	// blocks un-POSTable under DisallowUnknownFields. See
 	// export_interval_disclosure.go.
-	Flow        *DeviceFlowConfig        `json:"flow,omitempty"`
-	Traps       *DeviceTrapConfig        `json:"traps,omitempty"`
-	Syslog      *DeviceSyslogConfig      `json:"syslog,omitempty"`
-	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
+	Flow            *DeviceFlowConfig            `json:"flow,omitempty"`
+	Traps           *DeviceTrapConfig            `json:"traps,omitempty"`
+	Syslog          *DeviceSyslogConfig          `json:"syslog,omitempty"`
+	GnmiDialout     *DeviceGnmiDialoutConfig     `json:"gnmi_dialout,omitempty"`
+	NetconfCallHome *DeviceNetconfCallHomeConfig `json:"netconf_callhome,omitempty"`
 	// EffectiveIntervals reports the scheduler cadences actually in force
 	// (-flow-tick-interval, -trap-interval, -syslog-interval) for the
 	// subsystems this device participates in. Present only when the device
@@ -1093,10 +1105,11 @@ type FlowCollectorStatus struct {
 // every device in the batch with a copy of the referenced config.
 // nil fields mean "no export of this type for this batch".
 type ExportSeed struct {
-	Flow        *DeviceFlowConfig
-	Traps       *DeviceTrapConfig
-	Syslog      *DeviceSyslogConfig
-	GnmiDialout *DeviceGnmiDialoutConfig
+	Flow            *DeviceFlowConfig
+	Traps           *DeviceTrapConfig
+	Syslog          *DeviceSyslogConfig
+	GnmiDialout     *DeviceGnmiDialoutConfig
+	NetconfCallHome *DeviceNetconfCallHomeConfig
 	// IfErrorScenario is the per-device counter scenario for every
 	// device created from this seed. Empty string = "clean" default.
 	// Despite its home in ExportSeed, this is not an export concept —

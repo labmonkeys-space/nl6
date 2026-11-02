@@ -318,6 +318,7 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		info.Traps = echoTrapConfig(device.trapConfig)
 		info.Syslog = echoSyslogConfig(device.syslogConfig)
 		info.GnmiDialout = device.gnmiDialoutConfig
+		info.NetconfCallHome = device.netconfCallHomeConfig
 		info.EffectiveIntervals = buildEffectiveIntervals(device, effSnap)
 		// Emit scenario on GET only when non-default, so clean-mode
 		// devices (the common case) don't clutter the response. Matches

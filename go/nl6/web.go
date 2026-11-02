@@ -182,6 +182,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		Traps:           req.Traps,
 		Syslog:          req.Syslog,
 		GnmiDialout:     req.GnmiDialout,
+		NetconfCallHome: req.NetconfCallHome,
 		IfErrorScenario: ifErrScenario,
 		IfFlapScenario:  ifFlapScenario,
 		OpticalScenario: opticalScenario,
@@ -293,12 +294,22 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if seed.NetconfCallHome != nil {
+		if !manager.netconfSubsystemActive.Load() {
+			rejectWith("netconf_callhome: the NETCONF subsystem is off; start the simulator with -netconf-enable", http.StatusBadRequest)
+			return
+		}
+		if err := seed.NetconfCallHome.Validate(); err != nil {
+			rejectWith(err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Collapse the seed to nil when no block was supplied so CreateDevices
 	// receives the exact "no export" signal rather than an empty shell.
 	// Scenario fields set to anything other than their clean defaults are
 	// also signals to keep the seed — they need to reach applyExportSeed
 	// for the per-device cycler and flap scheduler to pick them up.
-	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.GnmiDialout == nil &&
+	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.GnmiDialout == nil && seed.NetconfCallHome == nil &&
 		seed.IfErrorScenario == IfErrorClean && seed.IfFlapScenario == IfFlapClean &&
 		seed.OpticalScenario == OpticalClean {
 		seed = nil
@@ -719,6 +730,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
 	api.HandleFunc("/gnmi/dialout/status", gnmiDialoutStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/status", netconfStatusHandler).Methods("GET")
+	api.HandleFunc("/netconf/callhome/status", netconfCallHomeStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/tls", netconfTLSGetHandler).Methods("GET")
 	api.HandleFunc("/netconf/tls", netconfTLSPutHandler).Methods("PUT")
 	api.HandleFunc("/tls/ca", tlsCAHandler).Methods("GET")

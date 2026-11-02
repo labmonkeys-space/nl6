@@ -13,6 +13,11 @@ type netconfDialect struct {
 	Name string
 	// SSH and TLS say which transports the profile is served on.
 	SSH, TLS bool
+	// CallHome says the profile can dial a NETCONF client over SSH and
+	// serve the session on that connection. CallHomePreamble, if set,
+	// renders the bytes the device writes before its SSH banner.
+	CallHome         bool
+	CallHomePreamble func(deviceID string) []byte
 	// NewSession builds a session on an established transport. user is the
 	// authenticated login name; dialects that do not print it ignore it.
 	NewSession func(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry, user string) *netconfSession
@@ -29,10 +34,12 @@ var netconfDialects = map[string]netconfDialect{
 		},
 	},
 	"juniper_mx10004": {
-		Name:       "junos",
-		SSH:        true,
-		TLS:        true,
-		NewSession: newJunosNetconfSession,
+		Name:             "junos",
+		SSH:              true,
+		TLS:              true,
+		CallHome:         true,
+		CallHomePreamble: junosCallHomePreamble,
+		NewSession:       newJunosNetconfSession,
 	},
 }
 

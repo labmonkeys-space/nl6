@@ -178,6 +178,11 @@ func main() {
 		netconfTLSDefUser  = flag.String("netconf-tls-default-username", "", "[global] NETCONF user for a client certificate missing from the identity table (empty = refuse it); requires -netconf-enable")
 		netconfTLSIdents   []string
 
+		// NETCONF call home. [seed]: applies only to the auto-start batch;
+		// REST-created devices opt in with a `netconf_callhome` block.
+		netconfCallHomeClient   = flag.String("netconf-callhome-client", "", "[seed] NETCONF client host:port that auto-started juniper_mx10004 devices dial (call home over SSH, Junos outbound-ssh framing); requires -netconf-enable (empty = off)")
+		netconfCallHomeDeviceID = flag.String("netconf-callhome-device-id", "", "[seed] DEVICE-ID the call-home preamble carries (empty = each device's sysName); requires -netconf-callhome-client")
+
 		// gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the
 		// auto-start batch; REST-created devices opt in via a per-device
 		// `gnmi_dialout` block. Dial-out is independent of dial-in; a device
@@ -636,6 +641,10 @@ func main() {
 	}); err != nil {
 		log.Fatalf("Failed to initialize NETCONF subsystem: %v", err)
 	}
+	netconfCallHomeSeed, err := netconfCallHomeSeedFromFlags(*netconfCallHomeClient, *netconfCallHomeDeviceID, *netconfEnable)
+	if err != nil {
+		log.Fatalf("NETCONF call home: %v", err)
+	}
 
 	// Start the optical SD/SF alarm evaluator unconditionally, before any
 	// device exists, so optical devices created later (auto-start batch or
@@ -862,7 +871,7 @@ func main() {
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}
 
-			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario, SetAdmission: setAdmissionSeed})
+			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, NetconfCallHome: netconfCallHomeSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario, SetAdmission: setAdmissionSeed})
 			if err != nil {
 				log.Printf("Failed to auto-create devices: %v", err)
 			} else {

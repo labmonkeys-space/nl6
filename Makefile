@@ -541,6 +541,18 @@ test-interop-netconf: check-go
 test-interop-netconf-junos: check-go
 	cd $(GO_DIR) && NL6_NETCONF_JUNOS_INTEROP=1 go test ./nl6/ -run 'TestNetconfJunosInteropAgainstReference' -count=1 -v -timeout 15m
 
+## test-interop-netconf-junos-callhome: Diff nl6's NETCONF call home (SSH, Junos outbound-ssh) against a REAL Junos device
+##
+## Runs test-interop-netconf-junos over the call-home transport only. Needs
+## the test-interop-netconf-junos variables plus
+## NL6_NETCONF_JUNOS_CALLHOME_LISTEN, the host:port the reference's
+## `outbound-ssh client ... services netconf` dials. The test listens there,
+## so run it on a host the reference can reach. It compares the preamble
+## before the SSH banner and checks that both sides dial within one 15 s
+## cycle of the listener opening.
+test-interop-netconf-junos-callhome: check-go
+	cd $(GO_DIR) && NL6_NETCONF_JUNOS_INTEROP=1 NL6_NETCONF_JUNOS_TRANSPORTS=callhome go test ./nl6/ -run 'TestNetconfJunosInteropAgainstReference' -count=1 -v -timeout 15m
+
 ## test-fleet: Run scripts/fleet.sh import against a local stub server (needs sh, curl, jq)
 test-fleet: check-node-runtime
 	@for tool in sh curl jq; do command -v $$tool >/dev/null 2>&1 || { echo "Error: $$tool not found (test-fleet runs scripts/fleet.sh, which needs sh, curl and jq)"; exit 1; }; done

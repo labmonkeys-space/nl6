@@ -23,22 +23,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const (
-	// gnmiDialoutMaxConcurrentDials bounds concurrent in-namespace dials.
-	// DialContextInNamespace pins an OS thread for the connect duration, so
-	// this cap (not the device count) determines the worst-case pinned-thread
-	// count when a collector is unreachable.
-	gnmiDialoutMaxConcurrentDials = 64
-	// gnmiDialoutDialTimeout hard-bounds a single dial so a blackholed
-	// collector releases the thread promptly instead of parking for gRPC's
-	// full connect timeout.
-	gnmiDialoutDialTimeout = 10 * time.Second
-)
-
-// gnmiDialoutDialSem throttles concurrent in-namespace dials across all
-// dial-out exporters (see gnmiDialoutMaxConcurrentDials).
-var gnmiDialoutDialSem = make(chan struct{}, gnmiDialoutMaxConcurrentDials)
-
 // gnmiDialoutKey identifies a status/aggregate bucket: one per unique
 // (collector, flavor) tuple.
 type gnmiDialoutKey struct {
@@ -201,25 +185,13 @@ func (sm *SimulatorManager) startDeviceGnmiDialoutExporter(device *DeviceSimulat
 	// When namespaces are off (tests, -no-namespace) fall back to the default
 	// dialer (no source binding).
 	//
-	// A package-level semaphore bounds concurrent in-namespace dials, and each
-	// dial gets a hard timeout. Both matter because DialContextInNamespace
-	// pins an OS thread for the connect duration — without a cap, 30k devices
-	// re-dialing a blackholed collector would pin enough threads to hit Go's
-	// 10k-thread limit and crash. Excess dials wait on the semaphore (a parked
-	// goroutine, not a pinned thread).
+	// dialFromDevice bounds concurrent in-namespace dials (shared with NETCONF
+	// call home) and gives each dial a hard timeout.
 	if useNS && device.netNamespace != nil {
 		ns := device.netNamespace
 		localIP := device.IP
 		dialOpts = append(dialOpts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			select {
-			case gnmiDialoutDialSem <- struct{}{}:
-				defer func() { <-gnmiDialoutDialSem }()
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-			dctx, cancel := context.WithTimeout(ctx, gnmiDialoutDialTimeout)
-			defer cancel()
-			return ns.DialContextInNamespace(dctx, "tcp", addr, &net.TCPAddr{IP: localIP})
+			return dialFromDevice(ctx, ns, localIP, addr)
 		}))
 	}
 

@@ -48,6 +48,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/scenarios/{id}/metrics` | GET | Scenario metrics. |
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
 | `/api/v1/netconf/status` | GET | NETCONF subsystem status: listeners, sessions, subscriptions, notification counters. See [NETCONF reference](netconf.md#status-endpoint). |
+| `/api/v1/netconf/callhome/status` | GET | NETCONF call-home counters per client: devices, sessions up, connect attempts and failures, sessions ended, unsupported devices. See [NETCONF reference](netconf.md#call-home-status). |
 | `/api/v1/netconf/tls` | GET | NETCONF over TLS client trust: the client CA PEM, the identity table and the default username. `404` when the NETCONF subsystem is off. See [NETCONF reference](netconf.md#rest). |
 | `/api/v1/netconf/tls` | PUT | Replace the whole NETCONF over TLS client trust. An omitted field clears it. `404` when the subsystem is off, `400` for a bad body. |
 | `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. `404` when no shared TLS certificate exists. |
@@ -250,6 +251,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 | `optical_scenario` | string | `clean` | Optical health band. See [Optical health band](#optical-health-band). |
 | `write_community` | string | empty | SNMPv1/v2c write community. See [Write admission](#write-admission). |
 | `flow`, `traps`, `syslog`, `gnmi_dialout` | object | absent | Per-device export blocks. See [Per-device export blocks](#per-device-export-blocks). |
+| `netconf_callhome` | object | absent | NETCONF call home for the created `juniper_mx10004` devices: `client` (`host:port`, required) and `device_id` (optional, default sysName). `400` when `-netconf-enable` is off. See [NETCONF reference](netconf.md#call-home). |
 
 An unknown field anywhere in the body is rejected with 400.
 

@@ -46,6 +46,8 @@ sudo ./nl6 [flags]
 -netconf-tls-client-ca <path>         # [global] PEM CA that must have signed NETCONF TLS client certificates. Flag-only path; requires -netconf-enable. With no CA every TLS handshake is refused (listeners still bind)
 -netconf-tls-client-identity <fp=user> # [global] Repeatable SHA-256 fingerprint=username entry of the client identity table; requires -netconf-enable
 -netconf-tls-default-username <name>  # [global] User for a client certificate missing from the table (empty = refuse it); requires -netconf-enable
+-netconf-callhome-client <h:p>        # [seed] NETCONF client that auto-started juniper_mx10004 devices dial (call home over SSH, Junos outbound-ssh preamble); requires -netconf-enable. REST: `netconf_callhome` block. Status: GET /api/v1/netconf/callhome/status
+-netconf-callhome-device-id <id>      # [seed] DEVICE-ID in the call-home preamble (empty = sysName)
 
 # gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the auto-start batch;
 # REST-created devices opt in via a per-device `gnmi_dialout` block. Dial-out is per-device
