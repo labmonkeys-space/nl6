@@ -182,19 +182,25 @@ func TestNetconfCallHomeConfigValidate(t *testing.T) {
 }
 
 func TestNetconfCallHomeSeedFromFlags(t *testing.T) {
-	if c, err := netconfCallHomeSeedFromFlags("", "", false); c != nil || err != nil {
+	if c, err := netconfCallHomeSeedFromFlags("", "", false, 1); c != nil || err != nil {
 		t.Errorf("no client = %+v, %v; want nil, nil", c, err)
 	}
-	if _, err := netconfCallHomeSeedFromFlags("", "vj-r1", true); err == nil {
+	if _, err := netconfCallHomeSeedFromFlags("", "vj-r1", true, 1); err == nil {
 		t.Error("device id without client accepted")
 	}
-	if _, err := netconfCallHomeSeedFromFlags("192.0.2.10:4334", "", false); err == nil || !strings.Contains(err.Error(), "-netconf-enable") {
+	if _, err := netconfCallHomeSeedFromFlags("192.0.2.10:4334", "", false, 1); err == nil || !strings.Contains(err.Error(), "-netconf-enable") {
 		t.Errorf("client without -netconf-enable = %v, want an error naming -netconf-enable", err)
 	}
-	if _, err := netconfCallHomeSeedFromFlags("192.0.2.10", "", true); err == nil {
+	if _, err := netconfCallHomeSeedFromFlags("192.0.2.10", "", true, 1); err == nil {
 		t.Error("client without port accepted")
 	}
-	c, err := netconfCallHomeSeedFromFlags("192.0.2.10:4334", "vj-r1", true)
+	if _, err := netconfCallHomeSeedFromFlags("192.0.2.10:4334", "vj-r1", true, 5); err == nil {
+		t.Error("one device id accepted for an auto-start batch of 5")
+	}
+	if c, err := netconfCallHomeSeedFromFlags("192.0.2.10:4334", "", true, 5); err != nil || c == nil {
+		t.Errorf("batch of 5 without device id = %+v, %v", c, err)
+	}
+	c, err := netconfCallHomeSeedFromFlags("192.0.2.10:4334", "vj-r1", true, 1)
 	if err != nil || c == nil || c.Client != "192.0.2.10:4334" || c.DeviceID != "vj-r1" {
 		t.Errorf("valid flags = %+v, %v", c, err)
 	}
@@ -219,10 +225,11 @@ func TestCreateDevicesHandlerRejectsBadCallHome(t *testing.T) {
 		{"subsystem off", false, `{"client":"192.0.2.10:4334"}`, "-netconf-enable"},
 		{"unknown field", true, `{"client":"192.0.2.10:4334","secret":"x"}`, "unknown field"},
 		{"bad client", true, `{"client":"192.0.2.10"}`, "host:port"},
+		{"device id for a batch", true, `{"client":"192.0.2.10:4334","device_id":"lab"}`, "device_id names one device"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			useNetconfTestManager(t, tc.enabled)
-			body := `{"start_ip":"10.0.0.1","device_count":1,"netmask":"24","netconf_callhome":` + tc.block + `}`
+			body := `{"start_ip":"10.0.0.1","device_count":3,"netmask":"24","netconf_callhome":` + tc.block + `}`
 			w := httptest.NewRecorder()
 			createDevicesHandler(w, httptest.NewRequest(http.MethodPost, "/api/v1/devices", strings.NewReader(body)))
 			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), tc.want) {
@@ -316,9 +323,9 @@ func TestNetconfCallHomeRedial(t *testing.T) {
 		_ = c.Close()
 	}
 	e.srv.mu.Unlock()
-	before := e.connectFailures.Load()
+	before := e.agg.connectFailures.Load()
 	time.Sleep(5 * cycle)
-	if n := e.connectFailures.Load() - before; n < 3 {
+	if n := e.agg.connectFailures.Load() - before; n < 3 {
 		t.Fatalf("%d failed attempts in 5 cycles while the client was down, want at least 3", n)
 	}
 	l2, err := net.Listen("tcp", addr)
@@ -343,7 +350,7 @@ func TestNetconfCallHomeKeepAlive(t *testing.T) {
 	if r, err := netconfRPCWithin(f, "1", "<get/>", 5*time.Second); err != nil || !strings.Contains(r, "<rpc-reply") {
 		t.Fatalf("session died with an answering client: %q %v", r, err)
 	}
-	if n := e.sessionsEnded.Load(); n != 0 {
+	if n := e.agg.sessionsEnded.Load(); n != 0 {
 		t.Fatalf("%d sessions ended with an answering client", n)
 	}
 	_ = c.Close()
@@ -359,8 +366,8 @@ func TestNetconfCallHomeKeepAlive(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	ended := e.sessionsEnded.Load()
-	waitNetconf(t, "the unresponsive session to close", func() bool { return e.sessionsEnded.Load() > ended })
+	ended := e.agg.sessionsEnded.Load()
+	waitNetconf(t, "the unresponsive session to close", func() bool { return e.agg.sessionsEnded.Load() > ended })
 }
 
 func TestNetconfCallHomeSessionParity(t *testing.T) {
@@ -508,5 +515,25 @@ func TestNetconfCallHomePhaseSpread(t *testing.T) {
 		if c > n*15/100 {
 			t.Errorf("bucket %d holds %d of %d phases", i, c, n)
 		}
+	}
+}
+
+func TestNetconfCallHomeDefaultIDFromSysName(t *testing.T) {
+	for in, want := range map[string]string{
+		"NY-CORE-01":        "NY-CORE-01",
+		"core 01":           "core-01",
+		"evil\r\nMSG-ID: X": "evil--MSG-ID:-X",
+		"r\u00e9seau":       "r--seau",
+	} {
+		if got := netconfCallHomeDefaultID(in); got != want {
+			t.Errorf("netconfCallHomeDefaultID(%q) = %q, want %q", in, got, want)
+		}
+		cfg := DeviceNetconfCallHomeConfig{Client: "192.0.2.10:4334", DeviceID: netconfCallHomeDefaultID(in)}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("sanitised %q fails Validate: %v", in, err)
+		}
+	}
+	if got := netconfCallHomeDefaultID(strings.Repeat("a", 300)); len(got) != netconfCallHomeMaxDeviceID {
+		t.Errorf("long sysName gives %d bytes, want %d", len(got), netconfCallHomeMaxDeviceID)
 	}
 }

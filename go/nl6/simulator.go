@@ -641,7 +641,7 @@ func main() {
 	}); err != nil {
 		log.Fatalf("Failed to initialize NETCONF subsystem: %v", err)
 	}
-	netconfCallHomeSeed, err := netconfCallHomeSeedFromFlags(*netconfCallHomeClient, *netconfCallHomeDeviceID, *netconfEnable)
+	netconfCallHomeSeed, err := netconfCallHomeSeedFromFlags(*netconfCallHomeClient, *netconfCallHomeDeviceID, *netconfEnable, *autoCount)
 	if err != nil {
 		log.Fatalf("NETCONF call home: %v", err)
 	}

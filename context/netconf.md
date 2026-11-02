@@ -204,7 +204,9 @@ The captures live in the planning artifacts, not in this repo.
 - D18: Call home is a dialer feeding the listener's `serveConn`, so the two transports cannot drift apart.
 - D19: The dialect table carries `CallHome` and `CallHomePreamble`. Only `juniper_mx10004` sets them. Other profiles in a call-home batch are skipped and counted as `devices_unsupported`, not refused.
 - D20: Fixed 15 s cycle with a random per-device phase, no backoff, as captured. The phase also spreads a batch: 10,000 devices dial at most about 670 per second.
-- D21: The device sends `keepalive@openssh.com` every 15 s and closes after 3 intervals with the last request unanswered. Any reply counts, a refusal too. Listeners keep TCP keepalive only.
+- D21: The device sends `keepalive@openssh.com` every 15 s and closes after 3 intervals with the last request unanswered. Any reply counts, a refusal too. Listeners keep TCP keepalive only. Junos keeps sending one per interval while earlier ones are unanswered; x/crypto/ssh allows one outstanding global request per connection (SendRequest holds a lock until the reply), so nl6 cannot. The close time is the same.
+- D26 (review): a `device_id` is refused for more than one device, so a batch never announces one DEVICE-ID twice. The sysName fallback is sanitised to printable ASCII, at most 255 bytes.
+- D27 (review): exporters count straight into the per-client aggregate, so status never counts a device that is deleted mid-read twice.
 - D22: Config mirrors gNMI dial-out: `-netconf-callhome-client` and `-netconf-callhome-device-id` seed flags, a `netconf_callhome` REST block, no attach after creation. The REST block is a 400 when `-netconf-enable` is off.
 - D23: Call-home and gNMI dial-out dials share `dialFromDevice` (`device_dial.go`): one 64-slot semaphore and a 10 s timeout, because each in-namespace dial pins an OS thread.
 - D24: Call home attaches after `device.Start`, unlike the other exporters, because it needs the session registry the listener creates.

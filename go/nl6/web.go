@@ -299,7 +299,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			rejectWith("netconf_callhome: the NETCONF subsystem is off; start the simulator with -netconf-enable", http.StatusBadRequest)
 			return
 		}
-		if err := seed.NetconfCallHome.Validate(); err != nil {
+		if err := seed.NetconfCallHome.ValidateFor(req.DeviceCount); err != nil {
 			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}

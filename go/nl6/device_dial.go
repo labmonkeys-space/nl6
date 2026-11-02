@@ -29,7 +29,9 @@ const (
 var deviceDialSem = make(chan struct{}, deviceDialMaxConcurrent)
 
 // dialFromDevice opens a TCP connection to addr from inside ns with the
-// device IP as source, under deviceDialSem and deviceDialTimeout.
+// device IP as source, under deviceDialSem and deviceDialTimeout. With no
+// namespace (tests, -no-namespace) it dials from the default namespace
+// without a source binding, as gNMI dial-out always has.
 func dialFromDevice(ctx context.Context, ns *NetNamespace, localIP net.IP, addr string) (net.Conn, error) {
 	release, err := acquireDeviceDialSlot(ctx)
 	if err != nil {
@@ -38,6 +40,10 @@ func dialFromDevice(ctx context.Context, ns *NetNamespace, localIP net.IP, addr 
 	defer release()
 	dctx, cancel := context.WithTimeout(ctx, deviceDialTimeout)
 	defer cancel()
+	if ns == nil {
+		var dl net.Dialer
+		return dl.DialContext(dctx, "tcp", addr)
+	}
 	return ns.DialContextInNamespace(dctx, "tcp", addr, &net.TCPAddr{IP: localIP})
 }
 

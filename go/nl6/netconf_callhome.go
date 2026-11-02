@@ -41,6 +41,10 @@ var (
 // in the preamble.
 const netconfCallHomeMaxDeviceID = 255
 
+// netconfCallHomeUnsupportedLogged remembers the profiles already logged as
+// having no call home, so each is named once.
+var netconfCallHomeUnsupportedLogged sync.Map
+
 // DeviceNetconfCallHomeConfig is the per-device call-home configuration. A
 // nil pointer on the device means no call home.
 //
@@ -70,11 +74,42 @@ func (c *DeviceNetconfCallHomeConfig) Validate() error {
 		return fmt.Errorf("netconf_callhome: device_id is %d bytes, at most %d", len(c.DeviceID), netconfCallHomeMaxDeviceID)
 	}
 	for i := 0; i < len(c.DeviceID); i++ {
-		if b := c.DeviceID[i]; b < 0x21 || b > 0x7e {
+		if !netconfCallHomeIDByte(c.DeviceID[i]) {
 			return fmt.Errorf("netconf_callhome: device_id must be printable ASCII without spaces")
 		}
 	}
 	return nil
+}
+
+// ValidateFor also refuses a device id for more than one device: every
+// device would announce the same DEVICE-ID, and a client that keys devices
+// by it could not tell them apart.
+func (c *DeviceNetconfCallHomeConfig) ValidateFor(deviceCount int) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if c != nil && c.DeviceID != "" && deviceCount > 1 {
+		return fmt.Errorf("netconf_callhome: device_id names one device but %d are requested; omit it so each device sends its sysName", deviceCount)
+	}
+	return nil
+}
+
+func netconfCallHomeIDByte(b byte) bool { return b >= 0x21 && b <= 0x7e }
+
+// netconfCallHomeDefaultID turns a sysName into a DEVICE-ID that keeps the
+// preamble well-formed: bytes outside printable ASCII, spaces included,
+// become '-', and the result is cut to netconfCallHomeMaxDeviceID.
+func netconfCallHomeDefaultID(sysName string) string {
+	b := []byte(sysName)
+	if len(b) > netconfCallHomeMaxDeviceID {
+		b = b[:netconfCallHomeMaxDeviceID]
+	}
+	for i := range b {
+		if !netconfCallHomeIDByte(b[i]) {
+			b[i] = '-'
+		}
+	}
+	return string(b)
 }
 
 // netconfCallHomeExporter is one device's call-home loop. srv owns no
@@ -93,11 +128,11 @@ type netconfCallHomeExporter struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	connectAttempts atomic.Uint64
-	connectFailures atomic.Uint64
-	sessionsEnded   atomic.Uint64
-	sessionUp       atomic.Bool
-	persisted       sync.Once
+	// agg is the client's aggregate. The exporter counts into it directly,
+	// so the totals include deleted devices without a fold at stop, and a
+	// status read never sees one device twice.
+	agg       *netconfCallHomeAggregate
+	sessionUp atomic.Bool
 }
 
 func (e *netconfCallHomeExporter) start() {
@@ -141,16 +176,16 @@ func (e *netconfCallHomeExporter) run() {
 
 // attempt dials once and, on success, serves the session until it ends.
 func (e *netconfCallHomeExporter) attempt() {
-	e.connectAttempts.Add(1)
+	e.agg.connectAttempts.Add(1)
 	conn, err := e.dial(e.ctx)
 	if err != nil {
-		e.connectFailures.Add(1)
+		e.agg.connectFailures.Add(1)
 		return
 	}
 	if len(e.preamble) > 0 {
 		_ = conn.SetWriteDeadline(time.Now().Add(netconfCallHomePreambleTimeout))
 		if _, err := conn.Write(e.preamble); err != nil {
-			e.connectFailures.Add(1)
+			e.agg.connectFailures.Add(1)
 			_ = conn.Close()
 			return
 		}
@@ -163,10 +198,11 @@ func (e *netconfCallHomeExporter) attempt() {
 	e.sessionUp.Store(true)
 	e.srv.serveConn(conn)
 	e.sessionUp.Store(false)
-	e.sessionsEnded.Add(1)
+	e.agg.sessionsEnded.Add(1)
 }
 
-// netconfCallHomeAggregate keeps a client's counters across device deletion.
+// netconfCallHomeAggregate holds a client's counters, live and deleted
+// devices together.
 type netconfCallHomeAggregate struct {
 	connectAttempts    atomic.Uint64
 	connectFailures    atomic.Uint64
@@ -194,9 +230,10 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 	}
 	dia, ok := netconfDialectFor(d)
 	if !ok || !dia.CallHome {
-		agg := sm.netconfCallHomeAggregateFor(cfg.Client)
-		if agg.devicesUnsupported.Add(1) == 1 {
-			log.Printf("netconf call home: profile %s has no call home; its devices are skipped and counted as unsupported", resourceDirName(d.resourceFile))
+		sm.netconfCallHomeAggregateFor(cfg.Client).devicesUnsupported.Add(1)
+		profile := resourceDirName(d.resourceFile)
+		if _, seen := netconfCallHomeUnsupportedLogged.LoadOrStore(profile, true); !seen {
+			log.Printf("netconf call home: profile %s has no call home; its devices are skipped and counted as unsupported", profile)
 		}
 		d.mu.Lock()
 		d.netconfCallHomeConfig = nil
@@ -217,7 +254,7 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 	}
 	id := cfg.DeviceID
 	if id == "" {
-		id = d.sysName
+		id = netconfCallHomeDefaultID(d.sysName)
 	}
 	var preamble []byte
 	if dia.CallHomePreamble != nil {
@@ -228,20 +265,12 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 	srv.keepAlive = netconfCallHomeKeepAlive
 	srv.keepAliveMisses = netconfCallHomeKeepAliveMisses
 
-	ns, ip, useNS, client := d.netNamespace, d.IP, sm.useNamespace, cfg.Client
+	ns, ip, client := d.netNamespace, d.IP, cfg.Client
+	if !sm.useNamespace {
+		ns = nil
+	}
 	dial := func(ctx context.Context) (net.Conn, error) {
-		if useNS && ns != nil {
-			return dialFromDevice(ctx, ns, ip, client)
-		}
-		release, err := acquireDeviceDialSlot(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defer release()
-		dctx, cancel := context.WithTimeout(ctx, deviceDialTimeout)
-		defer cancel()
-		var dl net.Dialer
-		return dl.DialContext(dctx, "tcp", client)
+		return dialFromDevice(ctx, ns, ip, client)
 	}
 
 	cycle := netconfCallHomeCycle
@@ -254,6 +283,7 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 		dial:     dial,
 		phase:    netconfCallHomePhase(cycle),
 		cycle:    cycle,
+		agg:      sm.netconfCallHomeAggregateFor(cfg.Client),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
@@ -262,8 +292,8 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 	return nil
 }
 
-// stopNetconfCallHome closes the device's call-home exporter and folds its
-// counters into the client aggregate. Idempotent.
+// stopNetconfCallHome closes the device's call-home exporter. Its counters
+// already live in the client aggregate. Idempotent.
 //
 // Caller MUST hold d.mu. No exporter goroutine takes d.mu.
 func (d *DeviceSimulator) stopNetconfCallHome() {
@@ -273,18 +303,6 @@ func (d *DeviceSimulator) stopNetconfCallHome() {
 	}
 	d.netconfCallHome = nil
 	e.close()
-	if manager != nil {
-		manager.persistNetconfCallHome(e)
-	}
-}
-
-func (sm *SimulatorManager) persistNetconfCallHome(e *netconfCallHomeExporter) {
-	e.persisted.Do(func() {
-		agg := sm.netconfCallHomeAggregateFor(e.client)
-		agg.connectAttempts.Add(e.connectAttempts.Load())
-		agg.connectFailures.Add(e.connectFailures.Load())
-		agg.sessionsEnded.Add(e.sessionsEnded.Load())
-	})
 }
 
 // NetconfCallHomeStatus is the body of GET /api/v1/netconf/callhome/status.
@@ -330,9 +348,6 @@ func (sm *SimulatorManager) GetNetconfCallHomeStatus() NetconfCallHomeStatus {
 		if e.sessionUp.Load() {
 			r.SessionsUp++
 		}
-		r.ConnectAttempts += e.connectAttempts.Load()
-		r.ConnectFailures += e.connectFailures.Load()
-		r.SessionsEnded += e.sessionsEnded.Load()
 	}
 	sm.mu.RUnlock()
 	sm.netconfCallHomeAggregates.Range(func(k, v any) bool {
@@ -376,9 +391,9 @@ func (sm *SimulatorManager) attachNetconfCallHome(d *DeviceSimulator) {
 }
 
 // netconfCallHomeSeedFromFlags builds the auto-start batch's call-home block
-// from -netconf-callhome-client and -netconf-callhome-device-id. No client
-// means no call home.
-func netconfCallHomeSeedFromFlags(client, deviceID string, netconfEnabled bool) (*DeviceNetconfCallHomeConfig, error) {
+// from -netconf-callhome-client and -netconf-callhome-device-id for a batch
+// of deviceCount devices. No client means no call home.
+func netconfCallHomeSeedFromFlags(client, deviceID string, netconfEnabled bool, deviceCount int) (*DeviceNetconfCallHomeConfig, error) {
 	if client == "" {
 		if deviceID != "" {
 			return nil, fmt.Errorf("-netconf-callhome-device-id requires -netconf-callhome-client")
@@ -389,7 +404,7 @@ func netconfCallHomeSeedFromFlags(client, deviceID string, netconfEnabled bool) 
 		return nil, fmt.Errorf("-netconf-callhome-client requires -netconf-enable")
 	}
 	c := &DeviceNetconfCallHomeConfig{Client: client, DeviceID: deviceID}
-	if err := c.Validate(); err != nil {
+	if err := c.ValidateFor(deviceCount); err != nil {
 		return nil, err
 	}
 	return c, nil

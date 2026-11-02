@@ -219,9 +219,9 @@ type junosInteropTarget struct {
 	// chListen is where this side's call home arrives. chPreambles and
 	// chWaits record, per call-home connection, the bytes before the SSH
 	// banner and the time from opening the listener to the accept.
-	chListen    string
-	chPreambles []string
-	chWaits     []time.Duration
+	chListen         string
+	chPreambles      []string
+	chWaits          []time.Duration
 	sshUser, sshPass string
 	clientCert       tls.Certificate
 	iface            string

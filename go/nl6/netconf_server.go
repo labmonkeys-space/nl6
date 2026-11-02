@@ -238,10 +238,14 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 }
 
 // sshKeepAlive sends a keepalive request every s.keepAlive and closes conn
-// after s.keepAliveMisses ticks in a row find the previous request still
-// unanswered. Any reply counts, a refusal too: a client that refuses an
-// unknown request is alive. It ends when stop closes or the connection
-// fails.
+// after s.keepAliveMisses ticks in a row find the request still unanswered.
+// Any reply counts, a refusal too: a client that refuses an unknown request
+// is alive. It ends when stop closes or the connection fails.
+//
+// Junos sends one keepalive per interval even while earlier ones are
+// unanswered. x/crypto/ssh holds a lock in SendRequest until the reply, so
+// only one global request can be in flight per connection, and nl6 sends the
+// next one only after the reply. The close comes at the same time either way.
 func (s *netconfServer) sshKeepAlive(conn net.Conn, sc ssh.Conn, stop <-chan struct{}) {
 	defer s.wg.Done()
 	t := time.NewTicker(s.keepAlive)

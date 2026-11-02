@@ -518,3 +518,4 @@ Call home has these limits:
 - The Junos `secret` option, which adds the host key and an HMAC to the preamble, is not emulated.
 - The SSH identification string and the host key are those of the listener, `SSH-2.0-Go` and the shared RSA key. vJunos sends `SSH-2.0-JSSH_4.1` with an ed25519 key.
 - The keepalive request is `keepalive@openssh.com`. The name Junos uses was not visible in the encrypted capture.
+- While a keepalive is unanswered nl6 sends no further one, because its SSH library allows one outstanding request per connection. Junos sends one every interval. The connection closes after the same 3 intervals.
