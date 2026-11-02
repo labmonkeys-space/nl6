@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The role metadata lists Debian 13 (`trixie`) next to Ubuntu 24.04 and 26.04, matching the docs, and the unsupported-platform message names Debian 13, Ubuntu 24.04 and 26.04, and EL 10. The role still installs the `.deb` on any Debian-family host.
+
 ## 0.38.1
 
 - No role changes. The collection version follows the nl6 0.38.1 release.

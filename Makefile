@@ -212,7 +212,7 @@ packages: dist
 	rm -f dist/nl6-pkgstage
 
 # Distro images exercised by `make smoke`. Override to trim/extend the matrix.
-SMOKE_DEB_IMAGES ?= debian:13 ubuntu:26.04
+SMOKE_DEB_IMAGES ?= debian:13 ubuntu:24.04 ubuntu:26.04
 # quay.io/centos/centos:stream10 is removed on purpose (nl6#610). On 2026-09-02
 # the CentOS Stream 10 tags were republished broken: the image's single "layer"
 # is an OCI image layout (blobs/, index.json, oci-layout) rather than a root

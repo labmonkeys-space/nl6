@@ -12,7 +12,7 @@ It then sets the sysctls, writes `/etc/nl6/nl6.conf` and enables the packaged `n
 
 | Platform | Package | Package manager |
 | --- | --- | --- |
-| Debian 13, Ubuntu 26.04 LTS | `nl6_<version>_<arch>.deb` | apt |
+| Debian 13, Ubuntu 24.04 LTS, Ubuntu 26.04 LTS | `nl6_<version>_<arch>.deb` | apt |
 | CentOS Stream 10, Rocky Linux 10, AlmaLinux 10 | `nl6-<version>-1.<arch>.rpm` | dnf |
 
 Both amd64 (x86_64) and arm64 (aarch64) are supported.
