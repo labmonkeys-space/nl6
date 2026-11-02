@@ -16,8 +16,9 @@ It then sets the sysctls, writes `/etc/nl6/nl6.conf` and enables the packaged `n
 | CentOS Stream 10, Rocky Linux 10, AlmaLinux 10 | `nl6-<version>-1.<arch>.rpm` | dnf |
 
 Both amd64 (x86_64) and arm64 (aarch64) are supported.
-Any Debian-family host gets the `.deb`.
-A RedHat-family host other than EL 10, or a host of any other family, fails before the role downloads anything.
+Any other host fails before the role downloads anything.
+That includes other Debian and Ubuntu releases, interim Ubuntu releases such as 24.10, and derivatives such as Linux Mint and Oracle Linux.
+Install the package by hand there.
 It installs the same package as [Install packages](./install-packages.md).
 It also sets the sysctls and runs the checks below, which the manual install leaves to you.
 

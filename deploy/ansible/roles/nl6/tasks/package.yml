@@ -1,14 +1,18 @@
 # Copyright 2026 Ronny Trommer <ronny@no42.org>
 # SPDX-License-Identifier: Apache-2.0
 ---
-# Each release ships a .deb for Debian and an .rpm smoke-tested on EL 10.
-# Set unconditionally, so a variable of the same name from the inventory
-# cannot skip the gate below.
-- name: Select the package format from the OS family
+# Each release ships a .deb smoke-tested on Debian 13 and Ubuntu 24.04 and
+# 26.04, and an .rpm for CentOS Stream, Rocky Linux and AlmaLinux 10. Any other
+# release or derivative is refused. Ubuntu is matched on the full version, so
+# an interim release such as 24.10 is refused too. Set unconditionally, so a
+# variable of the same name from the inventory cannot skip the gate below.
+- name: Select the package format from the platform
   ansible.builtin.set_fact:
     nl6_pkg_format: >-
-      {{ 'deb' if ansible_facts.os_family == 'Debian'
-      else 'rpm' if ansible_facts.os_family == 'RedHat' and ansible_facts.distribution_major_version == '10'
+      {{ 'deb' if (ansible_facts.distribution == 'Debian' and ansible_facts.distribution_major_version == '13')
+      or (ansible_facts.distribution == 'Ubuntu' and ansible_facts.distribution_version in ['24.04', '26.04'])
+      else 'rpm' if ansible_facts.distribution in ['CentOS', 'Rocky', 'AlmaLinux']
+      and ansible_facts.distribution_major_version == '10'
       else '' }}
 
 - name: Fail on an unsupported platform
