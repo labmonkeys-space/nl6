@@ -148,6 +148,9 @@ Move the bundle inline as `ca_pem`, or pass the path on the command line.
 }
 ```
 
+`collectors` is sorted by `collector`, then by `flavor`, so repeated requests list the rows in the same order.
+The sort compares the strings, so `10.0.0.10:6030` comes before `10.0.0.9:6030`.
+
 Counters are monotonic across device deletion (a deleted device's totals persist in the per-(collector, flavor) aggregate).
 
 ## Operational notes
