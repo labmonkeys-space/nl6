@@ -8,7 +8,9 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -623,6 +625,49 @@ func TestGetFlowStatus_AggregatesAcrossDevices(t *testing.T) {
 		default:
 			t.Errorf("unexpected collector record: %+v", c)
 		}
+	}
+}
+
+// TestGetFlowStatus_SortedByCollector pins nl6#973: rows come from live
+// exporters and from the persisted aggregates of deleted devices, and the
+// response lists them by collector, then protocol. c:2055/netflow9 is in
+// both sources and must merge into one row.
+func TestGetFlowStatus_SortedByCollector(t *testing.T) {
+	sm := &SimulatorManager{devices: make(map[string]*DeviceSimulator)}
+	for i, k := range []flowConnKey{
+		{collector: "c:2055", protocol: "netflow9"},
+		{collector: "a:2055", protocol: "netflow9"},
+	} {
+		ip := fmt.Sprintf("10.0.0.%d", i+1)
+		d := testDevice(ip)
+		// GetFlowStatus reads only collectorStr; a nil address skips DNS.
+		d.flowExporter = NewFlowExporter(d, flowProfileEdgeRouter,
+			30*time.Second, 15*time.Second, 60*time.Second,
+			k.collector, nil, k.protocol, NetFlow9Encoder{}, 0)
+		sm.devices[ip] = d
+	}
+	for _, k := range []flowConnKey{
+		{collector: "c:2055", protocol: "netflow9"},
+		{collector: "b:4739", protocol: "ipfix"},
+		{collector: "a:2055", protocol: "ipfix"},
+	} {
+		sm.flowAggregates.Store(k, &flowCollectorAggregate{})
+	}
+
+	want := []string{"a:2055/ipfix", "a:2055/netflow9", "b:4739/ipfix", "c:2055/netflow9"}
+	st := sm.GetFlowStatus()
+	got := make([]string, 0, len(want))
+	for _, c := range st.Collectors {
+		got = append(got, c.Collector+"/"+c.Protocol)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("collectors out of order:\n got %v\nwant %v", got, want)
+	}
+	if merged := st.Collectors[3]; merged.Devices != 1 {
+		t.Errorf("c:2055/netflow9 Devices = %d, want 1 (live row lost in the merge)", merged.Devices)
+	}
+	if st.DevicesExporting != 2 {
+		t.Errorf("DevicesExporting = %d, want 2", st.DevicesExporting)
 	}
 }
 

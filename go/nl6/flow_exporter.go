@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1540,6 +1542,9 @@ func (sm *SimulatorManager) GetFlowStatus() FlowStatus {
 		collectors = append(collectors, *rec)
 		totalDevices += rec.Devices
 	}
+	slices.SortFunc(collectors, func(a, b FlowCollectorStatus) int {
+		return cmp.Or(strings.Compare(a.Collector, b.Collector), strings.Compare(a.Protocol, b.Protocol))
+	})
 
 	var lastTemplate string
 	if ms := sm.flowStatLastTmpl.Load(); ms > 0 {
