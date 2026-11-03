@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.39.0
 
 - **Breaking:** the role refuses every platform it is not tested on.
   It installs the `.deb` only on Debian 13, Ubuntu 24.04 and Ubuntu 26.04, and the `.rpm` only on CentOS Stream, Rocky Linux and AlmaLinux 10.
