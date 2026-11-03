@@ -62,7 +62,10 @@ Values come from the resource file and do not change.
 ### Per-GPU dynamic metrics
 
 Same pattern, `<X>` from `5` to `12`.
-Values come from the metrics cycler and change every poll.
+Values come from the metrics cycler, which moves to the next point once per minute.
+Adjacent points can hold the same value.
+Reading an OID does not move its value.
+See [DCGM → Value behaviour](dcgm.md#value-behaviour).
 Eight metrics times eight GPUs is 64 dynamic OIDs per device.
 
 | X | Metric | Unit |
