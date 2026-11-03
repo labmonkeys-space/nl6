@@ -275,7 +275,7 @@ func TestCienaArcMatchesTheMIB(t *testing.T) {
 	t.Run("positive control: the walk can see an object in the arc", func(t *testing.T) {
 		planted := deviceForProfileWithPlantedOID(t, cienaArcProfile,
 			cienaWaveserverRoot+".4.99.0", "planted")
-		next, _ := planted.findNextOIDWithServed(cienaArcRoot, planted.lldpServedOIDs())
+		next, _ := planted.findNextOIDWithServed(cienaArcRoot, planted.lldpServedOIDs(), planted.metricsPoint())
 		if !strings.HasPrefix(next, cienaArcRoot+".") {
 			t.Fatalf("with an object planted at %s.4.99.0, walking from %s reaches %q — the walk "+
 				"cannot see the Ciena arc at all, so the emptiness check in the parent test proves "+
@@ -283,7 +283,7 @@ func TestCienaArcMatchesTheMIB(t *testing.T) {
 		}
 	})
 
-	next, _ := ciena.findNextOIDWithServed(cienaArcRoot, ciena.lldpServedOIDs())
+	next, _ := ciena.findNextOIDWithServed(cienaArcRoot, ciena.lldpServedOIDs(), ciena.metricsPoint())
 	if next != "" {
 		t.Errorf("walking from %s reaches %s, so ciena_waveserver5 now serves an object under "+
 			"Ciena's enterprise arc. It served none at the time of this reading, and CIENA-WS-MIB "+

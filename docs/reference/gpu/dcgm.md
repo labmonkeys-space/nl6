@@ -70,7 +70,7 @@ Reading a column does not move it, so two collectors polling the same OID read t
 Every metric of every GPU of a device reads the same point at the same instant, so power, temperature, fan speed and both clocks follow the utilization they were derived from.
 VRAM total is constant.
 
-Each OID reads the clock on its own, so a request that straddles a minute boundary can read two adjacent points.
+One SNMP request reads the point once, so every OID in a GET, GETNEXT or GETBULK comes from the same point, even across a minute boundary.
 Up to v0.38.1 every read returned the next point and each metric had its own cursor, so the value moved per read and the derived metrics drifted apart from utilization.
 
 The per-profile ranges the cycles are drawn from:

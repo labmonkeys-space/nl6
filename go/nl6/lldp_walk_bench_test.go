@@ -121,7 +121,7 @@ func walkLLDPSubtree(s *SNMPServer, shared bool) int {
 	for {
 		var next string
 		if shared {
-			next, _ = s.findNextOIDWithServed(cur, served)
+			next, _ = s.findNextOIDWithServed(cur, served, s.metricsPoint())
 		} else {
 			next, _ = s.findNextOID(cur)
 		}

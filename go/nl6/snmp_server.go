@@ -447,15 +447,16 @@ func (s *SNMPServer) getNextBindingsForRequest(oids []string, served []kvOID, ve
 	budget *counter64SkipBudget) ([]string, []string) {
 	respOIDs := make([]string, len(oids))
 	respVals := make([]string, len(oids))
+	p := s.metricsPoint() // one metric point for every binding (nl6#975)
 	for i, requested := range oids {
-		respOIDs[i], respVals[i] = s.getNextBinding(requested, served, version, budget)
+		respOIDs[i], respVals[i] = s.getNextBinding(requested, served, p, version, budget)
 	}
 	return respOIDs, respVals
 }
 
-func (s *SNMPServer) getNextBinding(requested string, served []kvOID, version int,
+func (s *SNMPServer) getNextBinding(requested string, served []kvOID, p, version int,
 	budget *counter64SkipBudget) (string, string) {
-	responseOID, response := s.findNextOIDWithServed(requested, served)
+	responseOID, response := s.findNextOIDWithServed(requested, served, p)
 
 	if version == snmpVersion1 && responseOID != "" &&
 		snmpTypeTag(responseOID) == ASN1_COUNTER64 {
@@ -466,7 +467,7 @@ func (s *SNMPServer) getNextBinding(requested string, served []kvOID, version in
 				break
 			}
 			prev := responseOID
-			responseOID, response = s.findNextOIDWithServed(responseOID, served)
+			responseOID, response = s.findNextOIDWithServed(responseOID, served, p)
 			if responseOID != "" && compareOIDs(responseOID, prev) <= 0 {
 				s.logFirstSkipAbort("successor "+responseOID+" does not advance", prev)
 				responseOID = ""

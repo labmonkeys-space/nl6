@@ -1166,7 +1166,7 @@ func TestAristaArcMatchesTheMIB(t *testing.T) {
 	t.Run("positive control: the walk can see an object in the arc", func(t *testing.T) {
 		planted := deviceForProfileWithPlantedOID(t, aristaLedgerProfile,
 			"1.3.6.1.4.1.30065.3.1.1.99.0", "planted")
-		next, _ := planted.findNextOIDWithServed(aristaRoot, planted.lldpServedOIDs())
+		next, _ := planted.findNextOIDWithServed(aristaRoot, planted.lldpServedOIDs(), planted.metricsPoint())
 		if !strings.HasPrefix(next, aristaRoot+".") {
 			t.Fatalf("with an object planted at 1.3.6.1.4.1.30065.3.1.1.99.0, walking from %s "+
 				"reaches %q — the walk cannot see the Arista arc at all, so the emptiness check "+
@@ -1174,7 +1174,7 @@ func TestAristaArcMatchesTheMIB(t *testing.T) {
 		}
 	})
 
-	next, _ := arista.findNextOIDWithServed(aristaRoot, arista.lldpServedOIDs())
+	next, _ := arista.findNextOIDWithServed(aristaRoot, arista.lldpServedOIDs(), arista.metricsPoint())
 	if next != "" {
 		t.Errorf("walking from %s reaches %s, so arista_7280r3 serves an object at or above "+
 			"Arista's enterprise arc again. Every object nl6 shipped there was undefined or "+

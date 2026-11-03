@@ -35,7 +35,7 @@ func longestCounter64RunThroughWalk(s *SNMPServer, maxSteps int) (run int, at st
 	cur := ""
 	cnt, cntAt := 0, ""
 	for steps < maxSteps {
-		next, _ := s.findNextOIDWithServed(cur, served)
+		next, _ := s.findNextOIDWithServed(cur, served, s.metricsPoint())
 		// Same termination conditions the walk itself uses: no successor, or one
 		// that does not advance (a corrupt oidNextMap).
 		if next == "" || (cur != "" && compareOIDs(next, cur) <= 0) {
