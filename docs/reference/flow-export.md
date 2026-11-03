@@ -444,5 +444,8 @@ The body is the standard `{success, message, data}` envelope.
 
 An NBAR2 device and a plain IPFIX device to the same collector share one `ipfix` row; the collector tells them apart by template id.
 
+`collectors` is sorted by `collector`, then by `protocol`, so repeated requests list the rows in the same order.
+The sort compares the strings, so `10.0.0.10:2055` comes before `10.0.0.9:2055`.
+
 Flow status has no `subsystem_active` field.
 `collectors: []` means no device with a `flow` block has attached yet.
