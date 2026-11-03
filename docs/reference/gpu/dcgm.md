@@ -89,12 +89,13 @@ The profiles also serve `system`, the IF-MIB interface tables and Host Resources
 Interface counters come from the same engine as every other device type; see [SNMP](../snmp.md).
 
 Three Host Resources OIDs are dynamic and come from the device's metrics cycler, not the static resource file.
+They behave like the per-GPU metrics, including the minute-boundary case, described in [Value behaviour](#value-behaviour).
 
 | OID | Name | Behaviour |
 |-----|------|-----------|
-| `1.3.6.1.2.1.25.3.3.1.2.1` | `hrProcessorLoad.1` | Cycling CPU percent, advances on every read |
+| `1.3.6.1.2.1.25.3.3.1.2.1` | `hrProcessorLoad.1` | Cycling CPU percent, moves to the next point once per minute |
 | `1.3.6.1.2.1.25.2.3.1.5.1` | `hrStorageSize.1` | Constant physical memory total from the device profile, never advances |
-| `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, advances on every read |
+| `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, moves to the next point once per minute |
 
 The other Host Resources OIDs, including storage row 2, are static.
 
