@@ -188,13 +188,13 @@ func (sm *SimulatorManager) startDeviceGnmiDialoutExporter(device *DeviceSimulat
 	// When namespaces are off (tests, -no-namespace) fall back to the default
 	// dialer (no source binding).
 	//
-	// dialFromDevice bounds concurrent in-namespace dials (shared with NETCONF
-	// call home) and gives each dial a hard timeout.
+	// dialFromDevice bounds concurrent in-namespace dials with dial-out's own
+	// slots and gives each dial a hard timeout.
 	if useNS && device.netNamespace != nil {
 		ns := device.netNamespace
 		localIP := device.IP
 		dialOpts = append(dialOpts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			return dialFromDevice(ctx, ns, localIP, addr)
+			return dialFromDevice(ctx, gnmiDialoutDialSem, ns, localIP, addr)
 		}))
 	}
 

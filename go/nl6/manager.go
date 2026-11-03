@@ -318,11 +318,7 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		info.Traps = echoTrapConfig(device.trapConfig)
 		info.Syslog = echoSyslogConfig(device.syslogConfig)
 		info.GnmiDialout = device.gnmiDialoutConfig
-		// Call home attaches after the device is published and may clear
-		// this field, so read it under the device lock.
-		device.mu.RLock()
 		info.NetconfCallHome = device.netconfCallHomeConfig
-		device.mu.RUnlock()
 		info.EffectiveIntervals = buildEffectiveIntervals(device, effSnap)
 		// Emit scenario on GET only when non-default, so clean-mode
 		// devices (the common case) don't clutter the response. Matches

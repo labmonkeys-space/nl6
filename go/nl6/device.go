@@ -797,6 +797,13 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 				continue
 			}
 
+			// NETCONF call home dials into the session registry the NETCONF
+			// listener created in Start, so it attaches after Start, unlike
+			// the exporters above. It attaches before the device is
+			// published, so ListDevices reads a call-home config that no
+			// longer changes. Mirror in createSingleDevice.
+			sm.attachNetconfCallHome(device)
+
 			// Add device to map with a write lock. deviceTypesByIP was
 			// populated earlier (before exporter registration) to avoid a
 			// fire-timing race; repeated write here is idempotent.
@@ -807,11 +814,6 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			sm.incrementIP(prefix)
 			sm.mu.Unlock()
 			sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
-
-			// NETCONF call home dials into the session registry the NETCONF
-			// listener created in Start, so it attaches after Start, unlike
-			// the exporters above. Mirror in createSingleDevice.
-			sm.attachNetconfCallHome(device)
 
 			// A new device may resolve a peer that an existing device's
 			// topology link referenced before it existed, changing that
@@ -1145,6 +1147,10 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 		return false
 	}
 
+	// NETCONF call home attaches after Start and before the device is
+	// published (mirrors the sequential path).
+	sm.attachNetconfCallHome(device)
+
 	// Add device to map with a write lock. deviceTypesByIP was populated
 	// earlier (before exporter registration) to avoid a fire-timing race.
 	sm.mu.Lock()
@@ -1153,9 +1159,6 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	sm.indexDeviceByIP(device)
 	sm.mu.Unlock()
 	sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
-
-	// NETCONF call home attaches after Start (mirrors the sequential path).
-	sm.attachNetconfCallHome(device)
 
 	// A new device may resolve a peer that an existing device's topology link
 	// referenced before it existed, changing that device's LLDP view.

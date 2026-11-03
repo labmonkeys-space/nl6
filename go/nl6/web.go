@@ -303,6 +303,10 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}
+		if rf, ok := netconfCallHomeIncapableRequest(req); ok {
+			rejectWith(fmt.Sprintf("netconf_callhome: device type %q has no NETCONF call home; remove the \"netconf_callhome\" block", rf), http.StatusBadRequest)
+			return
+		}
 	}
 	// Collapse the seed to nil when no block was supplied so CreateDevices
 	// receives the exact "no export" signal rather than an empty shell.

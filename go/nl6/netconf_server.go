@@ -47,6 +47,11 @@ type netconfServer struct {
 	// keepalive.
 	keepAlive       time.Duration
 	keepAliveMisses int
+	// handshakeTimeout, when set, bounds the SSH handshake instead of the
+	// SSH idle timeout. onHandshake, when set, runs once the handshake
+	// succeeds. Only call home sets them.
+	handshakeTimeout time.Duration
+	onHandshake      func()
 
 	mu        sync.Mutex
 	conns     map[net.Conn]struct{}
@@ -217,12 +222,22 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 	// netconf subsystem. A NETCONF session sits quiet between notifications
 	// for hours, so dispatch clears the deadline once the session starts
 	// and TCP keepalive takes over.
-	_ = conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
+	handshake := sshIdleTimeout()
+	if s.handshakeTimeout > 0 {
+		handshake = s.handshakeTimeout
+	}
+	_ = conn.SetDeadline(time.Now().Add(handshake))
 	sc, chans, reqs, err := ssh.NewServerConn(conn, s.cfg)
 	if err != nil {
 		return
 	}
 	defer sc.Close()
+	if s.handshakeTimeout > 0 {
+		_ = conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
+	}
+	if s.onHandshake != nil {
+		s.onHandshake()
+	}
 	if tc, ok := conn.(*net.TCPConn); ok {
 		_ = tc.SetKeepAlive(true)
 		_ = tc.SetKeepAlivePeriod(netconfKeepAlivePeriod)

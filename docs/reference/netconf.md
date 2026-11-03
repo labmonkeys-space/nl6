@@ -365,7 +365,9 @@ curl -s http://localhost:8080/api/v1/tls/ca > nl6-ca.pem
 A `juniper_mx10004` device can open the NETCONF connection itself and dial a NETCONF client, as Junos `outbound-ssh` with `services netconf` does.
 On that connection the device is the SSH server and the NETCONF server, with the same host key, login and Junos dialect as its port `-netconf-port` listener.
 The listeners keep running, and all sessions of a device share one session space, so `kill-session` works across them.
-Other profiles have no call home. A batch that includes them creates them without it and counts them in `devices_unsupported`.
+Other profiles have no call home.
+A request whose profiles all lack call home gets a `400`.
+A round-robin batch that mixes profiles creates the others without call home and counts them in `devices_unsupported`.
 
 Enable it for the auto-start batch with `-netconf-callhome-client`, or per request with a `netconf_callhome` block:
 
@@ -380,7 +382,10 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
+`client` must be an IPv4 address or a host name, because devices dial over IPv4 only. An IPv6 address gets a `400`.
 `device_id` in the block sets the `DEVICE-ID` of the preamble. It defaults to each device's sysName.
+
+`-netconf-callhome-client` seeds only the auto-start batch. Without `-auto-start-ip` it configures nothing, and nl6 logs a warning.
 
 ### Wire format
 
@@ -406,8 +411,10 @@ nl6 reproduces what vJunos did with `keep-alive retry 3 timeout 15`:
 - Connect attempts happen on a fixed 15 s cycle, with no backoff and no retry limit. After a session ends, for any reason, the device dials on the next tick, 0 to 15 s later.
 - Each device has its own random offset into the cycle, so a large batch does not dial at one instant.
 - While a session is up the device sends an SSH keepalive every 15 s and closes the connection when 3 intervals pass without a reply.
+- A client that accepts the connection but does not complete the SSH handshake within the same 45 s is dropped.
 
-Dials leave from the device IP inside the device namespace and share a limit of 64 concurrent dials with gNMI dial-out.
+Dials leave from the device IP inside the device namespace.
+Call home allows 64 concurrent dials. gNMI dial-out has its own 64, so an unreachable client of one does not slow the other.
 
 ### Matching Junos configuration
 
@@ -428,7 +435,7 @@ Add `set system services outbound-ssh routing-instance mgmt_junos`, or the devic
 
 ### Call-home status
 
-`GET /api/v1/netconf/callhome/status` reports one row per client.
+`GET /api/v1/netconf/callhome/status` reports one row per client, sorted by client.
 
 ```json
 {
@@ -440,6 +447,7 @@ Add `set system services outbound-ssh routing-instance mgmt_junos`, or the devic
       "sessions_up": 98,
       "connect_attempts": 412,
       "connect_failures": 14,
+      "handshake_failures": 0,
       "sessions_ended": 300,
       "devices_unsupported": 0
     }
@@ -453,7 +461,8 @@ Add `set system services outbound-ssh routing-instance mgmt_junos`, or the devic
 | `sessions_up` | Devices whose call-home connection is open. |
 | `connect_attempts` | Dials, including those of deleted devices. |
 | `connect_failures` | Dials that failed, or whose preamble could not be written. |
-| `sessions_ended` | Call-home connections that ended after they opened. |
+| `handshake_failures` | Connections that closed before the SSH handshake completed. A client that rejects the preamble shows up here. |
+| `sessions_ended` | Call-home sessions that ended after the SSH handshake. |
 | `devices_unsupported` | Devices created with a call-home block whose profile has no call home. |
 
 Call-home sessions also count in `sessions` of `GET /api/v1/netconf/status`.

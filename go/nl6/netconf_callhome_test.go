@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,7 +163,8 @@ func TestNetconfCallHomeConfigValidate(t *testing.T) {
 	}{
 		{DeviceNetconfCallHomeConfig{Client: "192.0.2.10:4334"}, false},
 		{DeviceNetconfCallHomeConfig{Client: "nms.example.net:4334", DeviceID: "vj-r1"}, false},
-		{DeviceNetconfCallHomeConfig{Client: "[2001:db8::1]:4334"}, false},
+		{DeviceNetconfCallHomeConfig{Client: "[2001:db8::1]:4334"}, true},
+		{DeviceNetconfCallHomeConfig{Client: "[::ffff:192.0.2.10]:4334"}, false},
 		{DeviceNetconfCallHomeConfig{}, true},
 		{DeviceNetconfCallHomeConfig{Client: "192.0.2.10"}, true},
 		{DeviceNetconfCallHomeConfig{Client: ":4334"}, true},
@@ -226,6 +229,8 @@ func TestCreateDevicesHandlerRejectsBadCallHome(t *testing.T) {
 		{"unknown field", true, `{"client":"192.0.2.10:4334","secret":"x"}`, "unknown field"},
 		{"bad client", true, `{"client":"192.0.2.10"}`, "host:port"},
 		{"device id for a batch", true, `{"client":"192.0.2.10:4334","device_id":"lab"}`, "device_id names one device"},
+		{"ipv6 client", true, `{"client":"[2001:db8::1]:4334"}`, "IPv4 only"},
+		{"profile without call home", true, `{"client":"192.0.2.10:4334"},"resource_file":"cisco_catalyst_9500.json"`, "has no NETCONF call home"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			useNetconfTestManager(t, tc.enabled)
@@ -535,5 +540,100 @@ func TestNetconfCallHomeDefaultIDFromSysName(t *testing.T) {
 	}
 	if got := netconfCallHomeDefaultID(strings.Repeat("a", 300)); len(got) != netconfCallHomeMaxDeviceID {
 		t.Errorf("long sysName gives %d bytes, want %d", len(got), netconfCallHomeMaxDeviceID)
+	}
+}
+
+func TestNetconfCallHomeIncapableRequest(t *testing.T) {
+	for _, tc := range []struct {
+		req  CreateDevicesRequest
+		want bool
+	}{
+		{CreateDevicesRequest{ResourceFile: "juniper_mx10004.json"}, false},
+		{CreateDevicesRequest{ResourceFile: "cisco_catalyst_9500.json"}, true},
+		{CreateDevicesRequest{}, false},
+	} {
+		if _, got := netconfCallHomeIncapableRequest(tc.req); got != tc.want {
+			t.Errorf("%+v: incapable = %v, want %v", tc.req, got, tc.want)
+		}
+	}
+}
+
+// TestNetconfCallHomeHandshakeFailure checks that a client that rejects the
+// SSH handshake, or never starts it, counts as a handshake failure and
+// never as a session, and that the silent one is dropped after the
+// keepalive budget rather than the SSH idle timeout.
+func TestNetconfCallHomeHandshakeFailure(t *testing.T) {
+	withCallHomeTiming(t, 100*time.Millisecond, 50*time.Millisecond)
+	mgr := useNetconfTestManager(t, true)
+	dev, _, _ := newJunosListenDevice(t, mgr)
+	ln := newCallHomeListener(t)
+	e := startCallHome(t, mgr, dev, ln.Addr().String(), "")
+	plen := len(junosCallHomePreamble(dev.sysName))
+
+	// A strict client answers the preamble with garbage and hangs up.
+	c := acceptCallHome(t, ln, 2*time.Second)
+	readPreamble(t, c, plen)
+	_, _ = c.Write([]byte("SSH-1.0-bogus\r\n"))
+	_ = c.Close()
+	waitNetconf(t, "a handshake failure", func() bool { return e.agg.handshakeFailures.Load() >= 1 })
+
+	// A silent client is closed after keepAlive * misses.
+	c2 := acceptCallHome(t, ln, 2*time.Second)
+	readPreamble(t, c2, plen)
+	failures := e.agg.handshakeFailures.Load()
+	_ = c2.SetReadDeadline(time.Now().Add(5 * time.Second))
+	start := time.Now()
+	_, _ = io.ReadAll(c2) // the device's SSH banner, then EOF
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("silent client held the connection for %s", d)
+	}
+	waitNetconf(t, "the silent client counted", func() bool { return e.agg.handshakeFailures.Load() > failures })
+	if n := e.agg.sessionsEnded.Load(); n != 0 {
+		t.Fatalf("%d sessions ended, want 0: no handshake ever completed", n)
+	}
+	if e.sessionUp.Load() {
+		t.Fatal("session reported up without a handshake")
+	}
+}
+
+// TestNetconfCallHomePreambleWriteCancelled checks that cancelling the
+// exporter interrupts a preamble write the client never reads.
+func TestNetconfCallHomePreambleWriteCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	devSide, clientSide := net.Pipe()
+	defer clientSide.Close()
+	e := &netconfCallHomeExporter{
+		preamble: []byte("MSG-ID: DEVICE-CONN-INFO\r\n"),
+		dial:     func(context.Context) (net.Conn, error) { return devSide, nil },
+		agg:      &netconfCallHomeAggregate{},
+		ctx:      ctx,
+	}
+	done := make(chan struct{})
+	go func() { e.attempt(); close(done) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("attempt still blocked in the preamble write after cancel")
+	}
+	if e.agg.connectFailures.Load() != 1 {
+		t.Fatalf("connect failures = %d, want 1", e.agg.connectFailures.Load())
+	}
+}
+
+func TestNetconfCallHomeStatusSortedByClient(t *testing.T) {
+	mgr := useNetconfTestManager(t, true)
+	for _, c := range []string{"192.0.2.30:4334", "192.0.2.10:4334", "192.0.2.20:4334"} {
+		mgr.netconfCallHomeAggregateFor(c)
+	}
+	st := mgr.GetNetconfCallHomeStatus()
+	got := make([]string, 0, len(st.Clients))
+	for _, r := range st.Clients {
+		got = append(got, r.Client)
+	}
+	if want := []string{"192.0.2.10:4334", "192.0.2.20:4334", "192.0.2.30:4334"}; !slices.Equal(got, want) {
+		t.Fatalf("clients = %v, want %v", got, want)
 	}
 }
