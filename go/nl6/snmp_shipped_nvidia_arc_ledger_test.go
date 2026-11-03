@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // nl6#576 re-homed the NVIDIA GPU telemetry arc from 1.3.6.1.4.1.53246 to
@@ -1131,6 +1132,13 @@ func TestArcPrefixesMatchTheIANARegistry(t *testing.T) {
 // interface state has no bearing on an enterprise-arc OID.
 func gpuDeviceForProfile(t *testing.T, profile string) *SNMPServer {
 	t.Helper()
+	return gpuDeviceForProfileClock(t, profile, nil)
+}
+
+// gpuDeviceForProfileClock is gpuDeviceForProfile with the metrics cycler
+// reading clock; nil means time.Now.
+func gpuDeviceForProfileClock(t *testing.T, profile string, clock func() time.Time) *SNMPServer {
+	t.Helper()
 
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources(profile)
@@ -1141,7 +1149,7 @@ func gpuDeviceForProfile(t *testing.T, profile string) *SNMPServer {
 	if dp.GPU == nil {
 		t.Fatalf("%s has no GPU profile, so this fixture cannot exercise the dynamic OIDs", profile)
 	}
-	mc := NewMetricsCycler(1, dp)
+	mc := newMetricsCyclerWithClock(1, dp, clock)
 	mc.InitGPUMetrics(1, dp.GPU)
 	mc.InitIfCounters(res, 1)
 	return &SNMPServer{device: &DeviceSimulator{

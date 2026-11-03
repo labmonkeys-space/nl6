@@ -41,8 +41,13 @@ type MetricsCycler struct {
 	memUsed    [numDataPoints]int64 // Memory used in KB
 	tempPoints [numDataPoints]int   // Temperature in Celsius
 	memTotal   int64                // Total memory in KB (constant)
-	startTime  time.Time            // origin of the served point, set by NewMetricsCycler
+	startTime  time.Time            // origin of the served point, read from now at construction
 	gpuMetrics []*GPUMetrics        // Per-GPU cycling metrics (nil for non-GPU devices)
+	// now is the clock the served point is read from (nl6#976). Tests inject one
+	// through newMetricsCyclerWithClock instead of moving startTime. nil, as in
+	// a cycler built without a constructor, reads time.Now. The clock must not
+	// return an instant before startTime: a negative elapsed time has no point.
+	now func() time.Time
 	// ifCounters holds the per-interface HC counter cycler (nil if no HC OIDs).
 	//
 	// The pointer is stored atomically. The pointed-to IfCounterCycler is
@@ -63,9 +68,19 @@ type MetricsCycler struct {
 // NewMetricsCycler creates a cycler with 100 data points generated from the
 // given seed and device profile. Each device gets a unique curve.
 func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
+	return newMetricsCyclerWithClock(seed, profile, nil)
+}
+
+// newMetricsCyclerWithClock is NewMetricsCycler against an injectable clock;
+// nil means time.Now.
+func newMetricsCyclerWithClock(seed int64, profile DeviceProfile, clock func() time.Time) *MetricsCycler {
+	if clock == nil {
+		clock = time.Now
+	}
 	c := &MetricsCycler{
 		memTotal:  profile.MemTotalKB,
-		startTime: time.Now(),
+		startTime: clock(),
+		now:       clock,
 	}
 
 	rng := rand.New(rand.NewSource(seed))
@@ -127,16 +142,17 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 // itself, so a multi-varbind request that straddles a minute boundary reads two
 // adjacent points, as the per-OID IF-MIB counter path does (context/if-counters.md).
 func (c *MetricsCycler) point() int {
-	return metricsPointAt(time.Since(c.startTime))
+	now := time.Now
+	if c.now != nil {
+		now = c.now
+	}
+	return metricsPointAt(now().Sub(c.startTime))
 }
 
 // metricsPointAt is the index served at elapsed time since startTime. A cycler
-// built without NewMetricsCycler has a zero startTime; time.Since saturates for
-// it, so it still yields a valid index.
+// built without a constructor has a zero startTime; the elapsed time saturates
+// for it, so it still yields a valid index.
 func metricsPointAt(elapsed time.Duration) int {
-	if elapsed < 0 {
-		elapsed = 0
-	}
 	return int((elapsed / metricsPointInterval) % numDataPoints)
 }
 

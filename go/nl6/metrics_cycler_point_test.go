@@ -12,11 +12,22 @@ import (
 	"time"
 )
 
-// atPoint moves a cycler's origin so that point k is served now, half an
-// interval from either boundary, which leaves 30 s for a test's reads to stay
-// on one point.
-func atPoint(mc *MetricsCycler, k int) {
-	mc.startTime = time.Now().Add(-(time.Duration(k)*metricsPointInterval + metricsPointInterval/2))
+// metricsClock is a clock the test moves by hand (nl6#976). A cycler built on
+// it takes its origin from the first reading, and every later read returns the
+// instant the test set, so a read lands on the point the test chose whatever
+// the runner's load.
+type metricsClock struct{ now time.Time }
+
+func newMetricsClock() *metricsClock {
+	return &metricsClock{now: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)}
+}
+
+func (c *metricsClock) Now() time.Time { return c.now }
+
+// atPoint moves the clock to the middle of point k of a cycler built on it at
+// origin.
+func (c *metricsClock) atPoint(origin time.Time, k int) {
+	c.now = origin.Add(time.Duration(k)*metricsPointInterval + metricsPointInterval/2)
 }
 
 func TestMetricsPointFollowsElapsedTime(t *testing.T) {
@@ -24,7 +35,6 @@ func TestMetricsPointFollowsElapsedTime(t *testing.T) {
 		elapsed time.Duration
 		want    int
 	}{
-		{-time.Second, 0},
 		{0, 0},
 		{metricsPointInterval - time.Nanosecond, 0},
 		{metricsPointInterval, 1},
@@ -65,10 +75,11 @@ func TestMemoryUsedPlusFreeIsTotalOnEveryShippedProfile(t *testing.T) {
 		}
 		checked++
 
-		srv := deviceForProfileWithMetrics(t, rf)
+		clk := newMetricsClock()
+		srv := deviceForProfileWithMetricsClock(t, rf, clk.Now)
 		mc := srv.device.metricsCycler
 		for _, k := range []int{0, 37, 99} {
-			atPoint(mc, k)
+			clk.atPoint(mc.startTime, k)
 			usedFirst, freeSecond := srv.findResponse(usedOID), srv.findResponse(freeOID)
 			freeFirst, usedSecond := srv.findResponse(freeOID), srv.findResponse(usedOID)
 			for _, pair := range [][2]string{{usedFirst, freeSecond}, {usedSecond, freeFirst}} {
@@ -96,7 +107,8 @@ func TestMemoryUsedPlusFreeIsTotalOnEveryShippedProfile(t *testing.T) {
 // advance the cursor every other reader shares.
 func TestMetricReadsDoNotAdvanceTheCurve(t *testing.T) {
 	const rf = "cisco_ios.json"
-	srv := deviceForProfileWithMetrics(t, rf)
+	clk := newMetricsClock()
+	srv := deviceForProfileWithMetricsClock(t, rf, clk.Now)
 	mc := srv.device.metricsCycler
 	var cpuOID, tempOID string
 	for oid, typ := range GetMetricOIDs(rf) {
@@ -112,7 +124,7 @@ func TestMetricReadsDoNotAdvanceTheCurve(t *testing.T) {
 	}
 
 	const k = 42
-	atPoint(mc, k)
+	clk.atPoint(mc.startTime, k)
 	wantCPU, wantTemp := fmt.Sprint(mc.cpuPoints[k]), fmt.Sprint(mc.tempPoints[k])
 	for i := 0; i < 10; i++ {
 		if got := srv.findResponse(cpuOID); got != wantCPU {
@@ -131,10 +143,11 @@ func TestMetricReadsDoNotAdvanceTheCurve(t *testing.T) {
 // power answer from a different point than utilization.
 func TestGPUMetricsOfOneGPUAnswerFromOnePoint(t *testing.T) {
 	const rf = "nvidia_dgx_h100.json"
-	srv := gpuDeviceForProfile(t, rf)
+	clk := newMetricsClock()
+	srv := gpuDeviceForProfileClock(t, rf, clk.Now)
 	mc := srv.device.metricsCycler
 	const k = 63
-	atPoint(mc, k)
+	clk.atPoint(mc.startTime, k)
 
 	g := mc.gpuMetrics[0]
 	want := map[int]int64{
@@ -153,5 +166,55 @@ func TestGPUMetricsOfOneGPUAnswerFromOnePoint(t *testing.T) {
 		if got := srv.findResponse(oid); got != fmt.Sprint(want[metric]) {
 			t.Errorf("%s = %s, want %d (point %d of GPU 0)", oid, got, want[metric], k)
 		}
+	}
+}
+
+// TestMemoryPairAcrossAPointBoundaryReadsTwoPoints pins the CAVEAT rather than
+// the contract. Each getter reads the clock itself, so a request whose memory
+// used is read on the last instant of one point and memory free on the first
+// instant of the next answers from two points, and the pair misses the total
+// (docs/reference/snmp.md, nl6#975). Serving every varbind of one request from
+// one point would make this test fail, which is the moment to change the docs.
+func TestMemoryPairAcrossAPointBoundaryReadsTwoPoints(t *testing.T) {
+	const rf = "cisco_ios.json"
+	clk := newMetricsClock()
+	srv := deviceForProfileWithMetricsClock(t, rf, clk.Now)
+	mc := srv.device.metricsCycler
+	var usedOID, freeOID string
+	for oid, typ := range GetMetricOIDs(rf) {
+		switch typ {
+		case MetricMemUsed:
+			usedOID = oid
+		case MetricMemFree:
+			freeOID = oid
+		}
+	}
+	if usedOID == "" || freeOID == "" {
+		t.Fatalf("%s maps no memory used or no memory free OID", rf)
+	}
+
+	const k = 7
+	if mc.memUsed[k] == mc.memUsed[k+1] {
+		t.Fatalf("points %d and %d of %s serve the same memory used, so a boundary is invisible", k, k+1, rf)
+	}
+	boundary := mc.startTime.Add((k + 1) * metricsPointInterval)
+	clk.now = boundary.Add(-time.Nanosecond)
+	usedRead := srv.findResponse(usedOID)
+	clk.now = boundary
+	freeRead := srv.findResponse(freeOID)
+
+	var used, free int64
+	if _, err := fmt.Sscan(usedRead, &used); err != nil {
+		t.Fatalf("used %s = %q: %v", usedOID, usedRead, err)
+	}
+	if _, err := fmt.Sscan(freeRead, &free); err != nil {
+		t.Fatalf("free %s = %q: %v", freeOID, freeRead, err)
+	}
+	if used != mc.memUsed[k] || free != mc.memTotal-mc.memUsed[k+1] {
+		t.Fatalf("used %d and free %d, want used from point %d (%d) and free from point %d (%d)",
+			used, free, k, mc.memUsed[k], k+1, mc.memTotal-mc.memUsed[k+1])
+	}
+	if used+free == mc.memTotal {
+		t.Fatalf("used %d + free %d is the total across a point boundary; the caveat no longer holds", used, free)
 	}
 }

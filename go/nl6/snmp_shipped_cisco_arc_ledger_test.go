@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // nl6#590 is the first VENDOR-ARC MIB AUDIT: nl6#587 and nl6#589 closed the
@@ -904,13 +905,20 @@ func TestCiscoTemperatureStatusValueIsServedByTheCycler(t *testing.T) {
 // CPU / memory / temperature patterns.
 func deviceForProfileWithMetrics(t *testing.T, profile string) *SNMPServer {
 	t.Helper()
+	return deviceForProfileWithMetricsClock(t, profile, nil)
+}
+
+// deviceForProfileWithMetricsClock is deviceForProfileWithMetrics with the
+// metrics cycler reading clock; nil means time.Now.
+func deviceForProfileWithMetricsClock(t *testing.T, profile string, clock func() time.Time) *SNMPServer {
+	t.Helper()
 
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources(profile)
 	if err != nil {
 		t.Fatalf("LoadSpecificResources(%s): %v", profile, err)
 	}
-	mc := NewMetricsCycler(1, GetDeviceProfile(profile))
+	mc := newMetricsCyclerWithClock(1, GetDeviceProfile(profile), clock)
 	mc.InitIfCounters(res, 1)
 	return &SNMPServer{device: &DeviceSimulator{
 		ID:            "cisco-arc-pin",
