@@ -42,6 +42,7 @@ type MetricsCycler struct {
 	tempPoints [numDataPoints]int   // Temperature in Celsius
 	memTotal   int64                // Total memory in KB (constant)
 	startTime  time.Time            // origin of the served point, set by NewMetricsCycler
+	now        func() time.Time     // clock of the point, nil reads time.Now; unsynchronised, set before sharing
 	gpuMetrics []*GPUMetrics        // Per-GPU cycling metrics (nil for non-GPU devices)
 	// ifCounters holds the per-interface HC counter cycler (nil if no HC OIDs).
 	//
@@ -127,12 +128,17 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 // itself, so a multi-varbind request that straddles a minute boundary reads two
 // adjacent points, as the per-OID IF-MIB counter path does (context/if-counters.md).
 func (c *MetricsCycler) point() int {
-	return metricsPointAt(time.Since(c.startTime))
+	now := c.now
+	if now == nil {
+		now = time.Now
+	}
+	return metricsPointAt(now().Sub(c.startTime))
 }
 
 // metricsPointAt is the index served at elapsed time since startTime. A cycler
-// built without NewMetricsCycler has a zero startTime; time.Since saturates for
-// it, so it still yields a valid index.
+// built without NewMetricsCycler has a zero startTime; Sub saturates for it, so
+// it still yields a valid index. A clock that reads before startTime, which
+// only an injected one can, serves point 0 instead of a negative index.
 func metricsPointAt(elapsed time.Duration) int {
 	if elapsed < 0 {
 		elapsed = 0

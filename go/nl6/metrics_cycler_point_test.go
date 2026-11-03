@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-// atPoint moves a cycler's origin so that point k is served now, half an
-// interval from either boundary, which leaves 30 s for a test's reads to stay
-// on one point.
+// atPoint pins a cycler's clock half an interval into point k. The clock never
+// moves, so every later read is served from point k however long the test takes.
 func atPoint(mc *MetricsCycler, k int) {
-	mc.startTime = time.Now().Add(-(time.Duration(k)*metricsPointInterval + metricsPointInterval/2))
+	at := mc.startTime.Add(time.Duration(k)*metricsPointInterval + metricsPointInterval/2)
+	mc.now = func() time.Time { return at }
 }
 
 func TestMetricsPointFollowsElapsedTime(t *testing.T) {
@@ -24,7 +24,7 @@ func TestMetricsPointFollowsElapsedTime(t *testing.T) {
 		elapsed time.Duration
 		want    int
 	}{
-		{-time.Second, 0},
+		{-61 * time.Second, 0},
 		{0, 0},
 		{metricsPointInterval - time.Nanosecond, 0},
 		{metricsPointInterval, 1},
