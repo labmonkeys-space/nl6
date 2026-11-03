@@ -21,7 +21,6 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
-	"sync/atomic"
 )
 
 // GPUMetrics holds cycling data points for a single GPU.
@@ -34,12 +33,6 @@ type GPUMetrics struct {
 	gpuFanSpeed [numDataPoints]int   // GPU fan speed % (0-100)
 	gpuClockSM  [numDataPoints]int   // SM clock MHz
 	gpuClockMem [numDataPoints]int   // Memory clock MHz
-	utilIndex   uint32
-	memIndex    uint32
-	tempIndex   uint32
-	powerIndex  uint32
-	fanIndex    uint32
-	clockIndex  uint32
 }
 
 // InitGPUMetrics initializes GPU metric arrays on the MetricsCycler for devices
@@ -138,18 +131,14 @@ func (c *MetricsCycler) GetGPUUtil(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.utilIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuUtil[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuUtil[c.point()])
 }
 
 func (c *MetricsCycler) GetGPUMemUsed(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.memIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuMemUsed[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuMemUsed[c.point()])
 }
 
 func (c *MetricsCycler) GetGPUMemTotal(gpuIndex int) string {
@@ -163,45 +152,35 @@ func (c *MetricsCycler) GetGPUTemp(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.tempIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuTemp[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuTemp[c.point()])
 }
 
 func (c *MetricsCycler) GetGPUPower(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.powerIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuPower[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuPower[c.point()])
 }
 
 func (c *MetricsCycler) GetGPUFanSpeed(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.fanIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuFanSpeed[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuFanSpeed[c.point()])
 }
 
 func (c *MetricsCycler) GetGPUClockSM(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.clockIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuClockSM[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuClockSM[c.point()])
 }
 
 func (c *MetricsCycler) GetGPUClockMem(gpuIndex int) string {
 	if gpuIndex < 0 || gpuIndex >= len(c.gpuMetrics) {
 		return "0"
 	}
-	g := c.gpuMetrics[gpuIndex]
-	idx := atomic.AddUint32(&g.clockIndex, 1) - 1
-	return fmt.Sprintf("%d", g.gpuClockMem[idx%numDataPoints])
+	return fmt.Sprintf("%d", c.gpuMetrics[gpuIndex].gpuClockMem[c.point()])
 }
 
 // parseGPUIndexFromOID extracts the GPU index from the last component of an NVIDIA OID.

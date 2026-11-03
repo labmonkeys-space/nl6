@@ -21,7 +21,7 @@ Each device has its own IP, SNMP listener, SSH server, and flow exporter, so the
 
 The simulator ships the following out of the box, with no tuning required:
 
-- **Pre-generated 100-point metric arrays.** CPU / memory / temperature / GPU metrics are computed once at startup and indexed on poll.
+- **Pre-generated 100-point metric arrays.** CPU / memory / temperature / GPU metrics are computed once at startup and indexed by elapsed time.
 - **Lock-free `sync.Map`** for O(1) OID lookups under concurrent SNMP load.
 - **Pre-computed next-OID mappings** for `GETNEXT` / `WALK` without table scans.
 - **Buffer pool** for SNMP reads, which reduces GC pressure on sustained traffic.
