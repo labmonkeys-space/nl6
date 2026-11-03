@@ -124,9 +124,9 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 	return c
 }
 
-// point is the index of the data point served now. Each getter reads the clock
-// itself, so a multi-varbind request that straddles a minute boundary reads two
-// adjacent points, as the per-OID IF-MIB counter path does (context/if-counters.md).
+// point is the index of the data point served now. A request reads it once and
+// passes it to every getter, so all its variable bindings come from one point
+// even when the request straddles a minute boundary (nl6#975).
 func (c *MetricsCycler) point() int {
 	now := c.now
 	if now == nil {
@@ -146,20 +146,20 @@ func metricsPointAt(elapsed time.Duration) int {
 	return int((elapsed / metricsPointInterval) % numDataPoints)
 }
 
-// GetCPUPercent returns the CPU% served now as a string.
-func (c *MetricsCycler) GetCPUPercent() string {
-	return fmt.Sprintf("%d", c.cpuPoints[c.point()])
+// GetCPUPercent returns the CPU% at point p as a string.
+func (c *MetricsCycler) GetCPUPercent(p int) string {
+	return fmt.Sprintf("%d", c.cpuPoints[p])
 }
 
-// GetMemUsed returns the memory used in KB served now as a string.
-func (c *MetricsCycler) GetMemUsed() string {
-	return fmt.Sprintf("%d", c.memUsed[c.point()])
+// GetMemUsed returns the memory used in KB at point p as a string.
+func (c *MetricsCycler) GetMemUsed(p int) string {
+	return fmt.Sprintf("%d", c.memUsed[p])
 }
 
-// GetMemFree returns total - used in KB as a string, from the same point as
-// GetMemUsed, so the two read in one request sum to GetMemTotal.
-func (c *MetricsCycler) GetMemFree() string {
-	used := c.memUsed[c.point()]
+// GetMemFree returns total - used in KB at point p as a string, so it sums to
+// GetMemTotal with GetMemUsed at the same point.
+func (c *MetricsCycler) GetMemFree(p int) string {
+	used := c.memUsed[p]
 	free := c.memTotal - used
 	if free < 0 {
 		free = 0
@@ -172,16 +172,16 @@ func (c *MetricsCycler) GetMemTotal() string {
 	return fmt.Sprintf("%d", c.memTotal)
 }
 
-// GetMemUsedPercent returns memory utilization as a percentage string.
-func (c *MetricsCycler) GetMemUsedPercent() string {
-	used := c.memUsed[c.point()]
+// GetMemUsedPercent returns memory utilization at point p as a percentage string.
+func (c *MetricsCycler) GetMemUsedPercent(p int) string {
+	used := c.memUsed[p]
 	pct := float64(used) / float64(c.memTotal) * 100
 	return fmt.Sprintf("%d", int(math.Round(pct)))
 }
 
-// GetTemperature returns the temperature in Celsius served now as a string.
-func (c *MetricsCycler) GetTemperature() string {
-	return fmt.Sprintf("%d", c.tempPoints[c.point()])
+// GetTemperature returns the temperature in Celsius at point p as a string.
+func (c *MetricsCycler) GetTemperature(p int) string {
+	return fmt.Sprintf("%d", c.tempPoints[p])
 }
 
 func clampInt(val, min, max int) int {

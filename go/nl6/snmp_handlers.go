@@ -19,7 +19,24 @@ import (
 	"strings"
 )
 
+// findResponse answers one GET binding from the metric point served now. A
+// request with several bindings reads the point once and calls findResponseAt.
 func (s *SNMPServer) findResponse(oid string) string {
+	return s.findResponseAt(oid, s.metricsPoint())
+}
+
+// metricsPoint is the metric point served now, read once per request so every
+// binding of the request comes from it (nl6#975). A device without a cycler
+// serves no metric OID, so 0 is never used to index anything.
+func (s *SNMPServer) metricsPoint() int {
+	if mc := s.device.metricsCycler; mc != nil {
+		return mc.point()
+	}
+	return 0
+}
+
+// findResponseAt is findResponse with the metric point supplied by the request.
+func (s *SNMPServer) findResponseAt(oid string, p int) string {
 	// Handle dynamic sysLocation OID - lock-free access
 	if oid == ".1.3.6.1.2.1.1.6.0" {
 		if val := s.device.cachedSysLocation.Load(); val != nil {
@@ -38,7 +55,7 @@ func (s *SNMPServer) findResponse(oid string) string {
 
 	// Handle dynamic CPU/memory metric OIDs - per-device cycling values
 	if s.device.metricsCycler != nil {
-		if val := s.getMetricValue(oid); val != "" {
+		if val := s.getMetricValue(oid, p); val != "" {
 			return val
 		}
 		// Handle all dynamic IF-MIB counter OIDs (ifTable + ifXTable):
@@ -179,7 +196,7 @@ func (c *oidCursor) next() (int, bool) {
 // that issue many lookups per request should instead build the set once and
 // call findNextOIDWithServed to avoid rebuilding it per repetition.
 func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
-	return s.findNextOIDWithServed(currentOID, s.lldpServedOIDs())
+	return s.findNextOIDWithServed(currentOID, s.lldpServedOIDs(), s.metricsPoint())
 }
 
 // findNextOIDWithServed is findNextOID with the LLDP served-OID set supplied
@@ -188,7 +205,11 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 // of recomputing the device's entire LLDP/ifAlias view on each walk step —
 // the original hot path that turned a fabric-wide Enlinkd walk into O(steps ×
 // links). nil/empty is valid (device serves no LLDP).
-func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID) (string, string) {
+//
+// The metric point p is supplied the same way, so a walk that crosses several
+// metric OIDs within one GETNEXT or GETBULK serves them all from one point
+// (nl6#975).
+func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID, p int) (string, string) {
 	// Try pre-computed next OID map first (O(1) lookup)
 	var precomputedNextOID string
 	var precomputedNextResp string
@@ -334,7 +355,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	if s.device.metricsCycler != nil && len(sortedMetricOIDs) > 0 {
 		for _, mOID := range sortedMetricOIDs {
 			if compareOIDs(mOID, currentOID) > 0 {
-				val := s.getMetricValue(mOID)
+				val := s.getMetricValue(mOID, p)
 				if val != "" {
 					candidates = append(candidates, struct{ oid, resp string }{
 						oid:  mOID,
@@ -440,6 +461,8 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	// the dominant cost of an Enlinkd fabric walk. One snapshot per request
 	// is also more consistent (a single view of link/oper state).
 	lldpServed := s.lldpServedOIDs()
+	// One metric point for the whole request too, for the same reason.
+	p := s.metricsPoint()
 
 	// ── Non-repeater section (GETNEXT semantics) ──────────────────────────
 	cap := nonRepeaters
@@ -447,7 +470,7 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 		cap = len(allOIDs)
 	}
 	for i := 0; i < cap; i++ {
-		nextOID, nextVal := s.findNextOIDWithServed(allOIDs[i], lldpServed)
+		nextOID, nextVal := s.findNextOIDWithServed(allOIDs[i], lldpServed, p)
 		if nextOID == "" {
 			nextOID = allOIDs[i]
 			nextVal = valueEndOfMibView
@@ -503,7 +526,7 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 				responseValues = append(responseValues, valueEndOfMibView)
 				continue
 			}
-			nextOID, nextVal := s.findNextOIDWithServed(currentOIDs[col], lldpServed)
+			nextOID, nextVal := s.findNextOIDWithServed(currentOIDs[col], lldpServed, p)
 			if nextOID == "" || nextVal == valueEndOfMibView {
 				endOfMib[col] = true
 				responseOIDs = append(responseOIDs, startCol)
@@ -532,8 +555,9 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 // (nl6#176).
 func (s *SNMPServer) handleGetRequestVarbinds(oids []string, requestData []byte) []byte {
 	responses := make([]string, len(oids))
+	p := s.metricsPoint()
 	for i, o := range oids {
-		responses[i] = s.findResponse(o)
+		responses[i] = s.findResponseAt(o, p)
 	}
 	return s.createGetResponse(oids, responses, requestData)
 }
@@ -1045,9 +1069,9 @@ func (s *SNMPServer) overrideIfHC(ic *IfCounterCycler, oid, staticResp string) s
 	return staticResp
 }
 
-// getMetricValue returns the cycling metric value for a dynamic OID,
+// getMetricValue returns the cycling metric value for a dynamic OID at point p,
 // or empty string if the OID is not a metric OID for this device.
-func (s *SNMPServer) getMetricValue(oid string) string {
+func (s *SNMPServer) getMetricValue(oid string, p int) string {
 	metricOIDs := GetMetricOIDs(s.device.resourceFile)
 	if metricOIDs == nil {
 		return ""
@@ -1058,34 +1082,34 @@ func (s *SNMPServer) getMetricValue(oid string) string {
 	}
 	switch metricType {
 	case MetricCPUPercent:
-		return s.device.metricsCycler.GetCPUPercent()
+		return s.device.metricsCycler.GetCPUPercent(p)
 	case MetricMemUsed:
-		return s.device.metricsCycler.GetMemUsed()
+		return s.device.metricsCycler.GetMemUsed(p)
 	case MetricMemFree:
-		return s.device.metricsCycler.GetMemFree()
+		return s.device.metricsCycler.GetMemFree(p)
 	case MetricMemTotal:
 		return s.device.metricsCycler.GetMemTotal()
 	case MetricMemUsedPct:
-		return s.device.metricsCycler.GetMemUsedPercent()
+		return s.device.metricsCycler.GetMemUsedPercent(p)
 	case MetricTemperature:
-		return s.device.metricsCycler.GetTemperature()
+		return s.device.metricsCycler.GetTemperature(p)
 	// GPU metric types (NVIDIA DCGM)
 	case MetricGPUUtil:
-		return s.device.metricsCycler.GetGPUUtil(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUUtil(parseGPUIndexFromOID(oid), p)
 	case MetricGPUMemUsed:
-		return s.device.metricsCycler.GetGPUMemUsed(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUMemUsed(parseGPUIndexFromOID(oid), p)
 	case MetricGPUMemTotal:
 		return s.device.metricsCycler.GetGPUMemTotal(parseGPUIndexFromOID(oid))
 	case MetricGPUTemp:
-		return s.device.metricsCycler.GetGPUTemp(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUTemp(parseGPUIndexFromOID(oid), p)
 	case MetricGPUPower:
-		return s.device.metricsCycler.GetGPUPower(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUPower(parseGPUIndexFromOID(oid), p)
 	case MetricGPUFanSpeed:
-		return s.device.metricsCycler.GetGPUFanSpeed(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUFanSpeed(parseGPUIndexFromOID(oid), p)
 	case MetricGPUClockSM:
-		return s.device.metricsCycler.GetGPUClockSM(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUClockSM(parseGPUIndexFromOID(oid), p)
 	case MetricGPUClockMem:
-		return s.device.metricsCycler.GetGPUClockMem(parseGPUIndexFromOID(oid))
+		return s.device.metricsCycler.GetGPUClockMem(parseGPUIndexFromOID(oid), p)
 	}
 	return ""
 }

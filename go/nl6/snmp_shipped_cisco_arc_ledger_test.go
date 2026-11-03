@@ -878,7 +878,7 @@ func TestCiscoTemperatureStatusValueIsServedByTheCycler(t *testing.T) {
 		// The WALK path, which is the one this change moved. Driven through
 		// findNextOIDWithServed, the same entry point the GETNEXT / GETBULK
 		// handlers use, rather than through findResponse a second time.
-		nextOID, nextVal := srv.findNextOIDWithServed(descrOID, srv.lldpServedOIDs())
+		nextOID, nextVal := srv.findNextOIDWithServed(descrOID, srv.lldpServedOIDs(), srv.metricsPoint())
 		if nextOID != tempOID {
 			t.Errorf("%s: walking from %s reaches %s, want %s — the cycler's metric OID is no "+
 				"longer enumerated into the walk, so the column has gone missing from every "+

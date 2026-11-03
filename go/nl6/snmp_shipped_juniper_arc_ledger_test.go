@@ -1304,7 +1304,7 @@ func TestJuniperArcMatchesTheMIB(t *testing.T) {
 	t.Run("positive control: the walk can see an object under jnxExMibRoot", func(t *testing.T) {
 		planted := deviceForProfileWithPlantedOID(t, juniperMX240Profile,
 			"1.3.6.1.4.1.2636.3.40.1.4.1.1.1.99.0", "planted")
-		next, _ := planted.findNextOIDWithServed(jnxExMibRoot, planted.lldpServedOIDs())
+		next, _ := planted.findNextOIDWithServed(jnxExMibRoot, planted.lldpServedOIDs(), planted.metricsPoint())
 		if !strings.HasPrefix(next, jnxExMibRoot+".") {
 			t.Fatalf("with an object planted under jnxExMibRoot, walking from %s reaches %q: the "+
 				"walk cannot see that branch at all, so the emptiness check in the parent test "+
@@ -1312,7 +1312,7 @@ func TestJuniperArcMatchesTheMIB(t *testing.T) {
 		}
 	})
 	for profile, dev := range devices {
-		next, _ := dev.findNextOIDWithServed(jnxExMibRoot, dev.lldpServedOIDs())
+		next, _ := dev.findNextOIDWithServed(jnxExMibRoot, dev.lldpServedOIDs(), dev.metricsPoint())
 		if strings.HasPrefix(next, jnxExMibRoot+".") {
 			t.Errorf("%s serves %s, under jnxExMibRoot. That is { jnxMibs 40 } in JUNIPER-SMI "+
 				"200910290000Z, the EX-SERIES SWITCH MIB root, sitting between jnxJsMibRoot (39) "+
