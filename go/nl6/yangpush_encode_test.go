@@ -108,7 +108,7 @@ func TestEncodePushChangeUpdateAdmin(t *testing.T) {
 	ifc := ypTestIfaces(false)[0]
 	ifc.Admin, ifc.Oper = "down", "down"
 	got := ypChange(t, ifc, LeafAdminStatus|LeafOperStatus)
-	want := `{"ietf-yp-notification:envelope":{"event-time":"2026-01-20T08:17:12.250Z","hostname":"ne8000-sim-1","sequence-number":1,"contents":{"ietf-yang-push:push-change-update":{"id":10,"ietf-yp-observation:timestamp":"2026-01-20T08:17:12.240Z","ietf-yp-observation:point-in-time":"current-accounting","ietf-distributed-notif:message-publisher-id":3221225997,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":"edit1","operation":"merge","target":"/ietf-interfaces:interfaces/interface=GigabitEthernet0%2F1%2F0","value":{"ietf-interfaces:interface":[{"name":"GigabitEthernet0/1/0","admin-status":"down","oper-status":"down"}]}}]}}}}}}`
+	want := `{"ietf-yp-notification:envelope":{"event-time":"2026-01-20T08:17:12.250Z","hostname":"ne8000-sim-1","sequence-number":1,"contents":{"ietf-yang-push:push-change-update":{"id":10,"ietf-yp-observation:timestamp":"2026-01-20T08:17:12.240Z","ietf-yp-observation:point-in-time":"state-changed","ietf-distributed-notif:message-publisher-id":3221225997,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":"edit1","operation":"merge","target":"/ietf-interfaces:interfaces/interface=GigabitEthernet0%2F1%2F0","value":{"ietf-interfaces:interface":[{"name":"GigabitEthernet0/1/0","admin-status":"down","oper-status":"down"}]}}]}}}}}}`
 	if string(got) != want {
 		t.Errorf("got:  %s\nwant: %s", got, want)
 	}
@@ -181,10 +181,27 @@ func TestYangPushPayloadsValidateWithYanglint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Validate against the library nl6 serves: the <yang-library> element of
+	// the get reply, with the modules and features it names.
+	lib := vrpYangLibraryXML()
+	lib = lib[:bytes.Index(lib, []byte("<modules-state"))]
+	libFile := filepath.Join(dir, "yang-library.xml")
+	if err := os.WriteFile(libFile, lib, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A module the library names must exist in the search path. Never drop one.
+	for _, m := range vrpYangModules() {
+		if !bytes.Contains(lib, []byte("<name>"+m.Name+"</name>")) {
+			t.Fatalf("served library does not name module %s", m.Name)
+		}
+		if _, err := os.Stat(filepath.Join(dir, m.Name+"@"+m.Revision+".yang")); err != nil {
+			t.Fatalf("module %s@%s missing from the search path: %v", m.Name, m.Revision, err)
+		}
+	}
 	// The envelope is an sx:structure, which yanglint cannot take as data.
 	// Validate the notification inside "contents" as a top-level notification.
 	for _, name := range []string{"subscription-started-8", "subscription-started-9", "subscription-started-10",
-		"push-update-8", "push-update-9", "push-change-update-10"} {
+		"push-update-8", "push-update-9", "push-update-10", "push-change-update-10"} {
 		var env struct {
 			E struct {
 				Contents json.RawMessage `json:"contents"`
@@ -197,18 +214,24 @@ func TestYangPushPayloadsValidateWithYanglint(t *testing.T) {
 		if err := os.WriteFile(file, env.E.Contents, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		args := []string{"-p", dir, "-f", "json", "-t", "notif",
-			"-F", "ietf-subscribed-notifications:*", "-F", "ietf-yang-push:*",
-			filepath.Join(dir, "ietf-interfaces@2018-02-20.yang")}
-		for _, mod := range []string{"ietf-subscribed-notifications", "ietf-yang-push", "ietf-yang-push-revision",
-			"ietf-distributed-notif", "ietf-udp-notif-transport", "ietf-yp-observation", "ietf-yang-patch"} {
-			if m, ok := vrpYangModule(mod, ""); ok {
-				args = append(args, filepath.Join(dir, m.Name+"@"+m.Revision+".yang"))
-			}
-		}
+		args := []string{"-p", dir, "-Y", libFile, "-f", "json", "-t", "notif"}
 		args = append(args, file)
 		if out, err := exec.Command(yl, args...).CombinedOutput(); err != nil {
 			t.Errorf("%s: yanglint: %v\n%s", name, err, out)
+		}
+	}
+}
+
+func TestYpKeyEscape(t *testing.T) {
+	cases := map[string]string{
+		"GigabitEthernet0/1/0": "GigabitEthernet0%2F1%2F0",
+		"Eth1:2,3":             "Eth1%3A2%2C3",
+		"a-b.c_d~e":            "a-b.c_d~e",
+		"a b=c@d+e$f&g":        "a%20b%3Dc%40d%2Be%24f%26g",
+	}
+	for in, want := range cases {
+		if got := ypKeyEscape(in); got != want {
+			t.Errorf("ypKeyEscape(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

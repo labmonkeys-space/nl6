@@ -36,6 +36,8 @@ type yangModule struct {
 // served set is import-only.
 var vrpYangImplemented = map[string]bool{
 	"ietf-interfaces":                 true,
+	"ietf-ip":                         true,
+	"ietf-network-instance":           true,
 	"ietf-yang-push":                  true,
 	"ietf-subscribed-notifications":   true,
 	"ietf-udp-notif-transport":        true,
@@ -52,10 +54,30 @@ var vrpYangImplemented = map[string]bool{
 	"ietf-netconf-monitoring":         true,
 }
 
+// vrpYangFeatures lists the features each implemented module advertises.
+// Copied from the NE capture (get-ietf-yang-library.xml), in capture order.
+// nl6 adds two the NE does not list, because the payloads it sends sit behind
+// them: encode-json (the "encode-json" encoding identity) and
+// yang-push-revision-supported (module-version and yang-library-content-id in
+// subscription-started). ietf-yang-push-revision is not in the NE capture at
+// all, so its feature is part of that addition.
+var vrpYangFeatures = map[string][]string{
+	"ietf-interfaces": {"pre-provisioning", "if-mib"},
+	"ietf-subscribed-notifications": {
+		"encode-xml", "replay", "xpath", "subtree", "configured", "dscp",
+		"interface-designation", "supports-vrf", "encode-json",
+	},
+	"ietf-yang-push":          {"on-change"},
+	"ietf-yang-push-revision": {"yang-push-revision-supported"},
+}
+
 // vrpAugmentedBy maps a served module to the served modules that augment it.
 // Copied from the augmented-by data in the NE capture (get-ietf-yang-library.xml)
 // and, for ietf-yang-push-revision, the MA5800T capture. Entries naming modules
-// outside the served set are dropped.
+// outside the served set are dropped. The NE lists only ietf-notification-capabilities
+// as augmenting ietf-system-capabilities. nl6 also lists ietf-yang-push-revision,
+// ietf-yp-notification and ietf-yp-observation there, because their YANG text
+// augments /sysc:system-capabilities.
 var vrpAugmentedBy = map[string][]string{
 	"ietf-interfaces":                 {"ietf-network-instance", "ietf-ip"},
 	"ietf-ip":                         {"ietf-network-instance"},
@@ -129,16 +151,27 @@ func vrpYangModule(name, revision string) (yangModule, bool) {
 	return yangModule{}, false
 }
 
-// yangContentID hashes the sorted name@revision list with FNV-32a.
+// yangContentID hashes the sorted name@revision list, each followed by its
+// features, with FNV-32a. A feature change therefore changes the id.
 func yangContentID(mods []yangModule) string {
 	ids := make([]string, len(mods))
 	for i, m := range mods {
 		ids[i] = m.Name + "@" + m.Revision
+		if f := vrpYangFeatures[m.Name]; len(f) > 0 {
+			ids[i] += "+" + strings.Join(f, ",")
+		}
 	}
 	sort.Strings(ids)
 	h := fnv.New32a()
 	h.Write([]byte(strings.Join(ids, "\n")))
 	return strconv.FormatUint(uint64(h.Sum32()), 10)
+}
+
+// yangFeatureXML renders the <feature> elements of module m.
+func yangFeatureXML(b *bytes.Buffer, m yangModule) {
+	for _, f := range vrpYangFeatures[m.Name] {
+		fmt.Fprintf(b, "<feature>%s</feature>", f)
+	}
 }
 
 func vrpContentID() string { return yangContentID(vrpYangModules()) }
@@ -162,6 +195,7 @@ func vrpYangLibraryXML() []byte {
 			continue
 		}
 		fmt.Fprintf(&b, "<module><name>%s</name><revision>%s</revision><namespace>%s</namespace>", m.Name, m.Revision, m.Namespace)
+		yangFeatureXML(&b, m)
 		for _, a := range vrpAugmentedBy[m.Name] {
 			fmt.Fprintf(&b, "<augmented-by xmlns=%q>%s</augmented-by>", yangLibAugNS, a)
 		}
@@ -172,6 +206,7 @@ func vrpYangLibraryXML() []byte {
 			continue
 		}
 		fmt.Fprintf(&b, "<import-only-module><name>%s</name><revision>%s</revision><namespace>%s</namespace>", m.Name, m.Revision, m.Namespace)
+		yangFeatureXML(&b, m)
 		for _, a := range vrpAugmentedBy[m.Name] {
 			fmt.Fprintf(&b, "<augmented-by xmlns=%q>%s</augmented-by>", yangLibAugNS, a)
 		}
@@ -184,7 +219,9 @@ func vrpYangLibraryXML() []byte {
 		if vrpYangImplemented[m.Name] {
 			ct = "implement"
 		}
-		fmt.Fprintf(&b, "<module><name>%s</name><revision>%s</revision><namespace>%s</namespace><conformance-type>%s</conformance-type></module>", m.Name, m.Revision, m.Namespace, ct)
+		fmt.Fprintf(&b, "<module><name>%s</name><revision>%s</revision><namespace>%s</namespace>", m.Name, m.Revision, m.Namespace)
+		yangFeatureXML(&b, m)
+		fmt.Fprintf(&b, "<conformance-type>%s</conformance-type></module>", ct)
 	}
 	b.WriteString("</modules-state>")
 	return b.Bytes()

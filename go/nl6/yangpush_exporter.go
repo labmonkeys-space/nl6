@@ -247,9 +247,8 @@ func (e *YangPushExporter) ensureStarted() {
 	for i := range e.subs {
 		e.send(i, now, encodeSubscriptionStarted(e.subs[i], e.pubID))
 	}
-	// encodePushUpdate has no leaf set of its own for subscription 10; the
-	// non-statistics branch (the subscription-9 interface leaves) carries
-	// both status leaves.
+	// Subscription 10's sync push-update carries only the two status leaves
+	// and point-in-time initial-state.
 	e.send(2, now, encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now)))
 }
 

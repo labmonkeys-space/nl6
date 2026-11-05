@@ -34,6 +34,10 @@ The password login stays.
 Key options in the file are ignored.
 nl6 reads the file at startup even without `-netconf-enable`.
 See [NETCONF](netconf.md#flags) for the flags.
+A `yang_push` block sent while `-netconf-enable` is off is accepted, with one warning in the log per process.
+The collector then cannot fetch the YANG library or the modules.
+A collector must be an IPv4 address or a hostname.
+An IPv6 literal gets `400`, the same as `-yang-push-collector`.
 
 Then opt devices in.
 
@@ -78,10 +82,13 @@ The periodic subscriptions anchor at `2025-01-01T00:00:30Z`.
 Subscription 9 sends three seconds after subscription 8.
 Every device fires at the same wall-clock second.
 A large fleet therefore produces one synchronized burst a minute on the host and on the collector.
-A real device behaves the same way.
+nl6 gives every device the captured anchor, so the whole fleet bursts together.
+A real fleet does only if every device is configured with one anchor.
 
 Subscription 10 sends a `push-update` once at start with `name`, `admin-status` and `oper-status` of every interface.
-After that it sends a `push-change-update` for each `oper-status` or `admin-status` change.
+Its `point-in-time` is `initial-state`.
+After that it sends a `push-change-update` for each `oper-status` or `admin-status` change, with `point-in-time` `state-changed`.
+Subscriptions 8 and 9 use `current-accounting`.
 Take an interface down with [the interface state API](interface-state.md) and the change arrives within a second.
 
 The start of each subscription sends a `subscription-started` notification first.
@@ -104,7 +111,8 @@ A collector can read the YANG library with `yang-library-content-id`, the module
 Only IETF and IANA modules ship.
 The library lists `augmented-by` entries so NetGauze can load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
 `ietf-netconf-monitoring` is served because the device lists it.
-The `content-id` is the FNV-32a hash of the module list, as a decimal string.
+The library lists each implemented module's features, in both `yang-library` and `modules-state`.
+The `content-id` is the FNV-32a hash of the module list and the features, as a decimal string.
 
 `get` returns the three subscriptions and their filters.
 The filters are answered by reference.
@@ -160,6 +168,8 @@ These differences are deliberate.
 - Every interface appears in subscription 8. The real device sent statistics for a subset.
 - The `ietf-udp-client` module revision `2025-05-14` is a guess. The device library lists none.
 - Two `augmented-by` rows under `ietf-subscribed-notifications` (`ietf-yang-push-revision` and `ietf-udp-notif-transport`) come from an MA5800T capture, not the NE.
+- Features are copied from the NE capture. nl6 adds `encode-json` under `ietf-subscribed-notifications` and `yang-push-revision-supported` under `ietf-yang-push-revision`, because the payloads it sends sit behind them.
+- The NE lists only `ietf-notification-capabilities` as augmenting `ietf-system-capabilities`. nl6 also lists `ietf-yang-push-revision`, `ietf-yp-notification` and `ietf-yp-observation`, because their YANG text augments `/sysc:system-capabilities`.
 - A `get` on a subscription by ID returns `receiver-instances`, which strict subtree filtering would not.
 - Hostnames, addresses and interface names are synthetic.
 
@@ -168,5 +178,8 @@ See the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/r
 ## Test it against NetGauze
 
 `make test-interop-yangpush` runs three devices against a real NetGauze v0.13.0 and Redpanda in Docker, on a Linux host.
+This gate has not passed yet.
+It has never run, because it needs a Linux host.
+Do not read it as proof until a PASS is recorded in the engineering record.
 It checks the YANG library fetch, the Kafka output for subscriptions 8, 9 and 10, segmentation, and an interface going down.
 The stack is in `examples/netgauze/`.

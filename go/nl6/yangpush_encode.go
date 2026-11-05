@@ -8,8 +8,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -176,12 +176,15 @@ func encodeSubscriptionStarted(s ypSub, publisherID uint32) []byte {
 	return b.Bytes()
 }
 
-func ypObservation(b *bytes.Buffer, s ypSub, obs time.Time, publisherID uint32) {
+// ypObservation writes the id and the ietf-yp-observation leaves. pit is the
+// point-in-time enum: current-accounting for periodic pushes, initial-state for
+// the on-change sync push-update and state-changed for push-change-update.
+func ypObservation(b *bytes.Buffer, s ypSub, obs time.Time, publisherID uint32, pit string) {
 	b.WriteString(`"id":`)
 	b.WriteString(strconv.FormatUint(uint64(s.ID), 10))
 	b.WriteString(`,"ietf-yp-observation:timestamp":"`)
 	b.WriteString(ypMillis(obs))
-	b.WriteString(`","ietf-yp-observation:point-in-time":"current-accounting","ietf-distributed-notif:message-publisher-id":`)
+	b.WriteString(`","ietf-yp-observation:point-in-time":"` + pit + `","ietf-distributed-notif:message-publisher-id":`)
 	b.WriteString(strconv.FormatUint(uint64(publisherID), 10))
 }
 
@@ -213,11 +216,35 @@ func ypStatistics(b *bytes.Buffer, i ypIface) {
 	b.WriteByte('}')
 }
 
-// encodePushUpdate renders a periodic push-update for subscription s.
+// ypKeyEscape percent-encodes a list key value for a target path. Only the
+// RFC 3986 unreserved set stays literal (RFC 8040 section 3.5.3).
+func ypKeyEscape(v string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~' {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&15])
+	}
+	return b.String()
+}
+
+// encodePushUpdate renders a push-update for subscription s. A periodic
+// subscription reports current-accounting; the on-change subscription's sync
+// snapshot reports initial-state.
 func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface) []byte {
 	var b bytes.Buffer
 	b.WriteString(`{"ietf-yang-push:push-update":{`)
-	ypObservation(&b, s, obs, publisherID)
+	pit := "current-accounting"
+	if !s.Periodic {
+		pit = "initial-state"
+	}
+	ypObservation(&b, s, obs, publisherID, pit)
 	b.WriteString(`,"datastore-contents":{"ietf-interfaces:interfaces":{"interface":[`)
 	for n, i := range ifs {
 		if n > 0 {
@@ -260,11 +287,11 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 func encodePushChangeUpdate(s ypSub, obs time.Time, publisherID uint32, editID string, ifc ypIface, changed StateLeafBits) []byte {
 	var b bytes.Buffer
 	b.WriteString(`{"ietf-yang-push:push-change-update":{`)
-	ypObservation(&b, s, obs, publisherID)
+	ypObservation(&b, s, obs, publisherID, "state-changed")
 	b.WriteString(`,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":`)
 	ypStr(&b, editID)
 	b.WriteString(`,"operation":"merge","target":`)
-	ypStr(&b, "/ietf-interfaces:interfaces/interface="+url.PathEscape(ifc.Name))
+	ypStr(&b, "/ietf-interfaces:interfaces/interface="+ypKeyEscape(ifc.Name))
 	b.WriteString(`,"value":{"ietf-interfaces:interface":[{"name":`)
 	ypStr(&b, ifc.Name)
 	if changed&LeafAdminStatus != 0 {

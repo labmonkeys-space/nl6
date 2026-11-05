@@ -286,14 +286,19 @@ func SupportsYangPush(deviceType string) bool {
 
 // yangPushIncapableRequest reports whether a creation request with a
 // yang_push block resolves only to types that cannot stream, and returns
-// one to name. A mixed round-robin batch is accepted; its incapable devices
-// are skipped with a log line (see applyExportSeed).
-func yangPushIncapableRequest(req CreateDevicesRequest) (string, bool) {
+// one to name. A request with neither resource_file nor round_robin resolves
+// to defaultKey, the simulator's default profile. A mixed round-robin batch is
+// accepted; its incapable devices are skipped with a log line (see
+// applyExportSeed).
+func yangPushIncapableRequest(req CreateDevicesRequest, defaultKey string) (string, bool) {
 	if req.ResourceFile != "" {
 		return req.ResourceFile, !SupportsYangPush(req.ResourceFile)
 	}
 	if !req.RoundRobin {
-		return "", false
+		if defaultKey == "" {
+			return "the default profile", true
+		}
+		return defaultKey, !SupportsYangPush(defaultKey)
 	}
 	types := roundRobinTypesForCategory(req.Category)
 	if len(types) == 0 || slices.ContainsFunc(types, SupportsYangPush) {
@@ -319,6 +324,13 @@ func (c *DeviceYangPushConfig) Validate() error {
 	}
 	if err := validateCollector("yang_push", c.Collector); err != nil {
 		return err
+	}
+	// Devices stream from IPv4 addresses, so an IPv6 literal would fail every
+	// bind after the request was accepted.
+	if host, _, err := net.SplitHostPort(c.Collector); err == nil {
+		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+			return fmt.Errorf("yang_push: collector %q is IPv6; devices stream over IPv4 only", c.Collector)
+		}
 	}
 	if c.SegmentSize < minYangPushSegmentSize || c.SegmentSize > maxYangPushSegmentSize {
 		return fmt.Errorf("yang_push: segment_size must be %d..%d, got %d",

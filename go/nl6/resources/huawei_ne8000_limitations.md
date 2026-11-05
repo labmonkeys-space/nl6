@@ -51,7 +51,8 @@ The subscriptions do not take part in a load-test scenario window.
 
 Every device fires subscription 8 at the same wall-clock second and subscription 9 three seconds later.
 A large fleet sends a synchronized burst each minute.
-This is the real device's behavior.
+nl6 gives every device the captured anchor, so the whole fleet bursts together.
+A real fleet does only if every device is configured with one anchor.
 
 ## Other vendors
 

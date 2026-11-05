@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -43,6 +44,10 @@ type YangPushCollectorStatus struct {
 	StateEventsDropped uint64 `json:"state_events_dropped"`
 	FidelitySuppressed uint64 `json:"fidelity_suppressed"`
 }
+
+// yangPushNetconfOffWarned gates the one-per-process warning for a yang_push
+// block accepted while -netconf-enable is off.
+var yangPushNetconfOffWarned sync.Once
 
 // StartYangPushSubsystem marks YANG-Push active so per-device exporters may
 // attach. Always on, like gNMI dial-out.

@@ -774,18 +774,6 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			device.cachedSysLocation.Store(sysLocationValue)
 			device.cachedLocation.Store(locationValue)
 
-			// YANG-Push over UDP-notif, same failure handling as dial-out. After
-			// the sysName cache: the first messages go out at once and carry it
-			// as the envelope hostname. Mirror in createSingleDevice.
-			if device.yangPushConfig != nil {
-				if err := sm.startDeviceYangPushExporter(device); err != nil {
-					log.Printf("yang_push: skipping device %s: %v", device.IP, err)
-					device.mu.Lock()
-					device.yangPushConfig = nil
-					device.mu.Unlock()
-				}
-			}
-
 			// Create servers with SNMPv3 configuration and the batch's write
 			// admission policy (nl6#690). MIRROR IN createSingleDevice — the two
 			// creation paths have diverged before, and a device created by the
@@ -807,6 +795,20 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 				sm.incrementIP(prefix)
 				sm.mu.Unlock()
 				continue
+			}
+
+			// YANG-Push over UDP-notif, same failure handling as dial-out. It
+			// starts after Start: the first messages make the collector SSH to
+			// the NETCONF listener Start binds, and a device whose Start failed
+			// must not stream. The sysName cache is set above, so the envelope
+			// hostname is known. Mirror in createSingleDevice.
+			if device.yangPushConfig != nil {
+				if err := sm.startDeviceYangPushExporter(device); err != nil {
+					log.Printf("yang_push: skipping device %s: %v", device.IP, err)
+					device.mu.Lock()
+					device.yangPushConfig = nil
+					device.mu.Unlock()
+				}
 			}
 
 			// NETCONF call home dials into the session registry the NETCONF
@@ -1140,17 +1142,6 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	device.cachedSysLocation.Store(sysLocationValue)
 	device.cachedLocation.Store(locationValue)
 
-	// YANG-Push over UDP-notif (mirrors the sequential path, after the
-	// sysName cache for the envelope hostname).
-	if device.yangPushConfig != nil {
-		if err := sm.startDeviceYangPushExporter(device); err != nil {
-			log.Printf("yang_push: skipping device %s: %v", device.IP, err)
-			device.mu.Lock()
-			device.yangPushConfig = nil
-			device.mu.Unlock()
-		}
-	}
-
 	// Create servers with SNMPv3 configuration and the batch's write admission
 	// policy (nl6#690). MIRROR OF the sequential path in
 	// createDevicesWithOptionsLocked — keep the two in step.
@@ -1168,6 +1159,17 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 		device.Stop() // Clean up
 		sm.releaseSysName(sysNameValue)
 		return false
+	}
+
+	// YANG-Push over UDP-notif (mirrors the sequential path): after Start, so
+	// a device whose Start failed never streams and the NETCONF listener is up.
+	if device.yangPushConfig != nil {
+		if err := sm.startDeviceYangPushExporter(device); err != nil {
+			log.Printf("yang_push: skipping device %s: %v", device.IP, err)
+			device.mu.Lock()
+			device.yangPushConfig = nil
+			device.mu.Unlock()
+		}
 	}
 
 	// NETCONF call home attaches after Start and before the device is

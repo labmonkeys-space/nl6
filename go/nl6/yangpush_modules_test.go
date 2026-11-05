@@ -115,12 +115,14 @@ type testYangLib struct {
 			Name      string   `xml:"name"`
 			Revision  string   `xml:"revision"`
 			Namespace string   `xml:"namespace"`
+			Features  []string `xml:"feature"`
 			Augmented []string `xml:"augmented-by"`
 		} `xml:"module"`
 		ImportOnly []struct {
 			Name      string   `xml:"name"`
 			Revision  string   `xml:"revision"`
 			Namespace string   `xml:"namespace"`
+			Features  []string `xml:"feature"`
 			Augmented []string `xml:"augmented-by"`
 		} `xml:"import-only-module"`
 	} `xml:"module-set"`
@@ -129,9 +131,10 @@ type testYangLib struct {
 type testModulesState struct {
 	SetID   string `xml:"module-set-id"`
 	Modules []struct {
-		Name      string `xml:"name"`
-		Revision  string `xml:"revision"`
-		Namespace string `xml:"namespace"`
+		Name      string   `xml:"name"`
+		Revision  string   `xml:"revision"`
+		Namespace string   `xml:"namespace"`
+		Features  []string `xml:"feature"`
 	} `xml:"module"`
 }
 
@@ -176,22 +179,84 @@ func TestVrpYangLibraryXML(t *testing.T) {
 			t.Errorf("modules-state %s = %v, want %v", m.Name, inState[m.Name], want)
 		}
 	}
-	for _, aug := range []string{"ietf-yang-push", "ietf-yang-push-revision", "ietf-distributed-notif", "ietf-udp-notif-transport", "ietf-subscribed-notif-receivers"} {
-		if !slices.Contains(augmented["ietf-subscribed-notifications"], aug) {
-			t.Errorf("ietf-subscribed-notifications not augmented-by %s in XML", aug)
+	// Pairs copied from the NE capture (get-ietf-yang-library.xml).
+	neAugmentedBy := map[string][]string{
+		"ietf-interfaces":                 {"ietf-network-instance", "ietf-ip"},
+		"ietf-ip":                         {"ietf-network-instance"},
+		"ietf-notification-capabilities":  {"ietf-yp-observation", "ietf-yp-notification"},
+		"ietf-subscribed-notif-receivers": {"ietf-udp-notif-transport"},
+		"ietf-yang-library":               {"ietf-yang-library-augmentedby"},
+		"ietf-yang-push":                  {"ietf-yp-observation", "ietf-distributed-notif"},
+	}
+	for mod, want := range neAugmentedBy {
+		if !slices.Equal(augmented[mod], want) {
+			t.Errorf("XML augmented-by for %s = %v, want NE %v", mod, augmented[mod], want)
 		}
 	}
-	for mod, augs := range vrpAugmentedBy {
-		if _, ok := vrpYangModule(mod, ""); !ok {
-			t.Errorf("vrpAugmentedBy key %s not served", mod)
+	// The NE lists these four for ietf-subscribed-notifications. nl6 adds
+	// ietf-yang-push-revision and ietf-udp-notif-transport.
+	for _, aug := range []string{"ietf-yp-notification", "ietf-yang-push", "ietf-subscribed-notif-receivers", "ietf-distributed-notif"} {
+		if !slices.Contains(augmented["ietf-subscribed-notifications"], aug) {
+			t.Errorf("ietf-subscribed-notifications not augmented-by %s", aug)
 		}
-		for _, a := range augs {
-			if _, ok := vrpYangModule(a, ""); !ok {
-				t.Errorf("vrpAugmentedBy[%s] lists %s which is not served", mod, a)
+	}
+	// ietf-system-capabilities: the NE lists ietf-notification-capabilities.
+	// The other three are nl6 additions taken from the YANG augment targets.
+	if got := augmented["ietf-system-capabilities"]; !slices.Contains(got, "ietf-notification-capabilities") || len(got) != 4 {
+		t.Errorf("ietf-system-capabilities augmented-by = %v", got)
+	}
+}
+
+// TestVrpYangFeatures pins the feature list of every module with features. The
+// NE capture is the source, plus the two nl6 additions named in the comment.
+func TestVrpYangFeatures(t *testing.T) {
+	want := map[string][]string{
+		"ietf-interfaces": {"pre-provisioning", "if-mib"},
+		"ietf-subscribed-notifications": {"encode-xml", "replay", "xpath", "subtree", "configured", "dscp",
+			"interface-designation", "supports-vrf",
+			"encode-json"}, // nl6 addition
+		"ietf-yang-push":          {"on-change"},
+		"ietf-yang-push-revision": {"yang-push-revision-supported"}, // nl6 addition
+	}
+	var doc struct {
+		Lib   testYangLib      `xml:"yang-library"`
+		State testModulesState `xml:"modules-state"`
+	}
+	if err := xml.Unmarshal([]byte("<data>"+string(vrpYangLibraryXML())+"</data>"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	lib := map[string][]string{}
+	for _, ms := range doc.Lib.ModuleSet {
+		for _, m := range ms.Modules {
+			lib[m.Name] = m.Features
+		}
+		for _, m := range ms.ImportOnly {
+			if len(m.Features) > 0 {
+				t.Errorf("import-only %s has features", m.Name)
 			}
 		}
-		if !slices.Equal(augmented[mod], augs) {
-			t.Errorf("XML augmented-by for %s = %v, want %v", mod, augmented[mod], augs)
+	}
+	state := map[string][]string{}
+	for _, m := range doc.State.Modules {
+		state[m.Name] = m.Features
+	}
+	for _, m := range vrpYangModules() {
+		w := want[m.Name]
+		if !slices.Equal(lib[m.Name], w) && !(len(lib[m.Name]) == 0 && len(w) == 0) {
+			t.Errorf("yang-library %s features = %v, want %v", m.Name, lib[m.Name], w)
 		}
+		if !slices.Equal(state[m.Name], w) && !(len(state[m.Name]) == 0 && len(w) == 0) {
+			t.Errorf("modules-state %s features = %v, want %v", m.Name, state[m.Name], w)
+		}
+	}
+}
+
+func TestVrpContentIDCoversFeatures(t *testing.T) {
+	base := vrpContentID()
+	saved := vrpYangFeatures["ietf-yang-push"]
+	vrpYangFeatures["ietf-yang-push"] = nil
+	defer func() { vrpYangFeatures["ietf-yang-push"] = saved }()
+	if vrpContentID() == base {
+		t.Error("content-id did not change when a feature was removed")
 	}
 }

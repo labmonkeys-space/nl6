@@ -43,6 +43,7 @@ func TestYangPushConfigValidate(t *testing.T) {
 		{"nil", nil, ""},
 		{"missing collector", &DeviceYangPushConfig{SegmentSize: 1436}, "collector is required"},
 		{"bad host:port", &DeviceYangPushConfig{Collector: "nonsense", SegmentSize: 1436}, "host:port"},
+		{"ipv6 collector", &DeviceYangPushConfig{Collector: "[2001:db8::1]:10000", SegmentSize: 1436}, "IPv6"},
 		{"too small", &DeviceYangPushConfig{Collector: "127.0.0.1:9000", SegmentSize: 511}, "segment_size"},
 		{"too large", &DeviceYangPushConfig{Collector: "127.0.0.1:9000", SegmentSize: 65508}, "segment_size"},
 	} {
@@ -76,7 +77,42 @@ func TestSupportsYangPush(t *testing.T) {
 	}
 }
 
+// ypHandlerManager installs a bare manager for createDevicesHandler tests.
+func ypHandlerManager(t *testing.T, defaultKey string) {
+	t.Helper()
+	prev := manager
+	manager = &SimulatorManager{defaultResourceKey: defaultKey}
+	t.Cleanup(func() { manager = prev })
+}
+
+func ypPost(t *testing.T, req CreateDevicesRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(req)
+	w := httptest.NewRecorder()
+	createDevicesHandler(w, httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body)))
+	return w
+}
+
+func TestYangPushRequestIPv6Collector400(t *testing.T) {
+	ypHandlerManager(t, "huawei_ne8000.json")
+	w := ypPost(t, CreateDevicesRequest{StartIP: "10.0.0.1", DeviceCount: 1, Netmask: "24",
+		ResourceFile: "huawei_ne8000.json", YangPush: &DeviceYangPushConfig{Collector: "[2001:db8::1]:10000"}})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "IPv6") {
+		t.Fatalf("status = %d, body %s; want 400 naming IPv6", w.Code, w.Body.String())
+	}
+}
+
+func TestYangPushRequestIncapableDefault400(t *testing.T) {
+	ypHandlerManager(t, "cisco_ios.json")
+	w := ypPost(t, CreateDevicesRequest{StartIP: "10.0.0.1", DeviceCount: 1, Netmask: "24",
+		YangPush: &DeviceYangPushConfig{Collector: "127.0.0.1:9000"}})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "yang_push") {
+		t.Fatalf("status = %d, body %s; want 400 naming yang_push", w.Code, w.Body.String())
+	}
+}
+
 func TestYangPushRequestAllIncapable400(t *testing.T) {
+	ypHandlerManager(t, "")
 	body, _ := json.Marshal(CreateDevicesRequest{
 		StartIP:      "10.0.0.1",
 		DeviceCount:  1,
@@ -93,7 +129,7 @@ func TestYangPushRequestAllIncapable400(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "yang_push") {
 		t.Errorf("body does not name yang_push: %s", w.Body.String())
 	}
-	if _, bad := yangPushIncapableRequest(CreateDevicesRequest{ResourceFile: "huawei_ne8000.json"}); bad {
+	if _, bad := yangPushIncapableRequest(CreateDevicesRequest{ResourceFile: "huawei_ne8000.json"}, ""); bad {
 		t.Error("huawei_ne8000.json must be capable")
 	}
 }
@@ -146,5 +182,18 @@ func TestYangPushListDevicesEcho(t *testing.T) {
 	b, _ := json.Marshal(byID["on"])
 	if !strings.Contains(string(b), `"yang_push":{"collector":"127.0.0.1:9000","segment_size":1436}`) {
 		t.Errorf("json = %s", b)
+	}
+}
+
+func TestYangPushIncapableRequestDefaultKey(t *testing.T) {
+	req := CreateDevicesRequest{}
+	if _, bad := yangPushIncapableRequest(req, "cisco_ios.json"); !bad {
+		t.Error("incapable default profile must be rejected")
+	}
+	if _, bad := yangPushIncapableRequest(req, ""); !bad {
+		t.Error("the fallback default profile is not huawei_ne8000 and must be rejected")
+	}
+	if _, bad := yangPushIncapableRequest(req, "huawei_ne8000.json"); bad {
+		t.Error("capable default profile must be accepted")
 	}
 }

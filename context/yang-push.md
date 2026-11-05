@@ -42,7 +42,8 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 - The YANG library carries `augmented-by` entries (draft-ietf-netmod-yang-library-augmentedby).
   They let NetGauze load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
 - `ietf-netconf-monitoring` is served because the NE lists it.
-- `content-id` is the FNV-32a hash of the module list, as a decimal string.
+- The library lists the features of each implemented module, copied from the NE capture.
+- `content-id` is the FNV-32a hash of the module list and the features, as a decimal string.
 
 ## Where nl6 goes beyond the captures
 
@@ -50,6 +51,12 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
   It is on-change for `oper-status | admin-status`, dampening 0, `sync-on-start` true, filter reference `ONCHANGEINTERFACE`.
   The NE advertises on-change, but no capture shows it on the wire.
   Its sync-on-start `push-update` carries only `name`, `admin-status` and `oper-status`.
+- Subscription 10 uses `point-in-time` `initial-state` for the sync push and `state-changed` for changes.
+  `ietf-yp-observation` defines those values for on-change subscriptions.
+- The NE lacks the features `encode-json` (`ietf-subscribed-notifications`) and `yang-push-revision-supported` (`ietf-yang-push-revision`).
+  nl6 adds them, because its payloads sit behind them.
+- The NE lists only `ietf-notification-capabilities` as augmenting `ietf-system-capabilities`.
+  nl6 also lists `ietf-yang-push-revision`, `ietf-yp-notification` and `ietf-yp-observation`, taken from their augment targets.
 - Every interface appears in subscription 8.
   The device sent statistics for a subset.
 - `ietf-udp-client` revision `2025-05-14` is a guess.
@@ -72,6 +79,8 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
   Password login stays.
   Key options in the file are ignored.
   The file is read even without `-netconf-enable`.
+  A `yang_push` block accepted while `-netconf-enable` is off logs one warning per process.
+  An IPv6 collector gets `400`.
 - The socket is a connected UDP socket bound to the device IP.
   Connecting is what lets the device see ICMP port-unreachable.
   A failed bind fails the opt-in for that device, with no fallback.
@@ -83,7 +92,9 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 - Load profile.
   Every device fires subscription 8 at the same wall-clock anchor and subscription 9 three seconds later.
   A large fleet produces a synchronized burst each minute on the host and the collector.
-  This is the device's real behaviour, so nl6 does not jitter it.
+  nl6 gives every device the captured anchor, so the fleet bursts together.
+  A real fleet does only if every device is configured with one anchor.
+  nl6 does not jitter it.
 
 ## Interop gate
 
@@ -113,6 +124,8 @@ Redpanda has a healthcheck and NetGauze waits for it.
   Only these were checked locally: the compose file parses, the test compiles and skips without its env var and `make -n` parses the target.
   Record the PASS output here when the run happens.
 - `yanglint` validation of the payloads has not run anywhere.
+  The test now validates against the served YANG library (`-Y`), so a first run on a host with yanglint also checks that library.
+- Whether libyang accepts the served library file in `-Y` form is unverified.
 - The exact Kafka JSON field names the test reads (`collection-timestamp`, `export-address`, the `yang-push-subscription` `id`) come from reading NetGauze `crates/yang-push/src/model/telemetry.rs`, not from a live run.
 - The OpenTelemetry Collector contrib image (0.116.1) accepting NetGauze's OTLP over gRPC on 4317 (NetGauze's exporter is gRPC only) and the Prometheus names the test expects are unverified.
 - The `rpk topic consume` flags in the test are unverified against Redpanda v25.3.1.
