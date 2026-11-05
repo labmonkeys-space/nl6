@@ -22,7 +22,9 @@ import (
 // The served YANG set for simulated huawei_ne8000 devices. Only IETF modules
 // are embedded, never huawei-* ones. Files are named <name>@<revision>.yang.
 // Revisions follow the IETF 123 hackathon NE capture; the files come from that
-// capture, the MA5800T capture (ietf-yang-push-revision) or the IETF archive.
+// capture, the IETF archive, or (ietf-yang-push-revision@2025-08-29) the copy
+// NetGauze bundles. That revision keys module-version by "name", as the IETF 125
+// NE capture sends it; 2024-12-17 used "module-name".
 //
 //go:embed resources/huawei_ne8000/yang/*.yang
 var vrpYangFS embed.FS

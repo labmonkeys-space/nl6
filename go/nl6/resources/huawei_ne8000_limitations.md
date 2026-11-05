@@ -22,6 +22,7 @@ The device in the capture sent statistics for a subset.
 ## A guessed module revision
 
 The `ietf-udp-client` revision `2025-05-14` is a guess.
+`ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
 The device library lists none.
 Two `augmented-by` rows under `ietf-subscribed-notifications` come from an MA5800T capture.
 

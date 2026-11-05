@@ -60,6 +60,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 - Every interface appears in subscription 8.
   The device sent statistics for a subset.
 - `ietf-udp-client` revision `2025-05-14` is a guess.
+- `ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
   The NE library lists none.
 - The `augmented-by` rows for `ietf-yang-push-revision` and `ietf-udp-notif-transport` under `ietf-subscribed-notifications` come from the MA5800T capture, not the NE.
 - A `get` on a subscription by ID also returns `receiver-instances`.

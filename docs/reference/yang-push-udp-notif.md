@@ -167,6 +167,7 @@ These differences are deliberate.
 - Subscription 10 has no capture. The device advertises on-change, but no capture shows it on the wire. nl6 builds it from RFC 8641 and the same envelope.
 - Every interface appears in subscription 8. The real device sent statistics for a subset.
 - The `ietf-udp-client` module revision `2025-05-14` is a guess. The device library lists none.
+- `ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
 - Two `augmented-by` rows under `ietf-subscribed-notifications` (`ietf-yang-push-revision` and `ietf-udp-notif-transport`) come from an MA5800T capture, not the NE.
 - Features are copied from the NE capture. nl6 adds `encode-json` under `ietf-subscribed-notifications` and `yang-push-revision-supported` under `ietf-yang-push-revision`, because the payloads it sends sit behind them.
 - The NE lists only `ietf-notification-capabilities` as augmenting `ietf-system-capabilities`. nl6 also lists `ietf-yang-push-revision`, `ietf-yp-notification` and `ietf-yp-observation`, because their YANG text augments `/sysc:system-capabilities`.
