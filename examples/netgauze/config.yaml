@@ -14,10 +14,10 @@ logging:
   level: netgauze_collector=info,netgauze_yang_push=info,info
   ansi: false
 
-# The OpenTelemetry Collector in compose.yml receives these on 4318 and serves
+# The OpenTelemetry Collector in compose.yml receives these over gRPC on 4317 and serves
 # them to the test as Prometheus text. A 10 s interval fits the 150 s run.
 telemetry:
-  url: http://127.0.0.1:4318/v1/metrics
+  url: http://127.0.0.1:4317
   id: nl6-interop-netgauze
   exporter_timeout: 3000
   reader_interval: 10000
