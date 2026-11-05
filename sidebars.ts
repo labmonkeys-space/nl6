@@ -106,6 +106,7 @@ const sidebars: SidebarsConfig = {
             'reference/gnmi',
             'reference/gnmi-dial-out',
             'reference/netconf',
+            'reference/yang-push-udp-notif',
             'reference/interface-state',
             'reference/lldp-topology',
           ],

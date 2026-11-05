@@ -5,7 +5,8 @@ description: "The NETCONF dialects served by the Catalyst 9500 and MX10004 profi
 
 # NETCONF
 
-nl6 serves NETCONF on two device profiles.
+nl6 serves NETCONF on three device profiles.
+The third, `huawei_ne8000`, serves only what a YANG-Push collector reads, see [YANG-Push over UDP-notif](yang-push-udp-notif.md).
 `cisco_catalyst_9500` serves the IOS XE dialect over SSH.
 A client opens an IOS XE style `establish-subscription` and receives a notification each time the interface state engine changes an interface.
 `juniper_mx10004` serves a Junos dialect over SSH and over mutual TLS (RFC 7589).
@@ -18,8 +19,9 @@ A default fleet behaves exactly as without it.
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `-netconf-enable` | bool | `false` | Enable the NETCONF subsystem. `cisco_catalyst_9500` devices listen on `-netconf-port`. `juniper_mx10004` devices listen on `-netconf-port` and on `-netconf-tls-port`. |
+| `-netconf-enable` | bool | `false` | Enable the NETCONF subsystem. `cisco_catalyst_9500` and `huawei_ne8000` devices listen on `-netconf-port`. `juniper_mx10004` devices listen on `-netconf-port` and on `-netconf-tls-port`. |
 | `-netconf-port` | int | `830` | TCP port of the per-device NETCONF over SSH listener. |
+| `-netconf-authorized-keys` | path | empty | OpenSSH `authorized_keys` file. Its keys log in as `simadmin` on every NETCONF SSH listener, next to the password. Key options are ignored. A YANG-Push collector such as NetGauze needs it. |
 | `-netconf-tls-port` | int | `6513` | TCP port of the per-device NETCONF over TLS listener. |
 | `-netconf-tls-client-ca` | path | empty | PEM file with the CA that must have signed the client certificates. The path is flag-only. Requires `-netconf-enable`. |
 | `-netconf-tls-client-identity` | `fingerprint=username` | none | One entry of the client identity table. Repeat the flag for more entries. The fingerprint is the SHA-256 of the client certificate, with or without the `04:` prefix. Requires `-netconf-enable`. |
@@ -27,8 +29,9 @@ A default fleet behaves exactly as without it.
 | `-netconf-callhome-client` | `host:port` | empty | NETCONF client the auto-started `juniper_mx10004` devices dial with call home. Empty means no call home. Requires `-netconf-enable`. |
 | `-netconf-callhome-device-id` | string | empty | `DEVICE-ID` in the call-home preamble. Empty means each device's sysName. Requires `-netconf-callhome-client`. |
 
-Only `cisco_catalyst_9500` and `juniper_mx10004` devices open NETCONF ports.
-Other device types never do.
+`huawei_ne8000` devices also open the SSH listener on `-netconf-port`, with a dialect for YANG-Push collectors.
+See [YANG-Push over UDP-notif](yang-push-udp-notif.md).
+Other device types never open NETCONF ports.
 The three identity flags are global and apply to the whole fleet.
 
 ## Connect
@@ -508,6 +511,8 @@ nl6 emulates one real device per profile and serves less where it has no capture
 The IOS XE list is in [Cisco Catalyst 9500 NETCONF limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/cisco_catalyst_9500_limitations.md).
 The first entry there matters most.
 An admin change on a link-down interface sends a trap and a syslog message but no NETCONF notification, as on the real switch.
+
+The VRP list is in [Huawei NE8000 YANG-Push limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/huawei_ne8000_limitations.md).
 
 The Junos list is in [Juniper MX10004 NETCONF limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/juniper_mx10004_limitations.md).
 The main points are these.

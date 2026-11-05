@@ -243,7 +243,7 @@ See [NETCONF reference](netconf.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF subsystem: `cisco_catalyst_9500` over SSH on `-netconf-port`, `juniper_mx10004` over SSH on `-netconf-port` and over TLS on `-netconf-tls-port`. |
+| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF subsystem: `cisco_catalyst_9500` and `huawei_ne8000` over SSH on `-netconf-port`, `juniper_mx10004` over SSH on `-netconf-port` and over TLS on `-netconf-tls-port`. |
 | `-netconf-port` | int | `830` | **global** | TCP port of the per-device NETCONF over SSH listener. |
 | `-netconf-authorized-keys` | path | empty | **global** | OpenSSH `authorized_keys` file. Its keys log in as `simadmin` on every NETCONF SSH listener, next to the password. Read once at startup; an unreadable file or a line that is not a key stops the simulator. Port 22 keeps password login only. |
 | `-netconf-tls-port` | int | `6513` | **global** | TCP port of the per-device NETCONF over TLS listener. |

@@ -1,0 +1,50 @@
+# NetGauze as an independent YANG-Push over UDP-notif collector for nl6.
+#
+# This is what `make test-interop-yangpush` runs. It is also a ready-made
+# collector for a manual look at what nl6's huawei_ne8000 puts on the wire:
+#
+#   mkdir -p /tmp/ng-keys && ssh-keygen -q -t ed25519 -N '' -f /tmp/ng-keys/id_ed25519
+#   cp /tmp/ng-keys/id_ed25519.pub /tmp/ng-keys/authorized_keys
+#   NL6_YANGPUSH_KEYDIR=/tmp/ng-keys docker compose -f examples/netgauze/compose.yml up -d --build
+#   sudo ./nl6 -netconf-enable -netconf-authorized-keys /tmp/ng-keys/authorized_keys
+#   curl -X POST localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
+#     -d '{"start_ip":"10.42.0.1","device_count":3,"resource_file":"huawei_ne8000.json","yang_push":{"collector":"10.254.0.1:10000"}}'
+#   docker exec nl6-yangpush-redpanda rpk topic consume telemetry-message-json
+#
+# Host networking is REQUIRED. NetGauze must reach the device NETCONF
+# listeners (SSH 830) in the nl6sim namespace through the host, and the
+# devices send UDP-notif to 10.254.0.1:10000 on the host end of the veth.
+# Linux only. TUN and network namespaces need Linux for nl6 itself.
+#
+# Redpanda stands in for Kafka. It also serves a schema registry on 18081 for
+# the YANG endpoint variant in NetGauze's own sample config.
+name: nl6-yangpush
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v25.3.1@sha256:5e6ef104f48f430c25b5ddf1e1bef83394086d51ad6e752b78d10a018f74833d
+    container_name: nl6-yangpush-redpanda
+    network_mode: host
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=512M
+      - --kafka-addr=127.0.0.1:19092
+      - --advertise-kafka-addr=127.0.0.1:19092
+      - --rpc-addr=127.0.0.1:33145
+      - --advertise-rpc-addr=127.0.0.1:33145
+      - --pandaproxy-addr=127.0.0.1:18082
+      - --schema-registry-addr=127.0.0.1:18081
+
+  netgauze:
+    build: .
+    image: nl6-interop-netgauze:local
+    container_name: nl6-yangpush-netgauze
+    network_mode: host
+    depends_on:
+      - redpanda
+    volumes:
+      # authorized_keys and id_ed25519 are written here by the make target.
+      - ${NL6_YANGPUSH_KEYDIR:-./keys}/id_ed25519:/keys/id_ed25519:ro
