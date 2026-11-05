@@ -144,12 +144,15 @@ It takes exactly one of five strings; any other value matches no device type and
 
 ## World cities for `sysLocation`
 
-Device `sysLocation` values are drawn from a bundled world-cities dataset of about 47,000 rows so large fleets have plausible geographic spread.
-The dataset ships under `go/nl6/worldcities/` as 97 CSV shards plus a `header.csv`.
-It is the [simplemaps World Cities Basic database](https://simplemaps.com/data/world-cities) by Pareto Software, LLC, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-Rows for Russia are removed. `go/nl6/worldcities/FILTER.md` records the filter.
-The container image and the OS packages ship it beside `resources/` and `web/`.
+Device `sysLocation` values are drawn from a bundled world-cities dataset, so large fleets have plausible geographic spread.
+
+| Fact | Value |
+|------|-------|
+| **Rows** | About 47,000 |
+| **Files** | `go/nl6/worldcities/`: 97 CSV shards plus `header.csv` |
+| **Source** | [simplemaps World Cities Basic database](https://simplemaps.com/data/world-cities) by Pareto Software, LLC |
+| **Licence** | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| **Shipped in** | The container image and the OS packages, beside `resources/` and `web/` |
 
 Each entry's **latitude/longitude** are retained from the dataset and exposed per device via `GET /api/v1/devices` (`location` / `latitude` / `longitude`).
 See the [web API reference](web-api.md).
-The `sysLocation` string itself is unchanged; coordinates are an additive surface on the control-plane API.
