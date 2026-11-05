@@ -1,34 +1,43 @@
 <img src="./assets/nl6-logo-with-text.svg" width="200" />
 
-[![CI](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml/badge.svg)](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml) [![Docs](https://img.shields.io/badge/docs-labmonkeys--space.github.io-blue?logo=docusaurus)](https://labmonkeys-space.github.io/nl6/) [![Go Version](https://img.shields.io/github/go-mod/go-version/labmonkeys-space/nl6?filename=go%2Fgo.mod)](https://github.com/labmonkeys-space/nl6/blob/main/go/go.mod) [![License](https://img.shields.io/github/license/labmonkeys-space/nl6)](https://github.com/labmonkeys-space/nl6/blob/main/LICENSE) [![Container Image](https://img.shields.io/badge/ghcr.io-nl6-blue?logo=docker)](https://github.com/labmonkeys-space/nl6/pkgs/container/nl6) [![Latest Release](https://img.shields.io/github/v/release/labmonkeys-space/nl6?include_prereleases&sort=semver)](https://github.com/labmonkeys-space/nl6/releases)
+[![CI](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml/badge.svg)](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml) [![Docs](https://img.shields.io/badge/docs-nl6.eu-blue?logo=docusaurus)](https://nl6.eu/) [![Go Version](https://img.shields.io/github/go-mod/go-version/labmonkeys-space/nl6?filename=go%2Fgo.mod)](https://github.com/labmonkeys-space/nl6/blob/main/go/go.mod) [![License](https://img.shields.io/github/license/labmonkeys-space/nl6)](https://github.com/labmonkeys-space/nl6/blob/main/LICENSE) [![Container Image](https://img.shields.io/badge/ghcr.io-nl6-blue?logo=docker)](https://github.com/labmonkeys-space/nl6/pkgs/container/nl6) [![Latest Release](https://img.shields.io/github/v/release/labmonkeys-space/nl6?include_prereleases&sort=semver)](https://github.com/labmonkeys-space/nl6/releases)
 
 ![nl6 Logo](assets/screenshot-v0.9.0.png)
 
-**📖 Documentation: <https://labmonkeys-space.github.io/nl6/>**
+**📖 Documentation: <https://nl6.eu/>**
 
-A scalable network and infrastructure simulator that exposes realistic SNMP v2c/v3, SSH, and HTTPS REST interfaces for testing network management software, monitoring systems, and automation tools. nl6 can simulate tens of thousands of network devices, GPU servers, storage systems, and Linux servers.
+A scalable network and infrastructure simulator for testing network management software, monitoring systems and automation tools.
+Simulated devices serve SNMP v2c/v3, SSH, HTTPS REST, gNMI and NETCONF, and stream flows, traps, syslog, gNMI dial-out and YANG-Push to collectors.
+nl6 can simulate tens of thousands of network devices, GPU servers, storage systems and Linux servers.
 Each gets its own IP address via Linux TUN interfaces and network namespaces.
 
 ## Highlights
 
-- **Runs 30,000+ simulated devices on a single host.** See [Scaling](https://labmonkeys-space.github.io/nl6/ops/scaling/).
-- **31 device types across 9 categories** (core / edge routers, DC and campus switches, firewalls, servers, NVIDIA DGX/HGX GPU servers, enterprise storage, and Ciena Waveserver 5 optical transport). See [Device types](https://labmonkeys-space.github.io/nl6/reference/device-types/).
-- **Multi-protocol per device:** SNMP v2c/v3 (RFC 3414 USM: MD5/SHA1 authentication, DES/AES128 privacy), SSH with VT100 terminal emulation, and HTTPS REST. See [SNMP reference](https://labmonkeys-space.github.io/nl6/reference/snmp/) and [Web API](https://labmonkeys-space.github.io/nl6/reference/web-api/).
-- **Realistic dynamic metrics:** CPU / memory / temperature on 100-point sine waves; full IF-MIB counter cycling (octets plus per-direction unicast / multicast / broadcast packet counts, errors, discards) with per-device error-scenario tuning (`clean` / `typical` / `degraded` / `failing`); per-GPU DCGM metrics. See [SNMP reference → Dynamic IF-MIB counters](https://labmonkeys-space.github.io/nl6/reference/snmp/#dynamic-if-mib-counters) and [GPU simulation](https://labmonkeys-space.github.io/nl6/reference/gpu/).
+- **Runs 30,000+ simulated devices on a single host.** See [Scaling](https://nl6.eu/ops/scaling).
+- **31 device types across 9 categories** (core / edge routers, DC and campus switches, firewalls, servers, NVIDIA DGX/HGX GPU servers, enterprise storage, and Ciena Waveserver 5 optical transport). See [Device types](https://nl6.eu/reference/device-types).
+- **Multi-protocol per device:** SNMP v2c/v3 (RFC 3414 USM: MD5/SHA1 authentication, DES/AES128 privacy), SSH with VT100 terminal emulation, and HTTPS REST. See [SNMP reference](https://nl6.eu/reference/snmp) and [Web API](https://nl6.eu/reference/web-api).
+- **Realistic dynamic metrics:** CPU / memory / temperature on 100-point sine waves; full IF-MIB counter cycling (octets plus per-direction unicast / multicast / broadcast packet counts, errors, discards) with per-device error-scenario tuning (`clean` / `typical` / `degraded` / `failing`); per-GPU DCGM metrics. See [SNMP reference → Dynamic IF-MIB counters](https://nl6.eu/reference/snmp#dynamic-if-mib-counters) and [GPU simulation](https://nl6.eu/reference/gpu).
 - **Self-reporting version:** `./nl6 -version`, `GET /api/v1/version`, and a hero-kicker `(vX.Y.Z)` in the web UI all report the running build. You need no source checkout to identify a deployed simulator.
-- **Per-device flow export** (NetFlow v5 / v9, IPFIX, sFlow v5) with per-device source IPs. See [Flow export](https://labmonkeys-space.github.io/nl6/ops/flow-export/).
-- **Per-device SNMP trap / INFORM export** (v1, v2c, v3 USM). It uses a central Poisson scheduler with a global rate cap, a user-overridable JSON catalog, and per-device UDP source IPs. Suited to trap-daemon scale testing. Configure with `-trap-collector <host:port>`; see [SNMP traps](https://labmonkeys-space.github.io/nl6/ops/snmp-traps/) and the [catalog reference](https://labmonkeys-space.github.io/nl6/reference/snmp-traps/).
-- **Per-device syslog export** (RFC 5424 / RFC 3164 over UDP, TCP or TLS). It uses a central Poisson scheduler with a global rate cap, a user-overridable JSON catalog, and per-device source IPs. Ships six generic entries (interface up/down, auth success/failure, config change, system restart) spanning `local7` and `authpriv`; select format with `-syslog-format 5424|3164` and transport with `-syslog-transport udp|tcp|tls`. Suited to syslog-collector scale testing. Configure with `-syslog-collector <host:port>`; see [Syslog export](https://labmonkeys-space.github.io/nl6/ops/syslog-export/) and the [catalog reference](https://labmonkeys-space.github.io/nl6/reference/syslog-export/).
-- **gNMI streaming telemetry.** Every device serves a read-only OpenConfig dial-in target (gRPC + TLS on `:9339`, SAMPLE / ON_CHANGE / ONCE). It can also **push** telemetry to a collector via gNMI dial-out (Arista `gNMIReverse`, per-device opt-in, mixed fleets supported). See [gNMI target](https://labmonkeys-space.github.io/nl6/reference/gnmi/) and [gNMI dial-out](https://labmonkeys-space.github.io/nl6/reference/gnmi-dial-out/).
-- **NETCONF (opt-in).** `cisco_catalyst_9500` devices serve the IOS XE draft `establish-subscription` over SSH and push on-change interface notifications. `juniper_mx10004` devices serve the Junos dialect over SSH and mutual TLS, and can **call home** to a NETCONF client over SSH (Junos `outbound-ssh`, per-device opt-in). Enable with `-netconf-enable`; see [NETCONF](https://labmonkeys-space.github.io/nl6/reference/netconf/).
+- **Per-device flow export** (NetFlow v5 / v9, IPFIX, sFlow v5) with per-device source IPs. See [Flow export](https://nl6.eu/ops/flow-export).
+- **Per-device SNMP trap / INFORM export** (v1, v2c, v3 USM) from a catalog, with a central Poisson scheduler and a global rate cap. Configure with `-trap-collector <host:port>`; see [SNMP traps](https://nl6.eu/ops/snmp-traps).
+- **Per-device syslog export** (RFC 5424 / RFC 3164 over UDP, TCP or TLS) from a catalog, with the same scheduler. Configure with `-syslog-collector <host:port>`; see [Syslog export](https://nl6.eu/ops/syslog-export).
+- **gNMI streaming telemetry.** Every device serves a read-only OpenConfig dial-in target (gRPC + TLS on `:9339`, SAMPLE / ON_CHANGE / ONCE). It can also **push** telemetry to a collector via gNMI dial-out (Arista `gNMIReverse`, per-device opt-in, mixed fleets supported). See [gNMI target](https://nl6.eu/reference/gnmi) and [gNMI dial-out](https://nl6.eu/reference/gnmi-dial-out).
+- **NETCONF (opt-in).** `cisco_catalyst_9500` devices serve the IOS XE draft `establish-subscription` over SSH and push on-change interface notifications. `juniper_mx10004` devices serve the Junos dialect over SSH and mutual TLS, and can **call home** to a NETCONF client over SSH (Junos `outbound-ssh`, per-device opt-in). `huawei_ne8000` devices serve the VRP dialect a YANG-Push collector uses to fetch schemas. Enable with `-netconf-enable`; see [NETCONF](https://nl6.eu/reference/netconf).
+- **YANG-Push over UDP-notif (opt-in).** `huawei_ne8000` devices stream interface telemetry as a Huawei NE8000 on VRP does: RFC 9187 UDP-notif, JSON, notification envelope, segmentation, two periodic and one on-change subscription. Checked end to end against NetGauze. See [YANG-Push over UDP-notif](https://nl6.eu/reference/yang-push-udp-notif).
 
 ## Status & scale
 
-**Stable:** SNMP v2c, SNMP v3 at every USM security level (RFC 3414, verified against net-snmp; see [nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)), SSH, HTTPS REST (storage APIs), NetFlow v5/v9 and IPFIX, TUN-per-device scaling with `nl6sim` network-namespace isolation, web UI, REST control plane.
-
-**Experimental:** sFlow v5, synthesised from `FlowCache` records with a fixed `sampling_rate`.
-It suits collector-plumbing validation, not link-utilisation benchmarking.
-See [Flow export reference → sFlow caveat](https://labmonkeys-space.github.io/nl6/reference/flow-export/#sflow-caveat).
+| Feature | Status | Note |
+|---------|--------|------|
+| SNMP v2c, SNMP v3 | Stable | Every USM security level, RFC 3414, verified against net-snmp ([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)) |
+| SSH, HTTPS REST | Stable | REST on storage types |
+| NetFlow v5/v9, IPFIX | Stable | |
+| sFlow v5 | Experimental | Synthesised from `FlowCache` records with a fixed `sampling_rate`; suits collector-plumbing validation, not link-utilisation benchmarking. See [sFlow caveat](https://nl6.eu/reference/flow-export#sflow-caveat) |
+| SNMP traps, syslog | Stable | |
+| gNMI dial-in and dial-out | Stable | Read-only |
+| NETCONF, call home | Stable | Three dialects, opt-in |
+| YANG-Push over UDP-notif | New in v0.40.0 | `huawei_ne8000`, opt-in; the on-change subscription is not verified against a real device |
+| TUN per device, `nl6sim` namespace, web UI, REST control plane | Stable | |
 
 **Tested scale:** up to 30,000 concurrent simulated devices on a single host.
 **Toolchain:** Go 1.27 or later; canonical version pinned in [`go/go.mod`](go/go.mod).
@@ -47,9 +56,15 @@ Then query any device:
 
 ```bash
 snmpget -v2c -c public 192.168.100.1 1.3.6.1.2.1.1.1.0
-ssh simadmin@192.168.100.1                            # password: simadmin
-gnmic -a 192.168.100.1:9339 --skip-verify capabilities
 ```
+
+Expected output:
+
+```text
+SNMPv2-MIB::sysDescr.0 = STRING: Cisco IOS XR Software, ASR9K Series, Version 7.5.2
+```
+
+The same device answers `ssh simadmin@192.168.100.1` (password `simadmin`) and `gnmic -a 192.168.100.1:9339 --skip-verify capabilities`.
 
 Per-device exports (flow + trap + syslog in a single create call):
 
@@ -75,67 +90,36 @@ curl http://localhost:8080/api/v1/traps/status   | jq '.collectors'
 curl http://localhost:8080/api/v1/syslog/status  | jq '.collectors'
 ```
 
-Inter-device topology (LLDP).
-Link two devices and the neighbor table plus a `to_<peer>_<port>` `ifAlias` appear on both ends.
-Point your NMS's LLDP discovery at the LLDP root (`1.0.8802.1.1.2`) to discover the topology:
+Link devices into an LLDP topology with `POST /api/v1/topology`; see [LLDP topology](https://nl6.eu/reference/lldp-topology).
 
-```bash
-curl -X POST http://localhost:8080/api/v1/topology \
-  -H 'Content-Type: application/json' \
-  -d '{"links":[{"a":{"ip":"10.0.0.1","ifindex":1},"b":{"ip":"10.0.0.2","ifindex":2}}]}'
-
-snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2        # LLDP local + neighbor tables
-snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1   # ifAlias = to_<peer>_<port>
-curl http://localhost:8080/api/v1/topology/status | jq   # {subsystem_active, configured_links, active_links}
-```
-
-Full walkthrough: [Getting started → Quick start](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/).
-Prebuilt packages (`.deb` / `.rpm` / NixOS): [Getting started → Install packages](https://labmonkeys-space.github.io/nl6/getting-started/install-packages/).
+Full walkthrough: [Getting started → Quick start](https://nl6.eu/getting-started/quick-start).
+Prebuilt packages (`.deb` / `.rpm` / NixOS): [Getting started → Install packages](https://nl6.eu/getting-started/install-packages).
 The packaging reference is in [`deploy/packages/`](deploy/packages/README.md).
-Container deployment: [Getting started → Docker](https://labmonkeys-space.github.io/nl6/getting-started/docker/).
+Container deployment: [Getting started → Docker](https://nl6.eu/getting-started/docker).
 Deployment recipes & worked examples: [`examples/`](examples/), with Clos fabrics and a ready-to-run OpenNMS Minion (`docker compose`) stack.
 
 ## Documentation map
 
 The docs site has four top-level sections:
 
-- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/): build, first run, package install, Ansible, Docker.
-- [Operations](https://labmonkeys-space.github.io/nl6/ops/scaling/): scaling, network namespace, flow export, load-test scenarios, troubleshooting.
-- [Reference](https://labmonkeys-space.github.io/nl6/reference/cli-flags/): CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
-- [Explanation](https://labmonkeys-space.github.io/nl6/explanation/architecture/): architecture, why Kubernetes is out of scope, SNMP data fidelity, measuring a collector's ceiling.
-
-Reference content that used to live in this README now lives in the docs site.
-A bare `README.md` on GitHub is intentional: the site is the canonical home.
+- [Getting Started](https://nl6.eu/getting-started/quick-start): build, first run, package install, Ansible, Docker.
+- [Operations](https://nl6.eu/ops/scaling): scaling, network namespace, flow export, load-test scenarios, troubleshooting.
+- [Reference](https://nl6.eu/reference/cli-flags): CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
+- [Explanation](https://nl6.eu/explanation/architecture): architecture, why Kubernetes is out of scope, SNMP data fidelity, measuring a collector's ceiling.
 
 ## Contributing
 
 Contributions are welcome.
-Two project policies apply to every patch:
-
-**1. Sign off every commit (Developer Certificate of Origin).** All commits must carry a `Signed-off-by:` trailer certifying the [DCO](https://developercertificate.org/).
-Use `-s` on every commit:
-
-```bash
-git commit -s -m "your commit message"
-```
-
-A DCO-check gate will fail any PR whose commits are missing the sign-off trailer.
-
-**Suggested workflow**
-
-1. Fork `labmonkeys-space/nl6`.
-2. Create a feature branch.
-3. Make your changes and add / update tests.
-4. Run `make check-tidy && make build && make test` locally.
-5. `git commit -s` each commit.
-6. `gh pr create --repo labmonkeys-space/nl6 --base main`.
+Work starts from an issue, every commit is signed off (`git commit -s`, the [DCO](https://developercertificate.org/)), and AI-assisted commits carry an `Assisted-by:` trailer.
+Run `make check-tidy && make build && make test` before opening a PR.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 **Cutting a release.** Maintainers: see [`RELEASING.md`](RELEASING.md) for the tag-driven release workflow and the short post-tag verification checklist.
 
 ## Support
 
 nl6 is free and open source under the **Apache-2.0** license.
-It is an open network simulator that stands in for a lab full of hardware (30,000+ devices, real SNMP / NetFlow / IPFIX / sFlow / Syslog / gNMI).
+It stands in for a lab full of hardware: 30,000+ devices speaking the protocols above.
 If it saved you a test rig, a one-time donation helps keep it maintained: releases, new device types, and protocol upkeep.
 
 - **GitHub Sponsors:** https://github.com/sponsors/indigo423
@@ -152,7 +136,3 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for detai
 ## Heritage
 
 Originally forked from [`saichler/l8opensim`](https://github.com/saichler/l8opensim); see commit history for upstream attribution.
-
----
-
-**nl6**: simulate networks, test at scale, develop with confidence.
