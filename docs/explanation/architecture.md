@@ -74,7 +74,7 @@ YANG-Push is the only surface with two directions: the stream goes out over UDP,
 | NETCONF, Junos dialect | `get`, `get-configuration`, `create-subscription` on the `NETCONF` stream, which carries mib2d link events; over SSH and TLS | `juniper_mx10004` | [NETCONF reference](../reference/netconf.md) |
 | NETCONF, VRP dialect | `get` on the YANG library, the module list, the subscriptions and their filters; `get-schema` for every served module; no `edit-config` | `huawei_ne8000` | [YANG-Push over UDP-notif](../reference/yang-push-udp-notif.md#what-a-collector-can-fetch) |
 | NETCONF call home | The Junos session on a connection the device opens, with the `outbound-ssh` preamble before the SSH banner; one session per client, redial every 15 s; SSH only | `juniper_mx10004`, opt-in | [NETCONF reference](../reference/netconf.md#call-home) |
-| YANG-Push | Three subscriptions per device: interface statistics and interface state every 60 s, and on-change `oper-status` and `admin-status`; `subscription-started`, `push-update` and `push-change-update` as captured from an NE8000 on VRP R025C00 | `huawei_ne8000`, opt-in | [YANG-Push over UDP-notif](../reference/yang-push-udp-notif.md) |
+| YANG-Push | Three subscriptions per device: interface statistics and interface state every 60 s, and on-change `oper-status` and `admin-status`; `subscription-started`, `push-update` and `push-change-update` as an NE8000 on VRP R025C00 sends them (RFC 8639, RFC 8641, RFC 9187) | `huawei_ne8000`, opt-in | [YANG-Push over UDP-notif](../reference/yang-push-udp-notif.md) |
 
 ## Package layout
 

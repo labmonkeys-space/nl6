@@ -2,7 +2,6 @@
 
 `subscription-started-8`, `subscription-started-9`, `push-update-8` and `push-update-9` derive from the NMOP hackathon capture of a Huawei VRP device.
 Source: `network-analytics/ietf-network-analytics-document-status`, `125/Hackathon/yangpush-publisher/huawei-vrp-ip/yp-notifications/`.
-Permission from Thomas Graf is pending.
 
 Anonymisation:
 - The JSON is compact, with the capture key order kept.

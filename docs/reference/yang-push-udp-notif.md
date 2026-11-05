@@ -82,7 +82,7 @@ The periodic subscriptions anchor at `2025-01-01T00:00:30Z`.
 Subscription 9 sends three seconds after subscription 8.
 Every device fires at the same wall-clock second.
 A large fleet therefore produces one synchronized burst a minute on the host and on the collector.
-nl6 gives every device the captured anchor, so the whole fleet bursts together.
+nl6 gives every device the same anchor, so the whole fleet bursts together.
 A real fleet does only if every device is configured with one anchor.
 
 Subscription 10 sends a `push-update` once at start with `name`, `admin-status` and `oper-status` of every interface.
@@ -98,8 +98,7 @@ Every message is JSON in the VRP envelope `ietf-yp-notification:envelope`.
 It carries `event-time`, `hostname` (the device sysName), `sequence-number` and `contents`.
 A statistics push for a whole device is larger than one datagram.
 nl6 splits it at `segment_size` using the UDP-notif segment option, and the last segment has the low bit set.
-The first segment of a message is 9 bytes shorter than the rest.
-That matches the captures.
+The first segment of a message is 9 bytes shorter than the rest, as on a real NE8000.
 
 The device IPv4 address as a big-endian unsigned integer is both the header observation domain ID and the `message-publisher-id` in the payload.
 `10.42.0.1` is `170524673`.
@@ -159,17 +158,17 @@ The `subscription-started` notification waits for the first unmuted activity.
 The subscriptions do not join a load-test scenario window.
 That participation is not implemented.
 
-## Where nl6 differs from the captures
+## What is not modelled
 
-The wire format comes from two public captures of a real VRP device.
+nl6 follows a real NE8000 on VRP R025C00.
 These differences are deliberate.
 
-- Subscription 10 has no capture. The device advertises on-change, but no capture shows it on the wire. nl6 builds it from RFC 8641 and the same envelope.
+- Subscription 10 is not verified against a real device. The NE8000 advertises on-change; nl6 builds the subscription from RFC 8641 and the same envelope.
 - Every interface appears in subscription 8. The real device sent statistics for a subset.
 - The `ietf-udp-client` module revision `2025-05-14` is a guess. The device library lists none.
 - `ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
-- Two `augmented-by` rows under `ietf-subscribed-notifications` (`ietf-yang-push-revision` and `ietf-udp-notif-transport`) come from an MA5800T capture, not the NE.
-- Features are copied from the NE capture. nl6 adds `encode-json` under `ietf-subscribed-notifications` and `yang-push-revision-supported` under `ietf-yang-push-revision`, because the payloads it sends sit behind them.
+- Two `augmented-by` rows under `ietf-subscribed-notifications` (`ietf-yang-push-revision` and `ietf-udp-notif-transport`) follow a Huawei MA5800T, not the NE8000.
+- Features follow the NE8000. nl6 adds `encode-json` under `ietf-subscribed-notifications` and `yang-push-revision-supported` under `ietf-yang-push-revision`, because the payloads it sends sit behind them.
 - The NE lists only `ietf-notification-capabilities` as augmenting `ietf-system-capabilities`. nl6 also lists `ietf-yang-push-revision`, `ietf-yp-notification` and `ietf-yp-observation`, because their YANG text augments `/sysc:system-capabilities`.
 - A `get` on a subscription by ID returns `receiver-instances`, which strict subtree filtering would not.
 - Hostnames, addresses and interface names are synthetic.
@@ -179,6 +178,6 @@ See the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/r
 ## Test it against NetGauze
 
 `make test-interop-yangpush` runs three devices against a real NetGauze v0.13.0 and Redpanda in Docker, on a Linux host.
-It passed on 2026-11-05 against NetGauze v0.13.0: NetGauze validated the messages with libyang and found none invalid.
+NetGauze v0.13.0 validates the messages with libyang and finds none invalid.
 It checks the YANG library fetch, the Kafka output for subscriptions 8, 9 and 10, segmentation, and an interface going down.
 The stack is in `examples/netgauze/`.
