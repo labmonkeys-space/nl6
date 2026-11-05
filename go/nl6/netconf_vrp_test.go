@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +52,9 @@ func startVrpTestClient(t *testing.T, dev *DeviceSimulator) *netconfTestClient {
 func newVrpTestDevice(exporter bool) *DeviceSimulator {
 	dev := &DeviceSimulator{IP: net.IPv4(192, 0, 2, 13), resourceFile: "huawei_ne8000.json"}
 	if exporter {
-		dev.yangPushExporter = &YangPushExporter{dev: dev, collector: "198.51.100.7:10003", segSize: 1436, subs: vrpSubs}
+		e := &YangPushExporter{dev: dev, collector: "198.51.100.7:10003", segSize: 1436, subs: vrpSubs}
+		dev.yangPushExporter = e
+		dev.yangPushExporterPtr.Store(e)
 	}
 	return dev
 }
@@ -117,6 +120,13 @@ func TestVrpHello(t *testing.T) {
 	}
 	if h.SessionID != 5 {
 		t.Fatalf("session-id = %d, want 5", h.SessionID)
+	}
+	// Every module the hello names is in the library and served.
+	if !strings.Contains(string(vrpYangLibraryXML()), "<module><name>ietf-netconf-monitoring</name><revision>2010-10-04</revision>") {
+		t.Fatal("ietf-netconf-monitoring@2010-10-04 is not an implemented module in the YANG library")
+	}
+	if r := c.rpc(vrpGetSchemaReq("ietf-netconf-monitoring", "2010-10-04")); !strings.Contains(r, "module ietf-netconf-monitoring") {
+		t.Fatalf("get-schema ietf-netconf-monitoring:\n%.300s", r)
 	}
 	// The framing switched to chunked: a request round-trips.
 	if r := c.rpc(vrpGetSchemaReq("ietf-interfaces", "")); !strings.Contains(r, "module ietf-interfaces") {
@@ -282,6 +292,100 @@ func TestVrpGetFilters(t *testing.T) {
 	off := startVrpTestClient(t, newVrpTestDevice(false))
 	if r := off.rpc(vrpNGFiltersReq); !strings.Contains(r, "<data/>") {
 		t.Fatalf("no exporter:\n%s", r)
+	}
+}
+
+func TestVrpGetFilterHandling(t *testing.T) {
+	c := startVrpTestClient(t, newVrpTestDevice(true))
+	r := c.rpc(`<get><filter type="xpath" select="/sn:filters" xmlns:sn="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"/></get>`)
+	if !strings.Contains(r, "<error-tag>operation-not-supported</error-tag>") || strings.Contains(r, "<data") {
+		t.Fatalf("xpath filter:\n%s", r)
+	}
+	// An element after </filter> is not part of the filter.
+	r = c.rpc(`<get><filter type="subtree"><filters xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"/></filter><with-defaults xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-with-defaults"><yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library"/></with-defaults></get>`)
+	if in := vrpDataInner(t, r); !strings.HasPrefix(in, "<filters ") || strings.Contains(in, "yang-library") {
+		t.Fatalf("element after the filter was selected:\n%.300s", in)
+	}
+	f := parseVrpGetFilter([]byte(`<get><filter><a xmlns="x"/></filter><b xmlns="y"><c/></b></get>`))
+	if !f.filtered || f.xpath || len(f.nodes) != 1 || f.nodes[0].name.Local != "a" {
+		t.Fatalf("parseVrpGetFilter = %+v", f)
+	}
+}
+
+// TestVrpReconnectStable opens three sessions in turn on one listener, as a
+// collector reconnecting, and checks the hello content-id and the get-schema
+// bytes do not change between them.
+func TestVrpReconnectStable(t *testing.T) {
+	mgr := useNetconfTestManager(t, true)
+	dev := newVrpTestDevice(true)
+	dev.ID, dev.IP = "ne8000-reconnect", net.IPv4(127, 0, 0, 1)
+	mgr.devices[dev.ID] = dev
+	dev.mu.Lock()
+	err := dev.startNetconfServer()
+	dev.mu.Unlock()
+	if err != nil || dev.netconfListener == nil {
+		t.Fatalf("startNetconfServer: %v", err)
+	}
+	t.Cleanup(func() {
+		dev.mu.Lock()
+		dev.stopNetconfServer()
+		dev.mu.Unlock()
+	})
+	addr := dev.netconfListener.Addr().String()
+	cidRe := regexp.MustCompile(`content-id=(\d+)`)
+	var firstCID, firstSchema, firstSub string
+	for i := 0; i < 3; i++ {
+		cl := dialNetconfTestSSH(t, addr)
+		f, hello := netconfHello(t, cl)
+		m := cidRe.FindStringSubmatch(hello)
+		if m == nil || m[1] != vrpContentID() {
+			t.Fatalf("session %d: hello content-id %v, want %s", i, m, vrpContentID())
+		}
+		schema, err := netconfRPCWithin(f, "1", vrpGetSchemaReq("ietf-interfaces", "2018-02-20"), 5*time.Second)
+		if err != nil {
+			t.Fatalf("session %d get-schema: %v", i, err)
+		}
+		sub, err := netconfRPCWithin(f, "2", vrpNGSubscriptionReq(9), 5*time.Second)
+		if err != nil {
+			t.Fatalf("session %d get subscription: %v", i, err)
+		}
+		if i == 0 {
+			firstCID, firstSchema, firstSub = m[1], schema, sub
+		} else if m[1] != firstCID || schema != firstSchema || sub != firstSub {
+			t.Fatalf("session %d differs from session 0", i)
+		}
+		if r, err := netconfRPCWithin(f, "3", `<close-session/>`, 5*time.Second); err != nil || !strings.Contains(r, "<ok/>") {
+			t.Fatalf("session %d close: %q %v", i, r, err)
+		}
+		_ = cl.Close()
+	}
+}
+
+// TestNetconfCallHomePublicKeyLogin checks that an authorized key also logs
+// in on a call-home connection.
+func TestNetconfCallHomePublicKeyLogin(t *testing.T) {
+	withCallHomeTiming(t, 100*time.Millisecond, time.Hour)
+	key := newNetconfTestSigner(t)
+	mgr := useNetconfTestManager(t, true)
+	mgr.netconfAuthorizedKeys = [][]byte{key.PublicKey().Marshal()}
+	dev, _, _ := newJunosListenDevice(t, mgr)
+	ln := newCallHomeListener(t)
+	startCallHome(t, mgr, dev, ln.Addr().String(), "")
+	c := acceptCallHome(t, ln, 2*time.Second)
+	readPreamble(t, c, len(junosCallHomePreamble(dev.sysName)))
+	sc, chans, reqs, err := ssh.NewClientConn(c, c.RemoteAddr().String(), &ssh.ClientConfig{
+		User:            USERNAME,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(key)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // test server
+		Timeout:         5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("key login over call home: %v", err)
+	}
+	client := ssh.NewClient(sc, chans, reqs)
+	t.Cleanup(func() { _ = client.Close() })
+	if _, hello := netconfHello(t, client); !strings.Contains(hello, "<session-id>") {
+		t.Fatalf("no hello over call home:\n%s", hello)
 	}
 }
 

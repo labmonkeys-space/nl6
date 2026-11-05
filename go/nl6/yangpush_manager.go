@@ -73,6 +73,7 @@ func (sm *SimulatorManager) StopYangPush() {
 			_ = d.yangPushExporter.Close()
 			sm.persistYangPushCounters(d.yangPushExporter)
 			d.yangPushExporter = nil
+			d.yangPushExporterPtr.Store(nil)
 		}
 		d.mu.Unlock()
 	}
@@ -94,6 +95,7 @@ func (sm *SimulatorManager) startDeviceYangPushExporter(d *DeviceSimulator) erro
 	}
 	d.mu.Lock()
 	d.yangPushExporter = e
+	d.yangPushExporterPtr.Store(e)
 	d.mu.Unlock()
 	e.Start()
 	return nil

@@ -49,6 +49,7 @@ var vrpYangImplemented = map[string]bool{
 	"ietf-system-capabilities":        true,
 	"ietf-notification-capabilities":  true,
 	"ietf-datastores":                 true,
+	"ietf-netconf-monitoring":         true,
 }
 
 // vrpAugmentedBy maps a served module to the served modules that augment it.

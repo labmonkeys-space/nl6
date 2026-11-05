@@ -1388,6 +1388,7 @@ func (d *DeviceSimulator) Stop() error {
 			manager.persistYangPushCounters(d.yangPushExporter)
 		}
 		d.yangPushExporter = nil
+		d.yangPushExporterPtr.Store(nil)
 	}
 
 	// Clear the Tier C state-change hook before the engine outlives the
@@ -1502,6 +1503,7 @@ func (d *DeviceSimulator) stopListenersOnly() {
 			manager.persistYangPushCounters(d.yangPushExporter)
 		}
 		d.yangPushExporter = nil
+		d.yangPushExporterPtr.Store(nil)
 	}
 	if d.tunIface != nil {
 		d.tunIface.destroy() // Close FD only, no ip link delete

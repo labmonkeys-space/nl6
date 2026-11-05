@@ -50,6 +50,7 @@ func TestVrpYangModuleRevisions(t *testing.T) {
 		"ietf-distributed-notif":        "2025-04-12",
 		"ietf-yang-patch":               "2017-02-22",
 		"ietf-yang-push-revision":       "2024-12-17",
+		"ietf-netconf-monitoring":       "2010-10-04",
 	}
 	for name, rev := range want {
 		m, ok := vrpYangModule(name, "")

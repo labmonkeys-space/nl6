@@ -13,7 +13,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // The VRP dialect serves what a YANG-Push collector (NetGauze) reads over
@@ -62,7 +61,11 @@ func (s *netconfSession) vrpRPC(r netconfRPC) (done bool) {
 	reply := func(b []byte) bool { return s.writeMessage(b) != nil }
 	switch {
 	case r.op == "get" && r.ns == netconfBaseNS:
-		return reply(vrpDataReply(id, s.vrpGetData(r.opXML)))
+		f := parseVrpGetFilter(r.opXML)
+		if f.xpath {
+			return reply(netconfErrorReply(id, true, iosxeRPCError{Type: "protocol", Tag: "operation-not-supported"}, ""))
+		}
+		return reply(vrpDataReply(id, s.vrpGetData(f)))
 	case r.op == "get-schema" && r.ns == vrpMonitoringNS:
 		src, ok := vrpGetSchema(r.opXML)
 		if !ok {
@@ -109,57 +112,74 @@ type vrpFilterNode struct {
 	xml  []byte
 }
 
-// vrpFilterNodes returns the top-level elements of the get's filter. ok is
-// false when the get has no filter.
-func vrpFilterNodes(op []byte) (nodes []vrpFilterNode, ok bool) {
+// vrpGetFilter is the filter of a get: its top-level elements, whether the
+// get has a filter at all, and whether that filter is an XPath filter.
+type vrpGetFilter struct {
+	nodes    []vrpFilterNode
+	filtered bool
+	xpath    bool
+}
+
+// parseVrpGetFilter reads the <filter> child of a get.
+func parseVrpGetFilter(op []byte) vrpGetFilter {
+	var f vrpGetFilter
 	dec := xml.NewDecoder(bytes.NewReader(op))
 	depth := 0
+	inFilter := false
 	for {
 		start := dec.InputOffset()
 		tok, err := dec.Token()
 		if err != nil {
-			return nodes, ok
+			return f
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
 			depth++
 			if depth == 2 && t.Name.Local == "filter" {
-				ok = true
+				inFilter, f.filtered = true, true
+				for _, a := range t.Attr {
+					if a.Name.Local == "type" && a.Value == "xpath" {
+						f.xpath = true
+					}
+				}
 			}
-			if depth == 3 && ok {
+			if depth == 3 && inFilter {
 				if dec.Skip() != nil {
-					return nodes, ok
+					return f
 				}
 				depth--
-				nodes = append(nodes, vrpFilterNode{name: t.Name, xml: op[start:dec.InputOffset()]})
+				f.nodes = append(f.nodes, vrpFilterNode{name: t.Name, xml: op[start:dec.InputOffset()]})
 			}
 		case xml.EndElement:
 			depth--
+			if depth == 1 {
+				inFilter = false
+			}
 		}
 	}
 }
 
-// vrpGetData answers a get. Each top-level filter element selects one
-// subtree; an unknown one selects nothing. No filter returns everything.
-func (s *netconfSession) vrpGetData(op []byte) []byte {
-	nodes, filtered := vrpFilterNodes(op)
+// vrpGetData answers a get with a subtree filter, or none. Each top-level
+// filter element selects one subtree; an unknown one selects nothing. No
+// filter returns everything.
+func (s *netconfSession) vrpGetData(f vrpGetFilter) []byte {
 	lib := vrpYangLibraryXML()
 	split := bytes.Index(lib, []byte("<modules-state "))
-	e := s.vrpExporter()
-	if !filtered {
+	if !f.filtered {
+		e := s.vrpExporter()
 		out := append([]byte(nil), lib...)
 		out = append(out, vrpFiltersXML(e)...)
 		return append(out, vrpSubscriptionsXML(s.dev, e, 0)...)
 	}
 	var out []byte
-	for _, n := range nodes {
+	for _, n := range f.nodes {
 		switch {
 		case n.name.Space == yangLibNS && n.name.Local == "yang-library":
 			out = append(out, lib[:split]...)
 		case n.name.Space == yangLibNS && n.name.Local == "modules-state":
 			out = append(out, lib[split:]...)
 		case n.name.Space == netconfRFC8639 && n.name.Local == "filters":
-			out = append(out, vrpFiltersXML(e)...)
+			out = append(out, vrpFiltersXML(s.vrpExporter())...)
 		case n.name.Space == netconfRFC8639 && n.name.Local == "subscriptions":
 			var id uint64
 			if txt, ok := vrpSubscriptionIDFilter(n.xml); ok {
@@ -168,7 +188,7 @@ func (s *netconfSession) vrpGetData(op []byte) []byte {
 					continue
 				}
 			}
-			out = append(out, vrpSubscriptionsXML(s.dev, e, uint32(id))...)
+			out = append(out, vrpSubscriptionsXML(s.dev, s.vrpExporter(), uint32(id))...)
 		}
 	}
 	return out
@@ -201,21 +221,13 @@ func vrpSubscriptionIDFilter(node []byte) (string, bool) {
 }
 
 // vrpExporter returns the device's YANG-Push exporter, or nil when it has
-// none. stopNetconfServer holds d.mu while it waits for the sessions, so a
-// session must never block on d.mu: it retries the read lock until it gets
-// it or the session is closed.
+// none. It reads the atomic mirror, never d.mu: stopNetconfServer holds d.mu
+// while it waits for the sessions.
 func (s *netconfSession) vrpExporter() *YangPushExporter {
 	if s.dev == nil {
 		return nil
 	}
-	for !s.dev.mu.TryRLock() {
-		if s.isClosed() {
-			return nil
-		}
-		time.Sleep(time.Millisecond)
-	}
-	defer s.dev.mu.RUnlock()
-	return s.dev.yangPushExporter
+	return s.dev.yangPushExporterPtr.Load()
 }
 
 // vrpXPathXML rewrites a JSON-style ietf-interfaces XPath

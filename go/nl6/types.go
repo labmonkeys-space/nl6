@@ -136,6 +136,10 @@ type DeviceSimulator struct {
 	// no streaming). Only huawei_ne8000 ever holds one.
 	yangPushConfig   *DeviceYangPushConfig
 	yangPushExporter *YangPushExporter // nil unless streaming; guarded by mu
+	// yangPushExporterPtr mirrors yangPushExporter for readers that must not
+	// take mu: a NETCONF session, because stopNetconfServer holds mu while it
+	// waits for the sessions. Stored wherever yangPushExporter is assigned.
+	yangPushExporterPtr atomic.Pointer[YangPushExporter]
 	// netconfCallHomeConfig is the per-device NETCONF call-home
 	// configuration (nil = no call home), set at creation from the CLI seed
 	// or the `netconf_callhome` block in POST /api/v1/devices.
