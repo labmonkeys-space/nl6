@@ -147,10 +147,10 @@ An unknown ID returns an empty `<data/>`, and NetGauze reports that as a parse e
 | `messages_sent` | UDP-notif messages, each one a notification. |
 | `segments_sent` | Datagrams. It is above `messages_sent` when anything was segmented. |
 | `send_failures` | Datagrams the socket refused. |
-| `state_events_dropped` | Interface events lost because the exporter queue was full. The queue drops the oldest. |
+| `state_events_dropped` | Interface events lost because the exporter fell behind. Its queue drops the oldest, so the latest transition still goes out. |
 | `fidelity_suppressed` | Messages muted by `-fidelity`. |
 
-A drop inside the interface state engine's own broadcast channel is counted in `state_events_dropped` of `GET /api/v1/gnmi/status`, which gNMI and NETCONF share.
+The same drops also count in `state_events_dropped` of `GET /api/v1/gnmi/status`, which gNMI and NETCONF share.
 
 ## Fidelity
 

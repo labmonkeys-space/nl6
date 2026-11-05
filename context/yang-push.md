@@ -88,8 +88,9 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 - `-fidelity` mutes all three subscriptions through `fidelityMutesBackground(sourceBackground)`.
   `subscription-started` is deferred until the first unmuted activity.
 - Status is `GET /api/v1/yangpush/status` with `messages_sent`, `segments_sent`, `send_failures`, `state_events_dropped` and `fidelity_suppressed`.
-  `state_events_dropped` is the exporter queue, which drops the oldest.
-  Drops inside `InterfaceState`'s own broadcast channel are counted in the shared gNMI `state_events_dropped`, not per exporter.
+  `state_events_dropped` counts the exporter's own listener channel, which drops the oldest (`AddListenerCounting`).
+  The same drops also count in the shared gNMI `state_events_dropped`.
+  There is no second queue: an earlier one hid every drop that happened while the exporter was busy sending.
 - Load profile.
   Every device fires subscription 8 at the same wall-clock anchor and subscription 9 three seconds later.
   A large fleet produces a synchronized burst each minute on the host and the collector.
