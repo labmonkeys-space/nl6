@@ -42,6 +42,7 @@ sudo ./nl6 [flags]
 # NETCONF flags (off by default)
 -netconf-enable         # [global] Serve NETCONF on cisco_catalyst_9500 (IOS XE draft dialect, SSH) and juniper_mx10004 (Junos dialect, SSH and TLS). Off by default. Record: context/netconf.md
 -netconf-port <port>    # [global] TCP port of the per-device NETCONF over SSH listener (default: 830)
+-netconf-authorized-keys <path>       # [global] OpenSSH authorized_keys file; its keys log in as simadmin on every NETCONF SSH listener, next to the password. Bad file is fatal at startup
 -netconf-tls-port <port>              # [global] TCP port of the per-device NETCONF over TLS listener (default: 6513)
 -netconf-tls-client-ca <path>         # [global] PEM CA that must have signed NETCONF TLS client certificates. Flag-only path; requires -netconf-enable. With no CA every TLS handshake is refused (listeners still bind)
 -netconf-tls-client-identity <fp=user> # [global] Repeatable SHA-256 fingerprint=username entry of the client identity table; requires -netconf-enable

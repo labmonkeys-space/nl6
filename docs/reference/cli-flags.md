@@ -245,6 +245,7 @@ See [NETCONF reference](netconf.md).
 |------|------|---------|-------|---------|
 | `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF subsystem: `cisco_catalyst_9500` over SSH on `-netconf-port`, `juniper_mx10004` over SSH on `-netconf-port` and over TLS on `-netconf-tls-port`. |
 | `-netconf-port` | int | `830` | **global** | TCP port of the per-device NETCONF over SSH listener. |
+| `-netconf-authorized-keys` | path | empty | **global** | OpenSSH `authorized_keys` file. Its keys log in as `simadmin` on every NETCONF SSH listener, next to the password. Read once at startup; an unreadable file or a line that is not a key stops the simulator. Port 22 keeps password login only. |
 | `-netconf-tls-port` | int | `6513` | **global** | TCP port of the per-device NETCONF over TLS listener. |
 | `-netconf-tls-client-ca` | path | empty | **global** | PEM file with the CA that must have signed NETCONF TLS client certificates. Requires `-netconf-enable`. With no CA the TLS listeners still bind, but every handshake is refused. Also settable at runtime with `PUT /api/v1/netconf/tls`. |
 | `-netconf-tls-client-identity` | `fingerprint=username` | empty | **global** | One entry of the client identity table: the SHA-256 fingerprint of a client certificate, with or without the `04:` prefix, mapped to a NETCONF user. Repeat the flag for more entries. Requires `-netconf-enable`. |

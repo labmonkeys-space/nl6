@@ -6,12 +6,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,11 +92,59 @@ func (d *DeviceSimulator) startNetconfServer() error {
 	}
 
 	srv := d.newNetconfServer(l, mgr, dia)
-	srv.cfg = newDeviceSSHConfig(mgr.sharedSSHSigner)
+	srv.cfg = newNetconfSSHConfig(mgr.sharedSSHSigner, mgr.netconfAuthorizedKeys)
 	d.netconfListener = srv
 	srv.wg.Add(1)
 	go srv.acceptLoop()
 	return nil
+}
+
+// newNetconfSSHConfig is the device SSH config plus public-key login for
+// USERNAME with any of the authorized keys (marshalled wire form). Port 22
+// keeps password login only.
+func newNetconfSSHConfig(signer ssh.Signer, authorized [][]byte) *ssh.ServerConfig {
+	cfg := newDeviceSSHConfig(signer)
+	if len(authorized) == 0 {
+		return cfg
+	}
+	cfg.PublicKeyCallback = func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		if c.User() == USERNAME {
+			k := key.Marshal()
+			for _, a := range authorized {
+				if bytes.Equal(a, k) {
+					return nil, nil
+				}
+			}
+		}
+		return nil, fmt.Errorf("unknown public key for %q", c.User())
+	}
+	return cfg
+}
+
+// loadNetconfAuthorizedKeys reads an OpenSSH authorized_keys file and returns
+// each key in marshalled wire form. Blank and comment lines are skipped. A
+// line that is not a key, or a file with no key, is an error.
+func loadNetconfAuthorizedKeys(path string) ([][]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var keys [][]byte
+	for i, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
+		if err != nil {
+			return nil, fmt.Errorf("%s line %d: %v", path, i+1, err)
+		}
+		keys = append(keys, k.Marshal())
+	}
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("%s: no public key", path)
+	}
+	return keys, nil
 }
 
 // newNetconfServer builds a listener's server on l. The device's session

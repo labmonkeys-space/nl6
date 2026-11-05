@@ -50,10 +50,15 @@ var netconfErrorMessageEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", 
 
 // netconfServerHello renders the server hello for a session.
 func netconfServerHello(sessionID uint32) []byte {
+	return netconfHelloWithCaps(sessionID, netconfHelloCapabilities)
+}
+
+// netconfHelloWithCaps renders a server hello with the given capabilities.
+func netconfHelloWithCaps(sessionID uint32, caps []string) []byte {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
 	fmt.Fprintf(&b, `<hello xmlns="%s"><capabilities>`, netconfBaseNS)
-	for _, c := range netconfHelloCapabilities {
+	for _, c := range caps {
 		fmt.Fprintf(&b, "<capability>%s</capability>", netconfEscape(c))
 	}
 	fmt.Fprintf(&b, "</capabilities><session-id>%d</session-id></hello>", sessionID)

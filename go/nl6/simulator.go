@@ -169,7 +169,7 @@ func main() {
 
 		// NETCONF over SSH (IOS XE dialect). Off by default; when enabled,
 		// only cisco_catalyst_9500 devices listen.
-		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF subsystem: cisco_catalyst_9500 over SSH on -netconf-port, juniper_mx10004 over SSH on -netconf-port and over TLS on -netconf-tls-port (default: false)")
+		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF subsystem: cisco_catalyst_9500 and huawei_ne8000 over SSH on -netconf-port, juniper_mx10004 over SSH on -netconf-port and over TLS on -netconf-tls-port (default: false)")
 		netconfPort   = flag.Int("netconf-port", netconfDefaultPort, "TCP port for the per-device NETCONF over SSH listener (default: 830)")
 
 		// NETCONF over TLS client identity. [global]: one table for the whole fleet.
@@ -177,6 +177,7 @@ func main() {
 		netconfTLSClientCA = flag.String("netconf-tls-client-ca", "", "[global] PEM file with the CA that must have signed NETCONF TLS client certificates; requires -netconf-enable. Also settable via PUT /api/v1/netconf/tls")
 		netconfTLSDefUser  = flag.String("netconf-tls-default-username", "", "[global] NETCONF user for a client certificate missing from the identity table (empty = refuse it); requires -netconf-enable")
 		netconfTLSIdents   []string
+		netconfAuthKeys    = flag.String("netconf-authorized-keys", "", "[global] OpenSSH authorized_keys file whose keys log in as simadmin on every NETCONF SSH listener, next to the password (empty = password only)")
 
 		// NETCONF call home. [seed]: applies only to the auto-start batch;
 		// REST-created devices opt in with a `netconf_callhome` block.
@@ -632,13 +633,21 @@ func main() {
 		log.Printf("NETCONF TLS: no client CA configured, every TLS handshake will be refused until one is set with -netconf-tls-client-ca or PUT /api/v1/netconf/tls")
 	}
 
+	var netconfAuthorizedKeys [][]byte
+	if *netconfAuthKeys != "" {
+		if netconfAuthorizedKeys, err = loadNetconfAuthorizedKeys(*netconfAuthKeys); err != nil {
+			log.Fatalf("-netconf-authorized-keys: %v", err)
+		}
+	}
+
 	// Start the NETCONF subsystem before any device exists, so every
 	// catalyst 9500 created from here on binds -netconf-port.
 	if err := manager.StartNetconfSubsystem(NetconfSubsystemConfig{
-		Enabled:     *netconfEnable,
-		Port:        *netconfPort,
-		TLSPort:     *netconfTLSPort,
-		TLSIdentity: netconfTLSID,
+		Enabled:        *netconfEnable,
+		Port:           *netconfPort,
+		TLSPort:        *netconfTLSPort,
+		TLSIdentity:    netconfTLSID,
+		AuthorizedKeys: netconfAuthorizedKeys,
 	}); err != nil {
 		log.Fatalf("Failed to initialize NETCONF subsystem: %v", err)
 	}

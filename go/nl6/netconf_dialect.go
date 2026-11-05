@@ -41,6 +41,7 @@ var netconfDialects = map[string]netconfDialect{
 		CallHomePreamble: junosCallHomePreamble,
 		NewSession:       newJunosNetconfSession,
 	},
+	"huawei_ne8000": {Name: "vrp", SSH: true, NewSession: newVrpNetconfSession},
 }
 
 // netconfDialectFor returns the dialect of d's profile and whether it has one.

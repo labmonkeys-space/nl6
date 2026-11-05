@@ -746,6 +746,10 @@ type SimulatorManager struct {
 	// StartNetconfSubsystem. The subsystem is off by default.
 	netconfPort            int
 	netconfSubsystemActive atomic.Bool
+	// netconfAuthorizedKeys holds the -netconf-authorized-keys keys in
+	// marshalled wire form, accepted for USERNAME on every NETCONF SSH
+	// listener. Set once by StartNetconfSubsystem, read-only after.
+	netconfAuthorizedKeys [][]byte
 
 	// NETCONF over TLS. netconfTLSIdentity is the fleet-wide client identity
 	// table, never nil after StartNetconfSubsystem and replaced whole by PUT
