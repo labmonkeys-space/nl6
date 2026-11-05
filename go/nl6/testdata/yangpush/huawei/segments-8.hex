@@ -1,0 +1,14 @@
+# Source: network-analytics/ietf-network-analytics-document-status,
+# 125/Hackathon/yangpush-publisher/huawei-vrp-ip/yp-notifications/8-yp-subscripton.pcap
+# Frame 1 is the unsegmented subscription-started (skipped). Frames 2-10 are the push-update segments.
+# Columns: segment-header-hex (16 bytes), UDP-notif message length on the wire (header + payload).
+# Payload length: sum(length - 16) over all rows.
+211005930101040d0000000101040000 1427
+2110059c0101040d0000000101040002 1436
+2110059c0101040d0000000101040004 1436
+2110059c0101040d0000000101040006 1436
+2110059c0101040d0000000101040008 1436
+2110059c0101040d000000010104000a 1436
+2110059c0101040d000000010104000c 1436
+2110059c0101040d000000010104000e 1436
+211001fb0101040d0000000101040011 507
