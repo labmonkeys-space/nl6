@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,8 +77,8 @@ func yangPushInteropRun(t *testing.T, name string, args ...string) string {
 func yangPushInteropMessages(t *testing.T) []yangPushInteropMsg {
 	t.Helper()
 	out := yangPushInteropRun(t, "docker", "exec", yangPushInteropRedpanda,
-		"rpk", "topic", "consume", yangPushInteropTopic, "--offset", "start", "--read-committed",
-		"--format", "%v\\n", "--num", "100000", "--timeout", "10s")
+		"rpk", "topic", "consume", yangPushInteropTopic, "--offset", ":end", "--read-committed",
+		"--format", "%v\\n")
 	var msgs []yangPushInteropMsg
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
@@ -90,6 +89,8 @@ func yangPushInteropMessages(t *testing.T) []yangPushInteropMsg {
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Fatalf("Kafka record is not JSON: %v\n%s", err, line)
 		}
+		// NetGauze listens on [::], so an IPv4 device shows as ::ffff:a.b.c.d.
+		m.Message.Meta.Export = strings.TrimPrefix(m.Message.Meta.Export, "::ffff:")
 		m.raw = line
 		msgs = append(msgs, m)
 	}
@@ -107,21 +108,25 @@ func yangPushInteropMetrics(t *testing.T) map[string]float64 {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	re := regexp.MustCompile(`^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+(\S+)`)
+	// Label values can hold "}" (NetGauze puts the subscription target in a
+	// label), so take the name up to the first "{" or space and the value
+	// after the last space. The exporter writes no timestamps.
 	out := map[string]float64{}
 	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, "#") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		m := re.FindStringSubmatch(line)
-		if m == nil {
+		end := strings.IndexAny(line, "{ ")
+		sp := strings.LastIndex(line, " ")
+		if end <= 0 || sp < end {
 			continue
 		}
-		v, err := strconv.ParseFloat(m[2], 64)
+		v, err := strconv.ParseFloat(line[sp+1:], 64)
 		if err != nil {
 			continue
 		}
-		out[strings.TrimSuffix(m[1], "_total")] += v
+		out[strings.TrimSuffix(line[:end], "_total")] += v
 	}
 	return out
 }
@@ -189,20 +194,31 @@ func TestYangPushInterop(t *testing.T) {
 		"netgauze_collector_yang_push_validation_invalid",
 		"netgauze_collector_yang_push_validation_malformed",
 		"netgauze_collector_yang_push_caching_device_fetch_response_failed",
+		"netgauze_collector_yang_push_validation_cache_yang_ctx_invalid",
 		"netgauze_udp_notif_decoder_malformed",
 	} {
 		if v := metrics[name]; v != 0 {
 			t.Errorf("NetGauze counter %s = %v, want 0", name, v)
 		}
 	}
+	// NetGauze v0.13.0 declares validation.success and decode.success but
+	// never increments them. Proof of validation instead: a YANG context was
+	// built from the served library, and more messages left the validation
+	// step than skipped it (the rest passed libyang; failures count as invalid).
 	for _, name := range []string{
-		"netgauze_collector_yang_push_validation_messages_decode_success",
-		"netgauze_collector_yang_push_validation_success",
 		"netgauze_collector_yang_push_caching_device_fetch_response_succeeded",
+		"netgauze_collector_yang_push_validation_cache_yang_ctx_created",
+		"netgauze_collector_yang_push_validation_messages_sent",
 	} {
 		if v, ok := metrics[name]; !ok || v <= 0 {
 			t.Errorf("NetGauze counter %s = %v (present %v), want > 0", name, v, ok)
 		}
+	}
+	validated := metrics["netgauze_collector_yang_push_validation_messages_sent"] - metrics["netgauze_collector_yang_push_validation_skipped"]
+	t.Logf("NetGauze validated %v messages (sent %v, skipped %v)", validated,
+		metrics["netgauze_collector_yang_push_validation_messages_sent"], metrics["netgauze_collector_yang_push_validation_skipped"])
+	if validated <= 0 {
+		t.Errorf("NetGauze validated no message")
 	}
 
 	// 2. Kafka holds messages for subscriptions 8, 9 and 10 from every device.

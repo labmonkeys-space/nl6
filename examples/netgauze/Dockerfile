@@ -17,7 +17,8 @@ ADD --checksum=sha256:${NETGAUZE_DEB_SHA256} \
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends /tmp/netgauze-collector.deb \
- && rm -rf /var/lib/apt/lists/* /tmp/netgauze-collector.deb
+ && rm -rf /var/lib/apt/lists/* /tmp/netgauze-collector.deb \
+ && mkdir -p /tmp/netgauze-udpnotif-cache
 
 COPY config.yaml /etc/netgauze/config.yaml
 
