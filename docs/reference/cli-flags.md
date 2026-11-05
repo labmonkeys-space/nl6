@@ -270,6 +270,7 @@ See [gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes, TLS, a
 | `-gnmi-dialout-tls-insecure` | bool | `false` | **seed** | Skip collector certificate verification (dev only). |
 | `-gnmi-dialout-tls-ca` | string | empty | **seed** | PEM CA bundle to verify the collector against (empty = system roots). |
 | `-gnmi-dialout-mtls` | bool | `false` | **seed** | Present the shared TLS certificate as a client cert (mutual TLS). |
+| `-yang-push-collector` | `host:port` | empty | **seed** | YANG-Push over UDP-notif collector that auto-started `huawei_ne8000` devices stream to. Empty means off. Applies only with `-auto-start-ip`. |
 
 ## UDP syslog export flags
 

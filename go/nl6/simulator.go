@@ -180,6 +180,7 @@ func main() {
 
 		// NETCONF call home. [seed]: applies only to the auto-start batch;
 		// REST-created devices opt in with a `netconf_callhome` block.
+		yangPushCollector       = flag.String("yang-push-collector", "", "[seed] YANG-Push over UDP-notif collector host:port that auto-started huawei_ne8000 devices stream to (empty = off)")
 		netconfCallHomeClient   = flag.String("netconf-callhome-client", "", "[seed] NETCONF client host:port that auto-started juniper_mx10004 devices dial (call home over SSH, Junos outbound-ssh framing); requires -netconf-enable (empty = off)")
 		netconfCallHomeDeviceID = flag.String("netconf-callhome-device-id", "", "[seed] DEVICE-ID the call-home preamble carries (empty = each device's sysName); requires -netconf-callhome-client")
 
@@ -649,6 +650,18 @@ func main() {
 		log.Println("WARNING: -netconf-callhome-client seeds only the auto-start batch, and -auto-start-ip is empty. No device will call home; use the netconf_callhome block of POST /api/v1/devices.")
 	}
 
+	var yangPushSeed *DeviceYangPushConfig
+	if *yangPushCollector != "" {
+		yangPushSeed = &DeviceYangPushConfig{Collector: *yangPushCollector}
+		yangPushSeed.ApplyDefaults()
+		if err := yangPushSeed.Validate(); err != nil {
+			log.Fatalf("-yang-push-collector: %v", err)
+		}
+		if *autoStartIP == "" {
+			log.Println("WARNING: -yang-push-collector seeds only the auto-start batch, and -auto-start-ip is empty. No device will stream; use the yang_push block of POST /api/v1/devices.")
+		}
+	}
+
 	// Start the optical SD/SF alarm evaluator unconditionally, before any
 	// device exists, so optical devices created later (auto-start batch or
 	// REST) are enrolled as they come up. Enrolment happens in the device
@@ -874,7 +887,7 @@ func main() {
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}
 
-			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, NetconfCallHome: netconfCallHomeSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario, SetAdmission: setAdmissionSeed})
+			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, NetconfCallHome: netconfCallHomeSeed, YangPush: yangPushSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario, SetAdmission: setAdmissionSeed})
 			if err != nil {
 				log.Printf("Failed to auto-create devices: %v", err)
 			} else {

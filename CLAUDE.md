@@ -62,6 +62,7 @@ sudo ./nl6 [flags]
 -gnmi-dialout-tls-insecure     # [seed] skip collector cert verification (dev only)
 -gnmi-dialout-tls-ca <path>    # [seed] PEM CA bundle to verify collector (empty = system roots)
 -gnmi-dialout-mtls             # [seed] present shared cert as client cert (mutual TLS)
+-yang-push-collector <h:p>     # [seed] YANG-Push over UDP-notif collector host:port (huawei_ne8000 only)
 -topology-config <path> # [global] JSON inter-device LLDP link graph ({"links":[{"a":{"ip","ifindex"},"b":{"ip","ifindex"}}]}). Loaded at startup; syntactic validation only (device/ifIndex resolved lazily at serve time). Also mutable at runtime via POST/DELETE /api/v1/topology.
 
 # DNS service-discovery flags (hidden DNS primary for a CoreDNS secondary; off by default)
