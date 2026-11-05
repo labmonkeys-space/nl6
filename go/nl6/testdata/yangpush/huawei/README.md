@@ -15,3 +15,7 @@ Anonymisation:
 Subscription 10 (on-change) has no capture.
 `subscription-started-10` and `push-change-update-10` are nl6's own shape, written from the RFC 8641 JSON encoding.
 The observation fields in `push-change-update-10` follow the order of push-update.
+
+`segments-8.hex` holds the segment headers and lengths of `8-yp-subscripton.pcap`.
+The captured publisher id is replaced with the documentation address 192.0.2.13 (0xC000020D).
+Segment numbers, flags and lengths are unchanged.

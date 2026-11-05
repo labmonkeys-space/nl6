@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 // UDP-notif (draft-ietf-netconf-udp-notif) framing. Layout follows NetGauze
@@ -31,6 +32,9 @@ const (
 func udpNotifFrame(publisherID, messageID uint32, payload []byte, segSize int) [][]byte {
 	if segSize <= udpNotifSegHeader+udpNotifFirstSegShortfall {
 		panic(fmt.Sprintf("udpNotifFrame: segSize %d leaves no room for payload", segSize))
+	}
+	if segSize > math.MaxUint16 {
+		panic(fmt.Sprintf("udpNotifFrame: segSize %d overflows the 16-bit message length", segSize))
 	}
 	if udpNotifBaseHeader+len(payload) <= segSize {
 		d := make([]byte, udpNotifBaseHeader, udpNotifBaseHeader+len(payload))

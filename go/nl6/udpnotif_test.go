@@ -17,7 +17,7 @@ import (
 
 const (
 	captureSegSize   = 1436
-	capturePublisher = 0x0101040d
+	capturePublisher = 0xc000020d
 	captureMessageID = 1
 )
 
@@ -151,4 +151,24 @@ func TestUdpNotifTinySegSizePanics(t *testing.T) {
 		}
 	}()
 	udpNotifFrame(1, 2, testPayload(100), 16)
+}
+
+func TestUdpNotifHugeSegSizePanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for segSize > 65535")
+		}
+	}()
+	udpNotifFrame(1, 2, testPayload(100), 65536)
+}
+
+func TestUdpNotifSegmentBoundary(t *testing.T) {
+	fit := udpNotifFrame(1, 2, testPayload(captureSegSize-12), captureSegSize)
+	if len(fit) != 1 || len(fit[0]) != captureSegSize {
+		t.Fatalf("exact fit: %d datagrams", len(fit))
+	}
+	over := udpNotifFrame(1, 2, testPayload(captureSegSize-12+1), captureSegSize)
+	if len(over) < 2 {
+		t.Fatalf("one byte over: %d datagrams, want segments", len(over))
+	}
 }
