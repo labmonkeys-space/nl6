@@ -50,7 +50,6 @@ type YangPushExporter struct {
 	// Run-loop state, touched only by the run goroutine.
 	msgID   [3]uint32
 	started bool
-	work    chan StateChange
 
 	stop      chan struct{}
 	stopOnce  sync.Once
@@ -90,7 +89,6 @@ func NewYangPushExporter(dev *DeviceSimulator, cfg *DeviceYangPushConfig, clock 
 		clock:     clock,
 		subs:      vrpSubs,
 		conn:      conn,
-		work:      make(chan StateChange, onChangeBufferDepth),
 		stop:      make(chan struct{}),
 	}
 	e.newTimer = func() ypTimer {
@@ -167,7 +165,9 @@ func (e *YangPushExporter) run() {
 	var sc chan StateChange
 	if st := e.cycler().State(); st != nil {
 		sc = make(chan StateChange, onChangeBufferDepth)
-		st.AddListener(sc)
+		// A full listener drops its oldest event, counted here, so the latest
+		// transition always goes out.
+		st.AddListenerCounting(sc, &e.stateEventsDropped)
 		defer st.RemoveListener(sc)
 	}
 	e.ensureStarted()
@@ -199,38 +199,8 @@ func (e *YangPushExporter) run() {
 		case <-timers[1].C():
 			periodic(1)
 		case evt := <-sc:
-			e.forward(evt)
-		case evt := <-e.work:
-			e.drain(sc)
 			e.ensureStarted()
 			e.emit(2, func() []byte { return e.changeUpdate(evt) })
-		}
-	}
-}
-
-// forward moves a state event into the exporter's queue without blocking.
-// A full queue drops its oldest event, counted, so the latest transition
-// always goes out. Only the run goroutine touches the queue.
-func (e *YangPushExporter) forward(evt StateChange) {
-	select {
-	case e.work <- evt:
-		return
-	default:
-	}
-	<-e.work
-	e.stateEventsDropped.Add(1)
-	e.work <- evt
-}
-
-// drain forwards everything the listener holds, so InterfaceState finds room
-// while this goroutine sends.
-func (e *YangPushExporter) drain(sc chan StateChange) {
-	for {
-		select {
-		case evt := <-sc:
-			e.forward(evt)
-		default:
-			return
 		}
 	}
 }

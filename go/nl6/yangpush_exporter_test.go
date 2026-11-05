@@ -379,14 +379,16 @@ func TestYangPushCollectorUnreachable(t *testing.T) {
 }
 
 func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
-	if runtime.GOMAXPROCS(0) < 2 {
-		t.Skip("needs two Ps: on one, the exporter only runs once the burst yields")
-	}
 	dev, st := newYangPushTestDevice(t)
 	c := newYPCollector(t)
-	e, _ := startYangPushTest(t, dev, c.addr())
+	e, fc := startYangPushTest(t, dev, c.addr())
 	readStart(t, c) // the listener is registered before the sync goes out
+	waitArmed(t, fc)
 	idx := dev.metricsCycler.ifCounters.Load().IfIndices()[0]
+	// Stall the exporter: its next send blocks on the clock. It takes at most
+	// one event, the listener holds onChangeBufferDepth, and the rest must be
+	// dropped and counted without blocking InterfaceState.
+	fc.mu.Lock()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -400,14 +402,13 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
+		fc.mu.Unlock()
 		t.Fatal("InterfaceState blocked during the flap burst")
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for e.stateEventsDropped.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if e.stateEventsDropped.Load() == 0 {
-		t.Fatal("state_events_dropped = 0 after 1000 flaps")
+	dropped := e.stateEventsDropped.Load()
+	fc.mu.Unlock()
+	if want := uint64(1000 - onChangeBufferDepth - 1); dropped < want {
+		t.Fatalf("state_events_dropped = %d after 1000 flaps against a stalled exporter, want >= %d", dropped, want)
 	}
 	// Drop-oldest: the last transition (flap 999, link up) still goes out.
 	var last ypRecv

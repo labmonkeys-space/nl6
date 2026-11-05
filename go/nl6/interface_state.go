@@ -813,6 +813,12 @@ func (s *InterfaceState) ApplyAdminStatus(ifIndex int, target uint8) []StateChan
 // ON_CHANGE Subscribe handler in `gnmi_subscribe_onchange.go` does
 // exactly this via `resolver.Resolve` before its AddListener call.
 func (s *InterfaceState) AddListener(ch chan StateChange) {
+	s.AddListenerCounting(ch, nil)
+}
+
+// AddListenerCounting is AddListener that also counts this listener's
+// drop-oldest losses in drops (nil: none), next to the engine-wide counter.
+func (s *InterfaceState) AddListenerCounting(ch chan StateChange, drops *atomic.Uint64) {
 	if ch == nil {
 		log.Printf("interface_state: AddListener rejected: nil channel")
 		return
@@ -821,7 +827,7 @@ func (s *InterfaceState) AddListener(ch chan StateChange) {
 		log.Printf("interface_state: AddListener rejected: unbuffered channel (every event would hit drop-oldest slow path)")
 		return
 	}
-	s.listeners.Store(ch, struct{}{})
+	s.listeners.Store(ch, drops)
 }
 
 // RemoveListener deregisters a channel. Safe to call from any
@@ -890,10 +896,17 @@ func (s *InterfaceState) Broadcast(evt StateChange) {
 	if evt.Changed&LeafOperStatus != 0 && s.onOper != nil {
 		s.onOper(evt.IfIndex)
 	}
-	s.listeners.Range(func(key, _ any) bool {
+	s.listeners.Range(func(key, val any) bool {
 		ch, ok := key.(chan StateChange)
 		if !ok {
 			return true
+		}
+		drops, _ := val.(*atomic.Uint64)
+		dropped := func() {
+			s.incDropped()
+			if drops != nil {
+				drops.Add(1)
+			}
 		}
 		// Per-listener recover so one panicking subscriber does not
 		// abort the Range walk for every other subscriber.
@@ -914,14 +927,14 @@ func (s *InterfaceState) Broadcast(evt StateChange) {
 		// on — we never block the mutator.
 		select {
 		case <-ch:
-			s.incDropped()
+			dropped()
 		default:
 		}
 		select {
 		case ch <- evt:
 			s.incEmitted()
 		default:
-			s.incDropped()
+			dropped()
 		}
 		return true
 	})
