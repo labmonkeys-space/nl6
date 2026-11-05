@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.40.0
+
+- No role changes. The collection version follows the nl6 0.40.0 release.
+
 ## 0.39.0
 
 - **Breaking:** the role refuses every platform it is not tested on.
