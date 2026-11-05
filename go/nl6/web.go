@@ -745,6 +745,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
 	api.HandleFunc("/gnmi/dialout/status", gnmiDialoutStatusHandler).Methods("GET")
+	api.HandleFunc("/yangpush/status", yangPushStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/status", netconfStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/callhome/status", netconfCallHomeStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/tls", netconfTLSGetHandler).Methods("GET")

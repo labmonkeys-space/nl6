@@ -704,6 +704,9 @@ func (sm *SimulatorManager) Shutdown() error {
 	// each run loop and close its ClientConn). Safe to call when never started.
 	sm.StopGnmiDialout()
 
+	// Stop the YANG-Push exporters. Safe to call when never started.
+	sm.StopYangPush()
+
 	// Stop the shared optical SD/SF alarm evaluator alongside its peer
 	// subsystems. Without this it is the one goroutine Shutdown leaves
 	// running, firing state-driven traps into torn-down exporters.

@@ -674,6 +674,10 @@ func main() {
 	if err := manager.StartGnmiDialoutSubsystem(); err != nil {
 		log.Fatalf("Failed to initialize gNMI dial-out subsystem: %v", err)
 	}
+	// YANG-Push likewise, so REST-created huawei_ne8000 devices can opt in.
+	if err := manager.StartYangPushSubsystem(); err != nil {
+		log.Fatalf("Failed to initialize YANG-Push subsystem: %v", err)
+	}
 
 	// Build the CLI-seed dial-out config for the auto-start batch. Mirrors
 	// the flow/trap/syslog seed pattern: flags seed auto-start devices only;

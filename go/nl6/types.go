@@ -134,7 +134,8 @@ type DeviceSimulator struct {
 	gnmiDialoutExporter *GnmiDialoutExporter // nil if dial-out disabled
 	// yangPushConfig is the per-device YANG-Push over UDP-notif opt-in (nil =
 	// no streaming). Only huawei_ne8000 ever holds one.
-	yangPushConfig *DeviceYangPushConfig
+	yangPushConfig   *DeviceYangPushConfig
+	yangPushExporter *YangPushExporter // nil unless streaming; guarded by mu
 	// netconfCallHomeConfig is the per-device NETCONF call-home
 	// configuration (nil = no call home), set at creation from the CLI seed
 	// or the `netconf_callhome` block in POST /api/v1/devices.
@@ -764,6 +765,10 @@ type SimulatorManager struct {
 	// deletion, mirroring the flow/trap/syslog status pattern.
 	gnmiDialoutSubsystemActive atomic.Bool
 	gnmiDialoutAggregates      sync.Map // key: gnmiDialoutKey, value: *gnmiDialoutAggregate
+	// YANG-Push subsystem state: an active flag and per-collector counters
+	// that survive device deletion.
+	yangPushSubsystemActive atomic.Bool
+	yangPushAggregates      sync.Map // key: collector string, value: *yangPushAggregate
 	// netconfCallHomeAggregates keeps per-client call-home counters across
 	// device deletion. Key: client address, value: *netconfCallHomeAggregate.
 	netconfCallHomeAggregates sync.Map

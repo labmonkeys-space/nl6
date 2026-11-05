@@ -774,6 +774,18 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			device.cachedSysLocation.Store(sysLocationValue)
 			device.cachedLocation.Store(locationValue)
 
+			// YANG-Push over UDP-notif, same failure handling as dial-out. After
+			// the sysName cache: the first messages go out at once and carry it
+			// as the envelope hostname. Mirror in createSingleDevice.
+			if device.yangPushConfig != nil {
+				if err := sm.startDeviceYangPushExporter(device); err != nil {
+					log.Printf("yang_push: skipping device %s: %v", device.IP, err)
+					device.mu.Lock()
+					device.yangPushConfig = nil
+					device.mu.Unlock()
+				}
+			}
+
 			// Create servers with SNMPv3 configuration and the batch's write
 			// admission policy (nl6#690). MIRROR IN createSingleDevice — the two
 			// creation paths have diverged before, and a device created by the
@@ -1128,6 +1140,17 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	device.cachedSysLocation.Store(sysLocationValue)
 	device.cachedLocation.Store(locationValue)
 
+	// YANG-Push over UDP-notif (mirrors the sequential path, after the
+	// sysName cache for the envelope hostname).
+	if device.yangPushConfig != nil {
+		if err := sm.startDeviceYangPushExporter(device); err != nil {
+			log.Printf("yang_push: skipping device %s: %v", device.IP, err)
+			device.mu.Lock()
+			device.yangPushConfig = nil
+			device.mu.Unlock()
+		}
+	}
+
 	// Create servers with SNMPv3 configuration and the batch's write admission
 	// policy (nl6#690). MIRROR OF the sequential path in
 	// createDevicesWithOptionsLocked — keep the two in step.
@@ -1258,6 +1281,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&
 		d.gnmiDialoutExporter == nil &&
+		d.yangPushExporter == nil &&
 		d.tunIface == nil {
 		return nil
 	}
@@ -1354,6 +1378,16 @@ func (d *DeviceSimulator) Stop() error {
 		}
 		_ = d.gnmiDialoutExporter.Close()
 		d.gnmiDialoutExporter = nil
+	}
+
+	// YANG-Push: persist counters before Close (sync.Once-gated), as for
+	// dial-out. Close stops the run loop and removes the state listener.
+	if d.yangPushExporter != nil {
+		if wasRunning && manager != nil {
+			manager.persistYangPushCounters(d.yangPushExporter)
+		}
+		_ = d.yangPushExporter.Close()
+		d.yangPushExporter = nil
 	}
 
 	// Clear the Tier C state-change hook before the engine outlives the
@@ -1461,6 +1495,13 @@ func (d *DeviceSimulator) stopListenersOnly() {
 		}
 		_ = d.gnmiDialoutExporter.Close()
 		d.gnmiDialoutExporter = nil
+	}
+	if d.yangPushExporter != nil {
+		if manager != nil {
+			manager.persistYangPushCounters(d.yangPushExporter)
+		}
+		_ = d.yangPushExporter.Close()
+		d.yangPushExporter = nil
 	}
 	if d.tunIface != nil {
 		d.tunIface.destroy() // Close FD only, no ip link delete

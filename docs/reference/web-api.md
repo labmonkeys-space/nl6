@@ -53,6 +53,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/netconf/tls` | PUT | Replace the whole NETCONF over TLS client trust. An omitted field clears it. `404` when the subsystem is off, `400` for a bad body. |
 | `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. `404` when no shared TLS certificate exists. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
+| `/api/v1/yangpush/status` | GET | YANG-Push over UDP-notif status: per-collector devices, messages and segments sent, send failures, state events dropped, fidelity-suppressed messages. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/api/v1/prometheus/sd` | GET | Prometheus HTTP service discovery: one target group per running device, for snmp_exporter. See [Prometheus service discovery](prometheus-sd.md). |
 | `/api/v1/fidelity` | GET | Fidelity mode: the value **in force**, the startup flag it began from, and any pending auto-revert. |
