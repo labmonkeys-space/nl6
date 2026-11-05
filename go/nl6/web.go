@@ -315,14 +315,14 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}
+		if rf, ok := yangPushIncapableRequest(req, manager.defaultResourceKey); ok {
+			rejectWith(fmt.Sprintf("yang_push: device type %q cannot stream YANG-Push (only huawei_ne8000 can); remove the \"yang_push\" block", rf), http.StatusBadRequest)
+			return
+		}
 		if !manager.netconfSubsystemActive.Load() {
 			yangPushNetconfOffWarned.Do(func() {
 				log.Printf("yang_push: the NETCONF subsystem is off (-netconf-enable); collectors cannot fetch the YANG library or modules over NETCONF, so schema validation will fail")
 			})
-		}
-		if rf, ok := yangPushIncapableRequest(req, manager.defaultResourceKey); ok {
-			rejectWith(fmt.Sprintf("yang_push: device type %q cannot stream YANG-Push (only huawei_ne8000 can); remove the \"yang_push\" block", rf), http.StatusBadRequest)
-			return
 		}
 	}
 	// Collapse the seed to nil when no block was supplied so CreateDevices

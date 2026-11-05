@@ -214,7 +214,11 @@ func vrpYangLibraryXML() []byte {
 		}
 		b.WriteString("</import-only-module>")
 	}
-	b.WriteString("</module-set></yang-library>")
+	b.WriteString("</module-set>")
+	// The real NE ties ds:operational to its schema the same way.
+	b.WriteString("<schema><name>state-schema</name><module-set>yang-push</module-set></schema>")
+	b.WriteString(`<datastore><name xmlns:ds="urn:ietf:params:xml:ns:yang:ietf-datastores">ds:operational</name><schema>state-schema</schema></datastore>`)
+	b.WriteString("</yang-library>")
 	fmt.Fprintf(&b, "<modules-state xmlns=%q><module-set-id>%s</module-set-id>", yangLibNS, id)
 	for _, m := range mods {
 		ct := "import"

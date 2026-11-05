@@ -666,6 +666,9 @@ func main() {
 		if err := yangPushSeed.Validate(); err != nil {
 			log.Fatalf("-yang-push-collector: %v", err)
 		}
+		if !*netconfEnable {
+			log.Println("WARNING: -yang-push-collector without -netconf-enable: collectors cannot fetch the YANG library or modules over NETCONF, so schema validation will fail.")
+		}
 		if *autoStartIP == "" {
 			log.Println("WARNING: -yang-push-collector seeds only the auto-start batch, and -auto-start-ip is empty. No device will stream; use the yang_push block of POST /api/v1/devices.")
 		}

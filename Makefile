@@ -539,7 +539,7 @@ test-interop-yangpush: check-go check-docker build
 	  sleep 1; \
 	done; \
 	docker exec nl6-yangpush-redpanda rpk topic create telemetry-message-json >/dev/null 2>&1 || true; \
-	( cd $(BUILD_DIR) && sudo ./$(BINARY) -port 18080 -netconf-enable -netconf-authorized-keys "$$keys/authorized_keys" >"$$nl6log" 2>&1 & echo $$! >"$$keys/pid" ); \
+	( cd $(BUILD_DIR) || exit 1; sudo ./$(BINARY) -port 18080 -netconf-enable -netconf-authorized-keys "$$keys/authorized_keys" >"$$nl6log" 2>&1 & echo $$! >"$$keys/pid" ); \
 	nl6pid=$$(cat "$$keys/pid"); \
 	for i in $$(seq 1 60); do \
 	  curl -sf http://127.0.0.1:18080/api/v1/version >/dev/null 2>&1 && break; \

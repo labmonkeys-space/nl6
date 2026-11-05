@@ -182,7 +182,7 @@ func (s *netconfSession) vrpGetData(f vrpGetFilter) []byte {
 			out = append(out, vrpFiltersXML(s.vrpExporter())...)
 		case n.name.Space == netconfRFC8639 && n.name.Local == "subscriptions":
 			var id uint64
-			if txt, ok := vrpSubscriptionIDFilter(n.xml); ok {
+			if txt, ok := vrpSubscriptionIDFilter(n.xml); ok && txt != "" {
 				var err error
 				if id, err = strconv.ParseUint(txt, 10, 32); err != nil || id == 0 {
 					continue

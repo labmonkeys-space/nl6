@@ -110,7 +110,7 @@ func dialYangPush(dev *DeviceSimulator, collector string) (net.Conn, error) {
 	if dev.netNamespace != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), deviceDialTimeout)
 		defer cancel()
-		return dev.netNamespace.DialContextInNamespace(ctx, "udp", collector, local)
+		return dev.netNamespace.DialContextInNamespace(ctx, "udp4", collector, local)
 	}
 	raddr, err := net.ResolveUDPAddr("udp4", collector)
 	if err != nil {

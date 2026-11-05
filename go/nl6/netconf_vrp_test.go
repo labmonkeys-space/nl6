@@ -151,6 +151,11 @@ func TestVrpGetYangLibrary(t *testing.T) {
 	if in := vrpDataInner(t, lib); !strings.HasPrefix(in, "<yang-library ") || strings.Contains(in, "modules-state") {
 		t.Fatalf("yang-library alone:\n%.300s", in)
 	}
+	// RFC 8525: ds:operational, the subscriptions' datastore, resolves to a schema.
+	if in := vrpDataInner(t, lib); !strings.Contains(in, `ds:operational</name><schema>state-schema</schema></datastore>`) ||
+		!strings.Contains(in, `<schema><name>state-schema</name><module-set>yang-push</module-set></schema>`) {
+		t.Fatalf("yang-library has no operational datastore:\n%.300s", in)
+	}
 	ms := c.rpc(`<get><filter type="subtree"><modules-state xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library"/></filter></get>`)
 	if in := vrpDataInner(t, ms); !strings.HasPrefix(in, "<modules-state ") || strings.Contains(in, "<yang-library") {
 		t.Fatalf("modules-state alone:\n%.300s", in)
@@ -485,5 +490,17 @@ func TestNetconfDialectTableVrp(t *testing.T) {
 	d, ok := netconfDialectFor(&DeviceSimulator{resourceFile: "huawei_ne8000.json"})
 	if !ok || d.Name != "vrp" || !d.SSH || d.TLS || d.CallHome || d.NewSession == nil {
 		t.Fatalf("huawei_ne8000 = %+v, %v; want vrp over SSH only", d, ok)
+	}
+}
+
+// An empty <id/> is a selection node (RFC 6241 6.2.4): it selects every
+// subscription.
+func TestVrpGetSubscriptionsEmptyIDSelectsAll(t *testing.T) {
+	c := startVrpTestClient(t, newVrpTestDevice(true))
+	in := vrpDataInner(t, c.rpc(`<get><filter type="subtree"><subscriptions xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"><subscription><id/></subscription></subscriptions></filter></get>`))
+	for _, id := range []string{"<id>8</id>", "<id>9</id>", "<id>10</id>"} {
+		if !strings.Contains(in, id) {
+			t.Fatalf("missing %s in\n%.500s", id, in)
+		}
 	}
 }
