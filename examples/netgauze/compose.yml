@@ -44,7 +44,7 @@ services:
       retries: 40
 
   otel:
-    image: otel/opentelemetry-collector-contrib:0.116.1@sha256:d0ebf65280da2e1b1491d1b93648281afd353d4b9ea19160090303cec9a233bd
+    image: otel/opentelemetry-collector-contrib:0.164.0@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b
     container_name: nl6-yangpush-otel
     network_mode: host
     command: ["--config=/etc/otel/config.yaml"]
