@@ -19,3 +19,5 @@ The observation fields in `push-change-update-10` follow the order of push-updat
 `segments-8.hex` holds the segment headers and lengths of `8-yp-subscripton.pcap`.
 The captured publisher id is replaced with the documentation address 192.0.2.13 (0xC000020D).
 Segment numbers, flags and lengths are unchanged.
+
+The JSON fixtures use publisher id 3221225997 (192.0.2.13, 0xC000020D) instead of the captured value.

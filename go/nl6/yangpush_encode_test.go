@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	ypTestPublisher = uint32(16843789)
+	ypTestPublisher = uint32(3221225997)
 	ypTestHost      = "ne8000-sim-1"
 )
 
@@ -104,7 +104,7 @@ func TestEncodePushChangeUpdateAdmin(t *testing.T) {
 	ifc := ypTestIfaces(false)[0]
 	ifc.Admin, ifc.Oper = "down", "down"
 	got := ypChange(t, ifc, LeafAdminStatus|LeafOperStatus)
-	want := `{"ietf-yp-notification:envelope":{"event-time":"2026-01-20T08:17:12.250Z","hostname":"ne8000-sim-1","sequence-number":1,"contents":{"ietf-yang-push:push-change-update":{"id":10,"ietf-yp-observation:timestamp":"2026-01-20T08:17:12.240Z","ietf-yp-observation:point-in-time":"current-accounting","ietf-distributed-notif:message-publisher-id":16843789,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":"edit1","operation":"merge","target":"/ietf-interfaces:interfaces/interface=GigabitEthernet0%2F1%2F0","value":{"ietf-interfaces:interface":[{"name":"GigabitEthernet0/1/0","admin-status":"down","oper-status":"down"}]}}]}}}}}}`
+	want := `{"ietf-yp-notification:envelope":{"event-time":"2026-01-20T08:17:12.250Z","hostname":"ne8000-sim-1","sequence-number":1,"contents":{"ietf-yang-push:push-change-update":{"id":10,"ietf-yp-observation:timestamp":"2026-01-20T08:17:12.240Z","ietf-yp-observation:point-in-time":"current-accounting","ietf-distributed-notif:message-publisher-id":3221225997,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":"edit1","operation":"merge","target":"/ietf-interfaces:interfaces/interface=GigabitEthernet0%2F1%2F0","value":{"ietf-interfaces:interface":[{"name":"GigabitEthernet0/1/0","admin-status":"down","oper-status":"down"}]}}]}}}}}}`
 	if string(got) != want {
 		t.Errorf("got:  %s\nwant: %s", got, want)
 	}
