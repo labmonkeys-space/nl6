@@ -173,11 +173,11 @@ func main() {
 		netconfPort   = flag.Int("netconf-port", netconfDefaultPort, "TCP port for the per-device NETCONF over SSH listener (default: 830)")
 
 		// NETCONF over TLS client identity. [global]: one table for the whole fleet.
-		netconfTLSPort     = flag.Int("netconf-tls-port", netconfTLSDefaultPort, "[global] TCP port for the per-device NETCONF over TLS listener (default: 6513)")
-		netconfTLSClientCA = flag.String("netconf-tls-client-ca", "", "[global] PEM file with the CA that must have signed NETCONF TLS client certificates; requires -netconf-enable. Also settable via PUT /api/v1/netconf/tls")
-		netconfTLSDefUser  = flag.String("netconf-tls-default-username", "", "[global] NETCONF user for a client certificate missing from the identity table (empty = refuse it); requires -netconf-enable")
-		netconfTLSIdents   []string
-		netconfAuthKeys    = flag.String("netconf-authorized-keys", "", "[global] OpenSSH authorized_keys file whose keys log in as simadmin on every NETCONF SSH listener, next to the password (empty = password only)")
+		netconfTLSPort            = flag.Int("netconf-tls-port", netconfTLSDefaultPort, "[global] TCP port for the per-device NETCONF over TLS listener (default: 6513)")
+		netconfTLSClientCA        = flag.String("netconf-tls-client-ca", "", "[global] PEM file with the CA that must have signed NETCONF TLS client certificates; requires -netconf-enable. Also settable via PUT /api/v1/netconf/tls")
+		netconfTLSDefUser         = flag.String("netconf-tls-default-username", "", "[global] NETCONF user for a client certificate missing from the identity table (empty = refuse it); requires -netconf-enable")
+		netconfTLSIdents          []string
+		netconfAuthorizedKeysFile = flag.String("netconf-authorized-keys", "", "[global] OpenSSH authorized_keys file whose keys log in as simadmin on every NETCONF SSH listener, next to the password (empty = password only)")
 
 		// NETCONF call home. [seed]: applies only to the auto-start batch;
 		// REST-created devices opt in with a `netconf_callhome` block.
@@ -634,8 +634,8 @@ func main() {
 	}
 
 	var netconfAuthorizedKeys [][]byte
-	if *netconfAuthKeys != "" {
-		if netconfAuthorizedKeys, err = loadNetconfAuthorizedKeys(*netconfAuthKeys); err != nil {
+	if *netconfAuthorizedKeysFile != "" {
+		if netconfAuthorizedKeys, err = loadNetconfAuthorizedKeys(*netconfAuthorizedKeysFile); err != nil {
 			log.Fatalf("-netconf-authorized-keys: %v", err)
 		}
 	}

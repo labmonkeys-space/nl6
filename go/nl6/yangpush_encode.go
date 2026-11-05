@@ -198,7 +198,7 @@ func ypStatistics(b *bytes.Buffer, i ypIface) {
 		ypU64Str(b, v)
 	}
 	u32 := func(k string, v uint64) {
-		b.WriteString(`,"` + k + `":` + strconv.FormatUint(uint64(uint32(v)), 10))
+		b.WriteString(`,"` + k + `":` + strconv.FormatUint(v&0xffffffff, 10)) // Counter32 wraps
 	}
 	u64("in-octets", st.InOctets)
 	u64("in-unicast-pkts", st.InUnicastPkts)
