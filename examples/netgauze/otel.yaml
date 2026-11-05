@@ -1,0 +1,22 @@
+# OpenTelemetry Collector for `make test-interop-yangpush`. NetGauze pushes
+# OTLP over HTTP to 127.0.0.1:4318. The collector re-exposes the metrics in
+# Prometheus text format on 127.0.0.1:8889/metrics, where the test reads
+# NetGauze's own decode and validation counters.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+
+exporters:
+  prometheus:
+    endpoint: 127.0.0.1:8889
+
+service:
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]

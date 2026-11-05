@@ -95,14 +95,16 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 3. Starts nl6 and creates three `huawei_ne8000` devices with a `yang_push` block.
    The collector address is `10.254.0.1:10000`, the host end of the nl6sim veth.
 4. Waits 150 s, then asserts the following.
-   - NetGauze logged `YANG Library fetched from device` for each device and no `WARN` or `ERROR` line.
+   - NetGauze logged `YANG Library fetched from device` for each device.
+   - NetGauze's own counters, read through an OpenTelemetry Collector (OTLP in, Prometheus text out on 8889), show 0 for `validation_messages_decode_fail`, `validation_invalid`, `validation_malformed`, `caching_device_fetch_response_failed` and `udp_notif_decoder_malformed`, and more than 0 for `validation_messages_decode_success`, `validation_success` and `caching_device_fetch_response_succeeded`.
    - The Kafka JSON topic holds messages for subscriptions 8, 9 and 10 from each device.
-   - nl6's `segments_sent` is above `messages_sent` and `send_failures` is 0, so segmented messages reached NetGauze and decoded.
+   - A subscription 8 Kafka record has a payload above 1436 bytes, which only reassembly can deliver.
+     nl6's `segments_sent` above `messages_sent` and `send_failures` 0 (summed over collectors) are a secondary check.
    - An interface taken down through the REST API produces a subscription 10 message with `oper-status` `down` within 5 s.
 
 The collector config is NetGauze's `config_udpnotif_telemetry.yaml` with the Kafka JSON endpoint, `netconf.username: simadmin` and the generated key.
-The plan asked for the OTLP or Prometheus decode and validation counters.
-The stack has no OTLP receiver, so the gate reads NetGauze's log level instead.
+The counter names are from NetGauze v0.13 (`crates/yang-push`, `crates/udp-notif-service`).
+Redpanda has a healthcheck and NetGauze waits for it.
 
 ## Not yet proven
 
@@ -112,4 +114,5 @@ The stack has no OTLP receiver, so the gate reads NetGauze's log level instead.
   Record the PASS output here when the run happens.
 - `yanglint` validation of the payloads has not run anywhere.
 - The exact Kafka JSON field names the test reads (`collection-timestamp`, `export-address`, the `yang-push-subscription` `id`) come from reading NetGauze `crates/yang-push/src/model/telemetry.rs`, not from a live run.
+- The OpenTelemetry Collector contrib image (0.116.1) accepting NetGauze's OTLP over HTTP on 4318 and the Prometheus names the test expects are unverified.
 - The `rpk topic consume` flags in the test are unverified against Redpanda v25.3.1.

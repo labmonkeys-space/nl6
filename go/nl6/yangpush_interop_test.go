@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +96,36 @@ func yangPushInteropMessages(t *testing.T) []yangPushInteropMsg {
 	return msgs
 }
 
+// yangPushInteropMetrics reads the OpenTelemetry Collector's Prometheus text
+// and sums each series by name, dropping labels and the _total suffix. A name
+// is absent when NetGauze has not exported it.
+func yangPushInteropMetrics(t *testing.T) map[string]float64 {
+	t.Helper()
+	resp, err := http.Get("http://127.0.0.1:8889/metrics")
+	if err != nil {
+		t.Fatalf("GET OpenTelemetry Collector metrics: %v", err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	re := regexp.MustCompile(`^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+(\S+)`)
+	out := map[string]float64{}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := re.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		v, err := strconv.ParseFloat(m[2], 64)
+		if err != nil {
+			continue
+		}
+		out[strings.TrimSuffix(m[1], "_total")] += v
+	}
+	return out
+}
+
 func yangPushInteropPost(t *testing.T, url, body string) string {
 	t.Helper()
 	resp, err := http.Post(url, "application/json", strings.NewReader(body))
@@ -132,8 +164,7 @@ func TestYangPushInterop(t *testing.T) {
 	t.Logf("3 huawei_ne8000 devices created, letting the subscriptions run for %s", wait)
 	time.Sleep(wait)
 
-	// 1. NetGauze fetched the YANG library from every device and logged no
-	// warning or error. Validation failures surface as WARN or ERROR lines.
+	// 1. NetGauze fetched the YANG library from every device.
 	logs := yangPushInteropRun(t, "docker", "logs", yangPushInteropNetGauze)
 	for _, ip := range yangPushInteropDevices {
 		found := false
@@ -147,11 +178,30 @@ func TestYangPushInterop(t *testing.T) {
 			t.Errorf("NetGauze never logged `YANG Library fetched from device` for %s", ip)
 		}
 	}
-	for _, line := range strings.Split(logs, "\n") {
-		// The OTLP exporter has no endpoint in this stack and complains about it.
-		if (strings.Contains(line, " WARN ") || strings.Contains(line, " ERROR ")) &&
-			!strings.Contains(line, "opentelemetry") && !strings.Contains(line, "OpenTelemetry") {
-			t.Errorf("NetGauze logged a problem: %s", line)
+
+	// 1b. NetGauze's own counters, read through the OpenTelemetry Collector's
+	// Prometheus endpoint: no decode, validation or fetch failure, and some
+	// decoded and validated messages. NetGauze exports every 10 s, so the 150 s
+	// run is long enough for the series to exist.
+	metrics := yangPushInteropMetrics(t)
+	for _, name := range []string{
+		"netgauze_collector_yang_push_validation_messages_decode_fail",
+		"netgauze_collector_yang_push_validation_invalid",
+		"netgauze_collector_yang_push_validation_malformed",
+		"netgauze_collector_yang_push_caching_device_fetch_response_failed",
+		"netgauze_udp_notif_decoder_malformed",
+	} {
+		if v := metrics[name]; v != 0 {
+			t.Errorf("NetGauze counter %s = %v, want 0", name, v)
+		}
+	}
+	for _, name := range []string{
+		"netgauze_collector_yang_push_validation_messages_decode_success",
+		"netgauze_collector_yang_push_validation_success",
+		"netgauze_collector_yang_push_caching_device_fetch_response_succeeded",
+	} {
+		if v, ok := metrics[name]; !ok || v <= 0 {
+			t.Errorf("NetGauze counter %s = %v (present %v), want > 0", name, v, ok)
 		}
 	}
 
@@ -169,8 +219,19 @@ func TestYangPushInterop(t *testing.T) {
 		}
 	}
 
-	// 3. Segmentation reached NetGauze intact. nl6 counts more segments than
-	// messages, and the reassembled messages decoded above.
+	// 3. Segmentation reached NetGauze intact. A subscription 8 payload larger
+	// than one segment can only have arrived through reassembly. The payload
+	// JSON is smaller than the wire message, so the size is a lower bound.
+	big := 0
+	for _, m := range msgs {
+		if m.Message.Meta.Sub.ID == 8 && len(m.Message.Payload) > 1436 {
+			big++
+		}
+	}
+	if big == 0 {
+		t.Errorf("no subscription 8 Kafka record has a payload above 1436 bytes, so no reassembled message was seen")
+	}
+	// Secondary check from nl6's side, summed over every collector row.
 	resp, err := http.Get(api + "/api/v1/yangpush/status")
 	if err != nil {
 		t.Fatalf("GET yangpush/status: %v", err)
@@ -181,13 +242,18 @@ func TestYangPushInterop(t *testing.T) {
 	if err := json.Unmarshal(body, &st); err != nil || len(st.Collectors) == 0 {
 		t.Fatalf("yangpush/status: %v\n%s", err, body)
 	}
-	c := st.Collectors[0]
-	t.Logf("status: messages_sent=%d segments_sent=%d send_failures=%d", c.MessagesSent, c.SegmentsSent, c.SendFailures)
-	if c.SegmentsSent <= c.MessagesSent {
-		t.Errorf("segments_sent=%d is not above messages_sent=%d: nothing was segmented", c.SegmentsSent, c.MessagesSent)
+	var sent, segs, fails uint64
+	for _, c := range st.Collectors {
+		sent += c.MessagesSent
+		segs += c.SegmentsSent
+		fails += c.SendFailures
 	}
-	if c.SendFailures != 0 {
-		t.Errorf("send_failures=%d", c.SendFailures)
+	t.Logf("status: messages_sent=%d segments_sent=%d send_failures=%d, %d reassembled sub 8 records", sent, segs, fails, big)
+	if segs <= sent {
+		t.Errorf("segments_sent=%d is not above messages_sent=%d", segs, sent)
+	}
+	if fails != 0 {
+		t.Errorf("send_failures=%d", fails)
 	}
 
 	// 4. An interface going down arrives on subscription 10 within 5 s.

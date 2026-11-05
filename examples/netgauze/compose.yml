@@ -37,6 +37,19 @@ services:
       - --advertise-rpc-addr=127.0.0.1:33145
       - --pandaproxy-addr=127.0.0.1:18082
       - --schema-registry-addr=127.0.0.1:18081
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  otel:
+    image: otel/opentelemetry-collector-contrib:0.116.1@sha256:d0ebf65280da2e1b1491d1b93648281afd353d4b9ea19160090303cec9a233bd
+    container_name: nl6-yangpush-otel
+    network_mode: host
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel.yaml:/etc/otel/config.yaml:ro
 
   netgauze:
     build: .
@@ -44,7 +57,10 @@ services:
     container_name: nl6-yangpush-netgauze
     network_mode: host
     depends_on:
-      - redpanda
+      redpanda:
+        condition: service_healthy
+      otel:
+        condition: service_started
     volumes:
       # authorized_keys and id_ed25519 are written here by the make target.
       - ${NL6_YANGPUSH_KEYDIR:-./keys}/id_ed25519:/keys/id_ed25519:ro
