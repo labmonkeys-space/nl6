@@ -181,10 +181,9 @@ func TestYangPushPayloadsValidateWithYanglint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Validate against the library nl6 serves: the <yang-library> element of
-	// the get reply, with the modules and features it names.
+	// Validate against the library nl6 serves: the whole get reply. libyang
+	// rejects it without <modules-state>, whose module-set-id is mandatory.
 	lib := vrpYangLibraryXML()
-	lib = lib[:bytes.Index(lib, []byte("<modules-state"))]
 	libFile := filepath.Join(dir, "yang-library.xml")
 	if err := os.WriteFile(libFile, lib, 0o644); err != nil {
 		t.Fatal(err)
