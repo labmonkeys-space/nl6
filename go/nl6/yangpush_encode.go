@@ -74,9 +74,12 @@ var ypAdminStatus = map[string]string{
 }
 
 var ypOperStatus = map[string]string{
-	"if-oper-state-ready":            "up",
-	"if-oper-state-no-pass":          "down",
-	"if-oper-state-lower-layer-down": "lower-layer-down",
+	"if-oper-state-ready":   "up",
+	"if-oper-state-no-pass": "down",
+	// The IOS XE string folds IF-MIB down(2) and lowerLayerDown(7) together.
+	// The captured NE8000 reports admin up / oper down for a dead link and
+	// never lower-layer-down, so it maps to down.
+	"if-oper-state-lower-layer-down": "down",
 	"if-oper-state-test":             "testing",
 	"if-oper-state-unknown":          "unknown",
 	"if-oper-state-dormant":          "dormant",
@@ -222,10 +225,17 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 		}
 		b.WriteString(`{"name":`)
 		ypStr(&b, i.Name)
-		if s.XPath == ypXPathStatistics {
+		switch {
+		case s.XPath == ypXPathStatistics:
 			b.WriteByte(',')
 			ypStatistics(&b, i)
-		} else {
+		case s.XPath == ypXPathOnChange:
+			// Subscription 10's filter selects only the two status leaves.
+			b.WriteString(`,"admin-status":`)
+			ypStr(&b, i.Admin)
+			b.WriteString(`,"oper-status":`)
+			ypStr(&b, i.Oper)
+		default:
 			b.WriteString(`,"type":`)
 			ypStr(&b, i.Type)
 			b.WriteString(`,"enabled":` + strconv.FormatBool(i.Enabled))

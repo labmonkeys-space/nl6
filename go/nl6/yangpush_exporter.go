@@ -101,10 +101,10 @@ func NewYangPushExporter(dev *DeviceSimulator, cfg *DeviceYangPushConfig, clock 
 	return e, nil
 }
 
-// dialYangPush opens the connected UDP socket. Inside a netns the bind to the
-// device IP must succeed. Without one (tests, -no-namespace) it binds the
-// device IP when the host owns it and otherwise sends unbound, as the trap and
-// syslog exporters do through their shared socket.
+// dialYangPush opens the connected UDP socket bound to the device IP, inside
+// the device's netns when it has one (without: tests, -no-namespace). The
+// source address is what NetGauze dials for NETCONF, so a failed bind is an
+// error and there is no unbound fallback.
 func dialYangPush(dev *DeviceSimulator, collector string) (net.Conn, error) {
 	local := &net.UDPAddr{IP: dev.IP}
 	if dev.netNamespace != nil {
@@ -116,10 +116,7 @@ func dialYangPush(dev *DeviceSimulator, collector string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c, err := net.DialUDP("udp4", local, raddr); err == nil {
-		return c, nil
-	}
-	return net.DialUDP("udp4", nil, raddr)
+	return net.DialUDP("udp4", local, raddr)
 }
 
 // Subscriptions lists the subscriptions this device serves, for the NETCONF
@@ -211,14 +208,18 @@ func (e *YangPushExporter) run() {
 	}
 }
 
-// forward moves a state event into the exporter's queue without blocking and
-// counts it when the queue is full.
+// forward moves a state event into the exporter's queue without blocking.
+// A full queue drops its oldest event, counted, so the latest transition
+// always goes out. Only the run goroutine touches the queue.
 func (e *YangPushExporter) forward(evt StateChange) {
 	select {
 	case e.work <- evt:
+		return
 	default:
-		e.stateEventsDropped.Add(1)
 	}
+	<-e.work
+	e.stateEventsDropped.Add(1)
+	e.work <- evt
 }
 
 // drain forwards everything the listener holds, so InterfaceState finds room

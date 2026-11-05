@@ -340,8 +340,8 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 	// The change must agree with what a periodic subscription-9 read reports
 	// for the same interface now.
 	want := ypIfaceFrom(buildIosxeRow(dev, ic, target, time.Now()), 0, 0)
-	if want.Oper == "up" {
-		t.Fatalf("engine still reports %s up", want.Name)
+	if want.Oper != "down" {
+		t.Fatalf("engine reports %s oper %q, want down", want.Name, want.Oper)
 	}
 	if !strings.Contains(string(m.Raw), `"name":`+jsonString(want.Name)+`,"oper-status":`+jsonString(want.Oper)+`}`) {
 		t.Errorf("change does not carry %s oper-status %s: %s", want.Name, want.Oper, m.Raw)
@@ -408,6 +408,20 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 	}
 	if e.stateEventsDropped.Load() == 0 {
 		t.Fatal("state_events_dropped = 0 after 1000 flaps")
+	}
+	// Drop-oldest: the last transition (flap 999, link up) still goes out.
+	var last ypRecv
+	for {
+		m, ok := c.next(t, 500*time.Millisecond)
+		if !ok {
+			break
+		}
+		if m.Kind == "ietf-yang-push:push-change-update" {
+			last = m
+		}
+	}
+	if !strings.Contains(string(last.Raw), `"oper-status":"up"}`) {
+		t.Fatalf("last change is not the final link-up: %s", last.Raw)
 	}
 }
 
@@ -526,4 +540,17 @@ func ypFlap(n int) uint8 {
 		return OperDown
 	}
 	return OperUp
+}
+
+// TestYangPushBindFailureFailsOptIn: a device IP the host cannot bind fails
+// construction; there is no unbound fallback.
+func TestYangPushBindFailureFailsOptIn(t *testing.T) {
+	dev, _ := newYangPushTestDevice(t)
+	dev.IP = net.IPv4(192, 0, 2, 1) // TEST-NET-1, not a local address
+	c := newYPCollector(t)
+	e, err := NewYangPushExporter(dev, &DeviceYangPushConfig{Collector: c.addr(), SegmentSize: defaultYangPushSegmentSize}, time.Now)
+	if err == nil {
+		_ = e.Close()
+		t.Fatal("bind to a non-local device IP succeeded; want an error")
+	}
 }

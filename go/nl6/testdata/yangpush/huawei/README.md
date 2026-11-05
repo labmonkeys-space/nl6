@@ -13,7 +13,8 @@ Anonymisation:
 - `yang-library-content-id` holds the id of the module set nl6 serves.
 
 Subscription 10 (on-change) has no capture.
-`subscription-started-10` and `push-change-update-10` are nl6's own shape, written from the RFC 8641 JSON encoding.
+`subscription-started-10`, `push-update-10` and `push-change-update-10` are nl6's own shape, written from the RFC 8641 JSON encoding.
+`push-update-10` is the sync-on-start update: per interface only `name`, `admin-status` and `oper-status`, the leaves the subscription's filter selects.
 The observation fields in `push-change-update-10` follow the order of push-update.
 
 `segments-8.hex` holds the segment headers and lengths of `8-yp-subscripton.pcap`.

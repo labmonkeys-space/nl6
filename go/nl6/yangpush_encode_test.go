@@ -89,6 +89,10 @@ func TestEncodePushUpdateInterface(t *testing.T) {
 	ypCompare(t, ypUpdate(t, vrpSubs[1], ypTestIfaces(false)), "push-update-9.json")
 }
 
+func TestEncodePushUpdateOnChangeSync(t *testing.T) {
+	ypCompare(t, ypUpdate(t, vrpSubs[2], ypTestIfaces(false)), "push-update-10.json")
+}
+
 func ypChange(t *testing.T, ifc ypIface, changed StateLeafBits) []byte {
 	c := encodePushChangeUpdate(vrpSubs[2], ypMustTime(t, "2026-01-20T08:17:12.240Z"), ypTestPublisher, "edit1", ifc, changed)
 	return encodeEnvelope(ypMustTime(t, "2026-01-20T08:17:12.250Z"), ypTestHost, 1, c)
@@ -147,7 +151,8 @@ func TestYpIfaceFromStatus(t *testing.T) {
 		enabled                          bool
 	}{
 		{iosxeAdminStatus(AdminUp), iosxeOperStatus(AdminUp, OperUp), "up", "up", true},
-		{iosxeAdminStatus(AdminUp), iosxeOperStatus(AdminUp, OperDown), "up", "lower-layer-down", true},
+		{iosxeAdminStatus(AdminUp), iosxeOperStatus(AdminUp, OperDown), "up", "down", true},
+		{iosxeAdminStatus(AdminUp), iosxeOperStatus(AdminUp, OperLowerLayerDn), "up", "down", true},
 		{iosxeAdminStatus(AdminDown), iosxeOperStatus(AdminDown, OperDown), "down", "down", false},
 		{iosxeAdminStatus(AdminTesting), iosxeOperStatus(AdminTesting, OperUp), "testing", "testing", true},
 		{iosxeAdminStatus(AdminUp), iosxeOperStatus(AdminUp, OperDormant), "up", "dormant", true},

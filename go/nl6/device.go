@@ -1380,13 +1380,13 @@ func (d *DeviceSimulator) Stop() error {
 		d.gnmiDialoutExporter = nil
 	}
 
-	// YANG-Push: persist counters before Close (sync.Once-gated), as for
-	// dial-out. Close stops the run loop and removes the state listener.
+	// YANG-Push: Close first (stops the run loop, so no send is in flight),
+	// then persist counters (sync.Once-gated).
 	if d.yangPushExporter != nil {
+		_ = d.yangPushExporter.Close()
 		if wasRunning && manager != nil {
 			manager.persistYangPushCounters(d.yangPushExporter)
 		}
-		_ = d.yangPushExporter.Close()
 		d.yangPushExporter = nil
 	}
 
@@ -1497,10 +1497,10 @@ func (d *DeviceSimulator) stopListenersOnly() {
 		d.gnmiDialoutExporter = nil
 	}
 	if d.yangPushExporter != nil {
+		_ = d.yangPushExporter.Close()
 		if manager != nil {
 			manager.persistYangPushCounters(d.yangPushExporter)
 		}
-		_ = d.yangPushExporter.Close()
 		d.yangPushExporter = nil
 	}
 	if d.tunIface != nil {

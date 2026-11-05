@@ -70,8 +70,8 @@ func (sm *SimulatorManager) StopYangPush() {
 	for _, d := range devices {
 		d.mu.Lock()
 		if d.yangPushExporter != nil {
-			sm.persistYangPushCounters(d.yangPushExporter)
 			_ = d.yangPushExporter.Close()
+			sm.persistYangPushCounters(d.yangPushExporter)
 			d.yangPushExporter = nil
 		}
 		d.mu.Unlock()
@@ -99,8 +99,9 @@ func (sm *SimulatorManager) startDeviceYangPushExporter(d *DeviceSimulator) erro
 	return nil
 }
 
-// persistYangPushCounters folds a closing exporter's counters into its
-// collector's aggregate. Single-shot per exporter.
+// persistYangPushCounters folds a closed exporter's counters into its
+// collector's aggregate. Call it after Close so no in-flight send is lost.
+// Single-shot per exporter.
 func (sm *SimulatorManager) persistYangPushCounters(e *YangPushExporter) {
 	if e == nil || e.collector == "" {
 		return
