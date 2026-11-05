@@ -108,7 +108,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
    The collector address is `10.254.0.1:10000`, the host end of the nl6sim veth.
 4. Waits 150 s, then asserts the following.
    - NetGauze logged `YANG Library fetched from device` for each device.
-   - NetGauze's own counters, read through an OpenTelemetry Collector (OTLP gRPC in on 4317, Prometheus text out on 8889), show 0 for `validation_messages_decode_fail`, `validation_invalid`, `validation_malformed`, `caching_device_fetch_response_failed` and `udp_notif_decoder_malformed`, and more than 0 for `validation_messages_decode_success`, `validation_success` and `caching_device_fetch_response_succeeded`.
+   - NetGauze's own counters, read through an OpenTelemetry Collector (OTLP gRPC in on 4317, Prometheus text out on 8889), show 0 for `validation_messages_decode_fail`, `validation_invalid`, `validation_malformed`, `caching_device_fetch_response_failed`, `validation_cache_yang_ctx_invalid` and `udp_notif_decoder_malformed`, and more than 0 for `caching_device_fetch_response_succeeded`, `validation_cache_yang_ctx_created` and validated messages (`validation_messages_sent` minus `validation_skipped`).
    - The Kafka JSON topic holds messages for subscriptions 8, 9 and 10 from each device.
    - A subscription 8 Kafka record has a payload above 1436 bytes, which only reassembly can deliver.
      nl6's `segments_sent` above `messages_sent` and `send_failures` 0 (summed over collectors) are a secondary check.
@@ -118,15 +118,26 @@ The collector config is NetGauze's `config_udpnotif_telemetry.yaml` with the Kaf
 The counter names are from NetGauze v0.13 (`crates/yang-push`, `crates/udp-notif-service`).
 Redpanda has a healthcheck and NetGauze waits for it.
 
+## Interop record
+
+`make test-interop-yangpush` passed on 2026-11-05 on an Ubuntu 26.04 VM (Docker 2.40 compose, Go 1.27.3) against NetGauze v0.13.0, Redpanda v25.3.1 and yanglint 3.13.6.
+Result: `--- PASS: TestYangPushInterop (157.41s)`.
+NetGauze fetched the YANG library from all three devices, built a YANG context from it and validated 27 of 30 messages with no invalid one.
+It skipped validation for 3 messages, one per device: the subscription 10 sync push-update, which arrives before NetGauze has built the context.
+Kafka held subscriptions 8, 9 and 10 for every device, 9 reassembled subscription 8 records, and the on-change `down` within 5 s.
+nl6 reported `messages_sent=30 segments_sent=411 send_failures=0`.
+`TestYangPushPayloadsValidateWithYanglint` passes with yanglint 3.13.6.
+
+What the first runs taught, now built into the stack and test:
+
+- NetGauze does not create its `cache_location`. The image creates `/tmp/netgauze-udpnotif-cache`.
+- NetGauze listens on `[::]`, so Kafka `export-address` and the metric `network_peer_address` read `::ffff:10.42.0.x`. The test strips the prefix.
+- v0.13.0 declares `validation.success`, `validation.messages.decode.success` and `validation.malformed` but never increments them. The test proves validation with `caching.device.fetch.response.succeeded`, `validation.cache.yang_ctx.created` and `validation.messages.sent` minus `validation.skipped`, with `validation.invalid` and `validation.cache.yang_ctx.invalid` at 0.
+- NetGauze puts the subscription target, which can hold `}`, in a metric label. The test does not parse labels.
+- `rpk topic consume` on v25.3.1 has no `--timeout`. The test reads with `--offset :end`.
+- libyang needs `<modules-state>` in the library file, because `module-set-id` is mandatory.
+- The NE sends `module-version` keyed by `name`, which only `ietf-yang-push-revision@2025-08-29` defines.
+
 ## Not yet proven
 
-- The live NetGauze run (`make test-interop-yangpush`) is pending on a Linux host.
-  This work was built on macOS, where nl6 devices cannot run.
-  Only these were checked locally: the compose file parses, the test compiles and skips without its env var and `make -n` parses the target.
-  Record the PASS output here when the run happens.
-- `yanglint` validation of the payloads has not run anywhere.
-  The test now validates against the served YANG library (`-Y`), so a first run on a host with yanglint also checks that library.
-- Whether libyang accepts the served library file in `-Y` form is unverified.
-- The exact Kafka JSON field names the test reads (`collection-timestamp`, `export-address`, the `yang-push-subscription` `id`) come from reading NetGauze `crates/yang-push/src/model/telemetry.rs`, not from a live run.
-- The OpenTelemetry Collector contrib image (0.116.1) accepting NetGauze's OTLP over gRPC on 4317 (NetGauze's exporter is gRPC only) and the Prometheus names the test expects are unverified.
-- The `rpk topic consume` flags in the test are unverified against Redpanda v25.3.1.
+- The netns `DialContextInNamespace` path is not covered by the interop run.

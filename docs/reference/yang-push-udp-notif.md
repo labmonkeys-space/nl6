@@ -179,8 +179,6 @@ See the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/r
 ## Test it against NetGauze
 
 `make test-interop-yangpush` runs three devices against a real NetGauze v0.13.0 and Redpanda in Docker, on a Linux host.
-This gate has not passed yet.
-It has never run, because it needs a Linux host.
-Do not read it as proof until a PASS is recorded in the engineering record.
+It passed on 2026-11-05 against NetGauze v0.13.0: NetGauze validated the messages with libyang and found none invalid.
 It checks the YANG library fetch, the Kafka output for subscriptions 8, 9 and 10, segmentation, and an interface going down.
 The stack is in `examples/netgauze/`.
