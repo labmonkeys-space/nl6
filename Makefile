@@ -501,6 +501,54 @@ test-interop-ipfix: check-go check-docker
 	docker exec nl6-interop-ipfixcol2 ipfixcol2 -V 2>&1 | head -1; \
 	( cd $(GO_DIR) && NL6_IPFIX_INTEROP=1 go test ./nl6/ -run 'TestIPFIXInterop' -count=1 -v -timeout 10m ) || fail "interop test failed"
 
+## test-interop-yangpush: Receive nl6's YANG-Push over UDP-notif with a REAL NetGauze v0.13.0 collector (needs Linux, docker, sudo, ssh-keygen)
+##
+## The YANG-Push sibling of test-interop-ipfix: every other yangpush test
+## decodes nl6's bytes with nl6's own code, so a shared misreading of RFC 9187,
+## RFC 8641 or the VRP envelope passes all of them. This builds NetGauze from
+## its release .deb (examples/netgauze/), starts it and Redpanda on the HOST
+## network, generates a throwaway SSH key and starts nl6 with
+## -netconf-enable -netconf-authorized-keys so NetGauze can log in as simadmin
+## and fetch each device's YANG library. The test then creates three
+## huawei_ne8000 devices with a yang_push block, waits 150 s, and checks
+## NetGauze's log, the Kafka JSON output, the segment counters and a
+## subscription 10 message for an interface taken down. Everything is torn down
+## in a trap. FAILS rather than skips when docker is missing. Needs a Linux host:
+## nl6 devices need TUN and a network namespace, and the host-side veth address
+## 10.254.0.1 is the collector address the devices send to.
+YANGPUSH_DIR = $(CURDIR)/examples/netgauze
+test-interop-yangpush: check-go check-docker build
+	@command -v ssh-keygen >/dev/null 2>&1 || { echo "ssh-keygen not found"; exit 1; }
+	@[ "$$(uname -s)" = Linux ] || { echo "test-interop-yangpush needs a Linux host (nl6 devices need TUN and netns)"; exit 1; }
+	@set -e; \
+	keys=$$(mktemp -d); nl6log=$$(mktemp); nl6pid=; \
+	dump() { echo "=== docker logs nl6-yangpush-netgauze (tail)"; docker logs nl6-yangpush-netgauze 2>&1 | tail -60 || true; echo "=== nl6 log (tail)"; tail -40 "$$nl6log" || true; }; \
+	cleanup() { if [ -n "$$nl6pid" ]; then sudo kill "$$nl6pid" >/dev/null 2>&1 || true; fi; \
+	  NL6_YANGPUSH_KEYDIR="$$keys" docker compose -f $(YANGPUSH_DIR)/compose.yml down -v >/dev/null 2>&1 || true; \
+	  rm -f "$$keys"/id_ed25519 "$$keys"/id_ed25519.pub "$$keys"/authorized_keys "$$keys"/pid "$$nl6log"; rmdir "$$keys" 2>/dev/null || true; }; \
+	fail() { echo "$$1"; dump; exit 1; }; \
+	trap cleanup EXIT; \
+	ssh-keygen -q -t ed25519 -N '' -C nl6-yangpush-interop -f "$$keys/id_ed25519"; \
+	cp "$$keys/id_ed25519.pub" "$$keys/authorized_keys"; \
+	export NL6_YANGPUSH_KEYDIR="$$keys"; \
+	docker compose -f $(YANGPUSH_DIR)/compose.yml up -d --build || fail "could not start the NetGauze stack"; \
+	echo "waiting for Redpanda ..."; \
+	for i in $$(seq 1 90); do \
+	  docker exec nl6-yangpush-redpanda rpk cluster health >/dev/null 2>&1 && break; \
+	  [ $$i -eq 90 ] && fail "Redpanda did not become ready"; \
+	  sleep 1; \
+	done; \
+	docker exec nl6-yangpush-redpanda rpk topic create telemetry-message-json >/dev/null 2>&1 || true; \
+	( cd $(BUILD_DIR) || exit 1; sudo ./$(BINARY) -port 18080 -netconf-enable -netconf-authorized-keys "$$keys/authorized_keys" >"$$nl6log" 2>&1 & echo $$! >"$$keys/pid" ); \
+	nl6pid=$$(cat "$$keys/pid"); \
+	for i in $$(seq 1 60); do \
+	  curl -sf http://127.0.0.1:18080/api/v1/version >/dev/null 2>&1 && break; \
+	  [ $$i -eq 60 ] && fail "nl6 did not start"; \
+	  sleep 1; \
+	done; \
+	( cd $(GO_DIR) && NL6_YANGPUSH_INTEROP=1 NL6_YANGPUSH_API=http://127.0.0.1:18080 NL6_YANGPUSH_COLLECTOR=10.254.0.1:10000 \
+	  go test ./nl6/ -run 'TestYangPushInterop' -count=1 -v -timeout 15m ) || fail "interop test failed"
+
 ## test-interop-netconf: Diff nl6's NETCONF (IOS XE dialect) against a REAL IOS XE device (needs uv and a reference device)
 ##
 ## The NETCONF sibling of test-interop: every other NETCONF test reads nl6's

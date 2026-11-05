@@ -183,6 +183,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		Syslog:          req.Syslog,
 		GnmiDialout:     req.GnmiDialout,
 		NetconfCallHome: req.NetconfCallHome,
+		YangPush:        req.YangPush,
 		IfErrorScenario: ifErrScenario,
 		IfFlapScenario:  ifFlapScenario,
 		OpticalScenario: opticalScenario,
@@ -308,12 +309,28 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if seed.YangPush != nil {
+		seed.YangPush.ApplyDefaults()
+		if err := seed.YangPush.Validate(); err != nil {
+			rejectWith(err.Error(), http.StatusBadRequest)
+			return
+		}
+		if rf, ok := yangPushIncapableRequest(req, manager.defaultResourceKey); ok {
+			rejectWith(fmt.Sprintf("yang_push: device type %q cannot stream YANG-Push (only huawei_ne8000 can); remove the \"yang_push\" block", rf), http.StatusBadRequest)
+			return
+		}
+		if !manager.netconfSubsystemActive.Load() {
+			yangPushNetconfOffWarned.Do(func() {
+				log.Printf("yang_push: the NETCONF subsystem is off (-netconf-enable); collectors cannot fetch the YANG library or modules over NETCONF, so schema validation will fail")
+			})
+		}
+	}
 	// Collapse the seed to nil when no block was supplied so CreateDevices
 	// receives the exact "no export" signal rather than an empty shell.
 	// Scenario fields set to anything other than their clean defaults are
 	// also signals to keep the seed — they need to reach applyExportSeed
 	// for the per-device cycler and flap scheduler to pick them up.
-	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.GnmiDialout == nil && seed.NetconfCallHome == nil &&
+	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.GnmiDialout == nil && seed.NetconfCallHome == nil && seed.YangPush == nil &&
 		seed.IfErrorScenario == IfErrorClean && seed.IfFlapScenario == IfFlapClean &&
 		seed.OpticalScenario == OpticalClean {
 		seed = nil
@@ -733,6 +750,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
 	api.HandleFunc("/gnmi/dialout/status", gnmiDialoutStatusHandler).Methods("GET")
+	api.HandleFunc("/yangpush/status", yangPushStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/status", netconfStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/callhome/status", netconfCallHomeStatusHandler).Methods("GET")
 	api.HandleFunc("/netconf/tls", netconfTLSGetHandler).Methods("GET")

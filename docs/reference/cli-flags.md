@@ -243,8 +243,9 @@ See [NETCONF reference](netconf.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF subsystem: `cisco_catalyst_9500` over SSH on `-netconf-port`, `juniper_mx10004` over SSH on `-netconf-port` and over TLS on `-netconf-tls-port`. |
+| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF subsystem: `cisco_catalyst_9500` and `huawei_ne8000` over SSH on `-netconf-port`, `juniper_mx10004` over SSH on `-netconf-port` and over TLS on `-netconf-tls-port`. |
 | `-netconf-port` | int | `830` | **global** | TCP port of the per-device NETCONF over SSH listener. |
+| `-netconf-authorized-keys` | path | empty | **global** | OpenSSH `authorized_keys` file. Its keys log in as `simadmin` on every NETCONF SSH listener, next to the password. Read once at startup; an unreadable file or a line that is not a key stops the simulator. Port 22 keeps password login only. |
 | `-netconf-tls-port` | int | `6513` | **global** | TCP port of the per-device NETCONF over TLS listener. |
 | `-netconf-tls-client-ca` | path | empty | **global** | PEM file with the CA that must have signed NETCONF TLS client certificates. Requires `-netconf-enable`. With no CA the TLS listeners still bind, but every handshake is refused. Also settable at runtime with `PUT /api/v1/netconf/tls`. |
 | `-netconf-tls-client-identity` | `fingerprint=username` | empty | **global** | One entry of the client identity table: the SHA-256 fingerprint of a client certificate, with or without the `04:` prefix, mapped to a NETCONF user. Repeat the flag for more entries. Requires `-netconf-enable`. |
@@ -270,6 +271,7 @@ See [gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes, TLS, a
 | `-gnmi-dialout-tls-insecure` | bool | `false` | **seed** | Skip collector certificate verification (dev only). |
 | `-gnmi-dialout-tls-ca` | string | empty | **seed** | PEM CA bundle to verify the collector against (empty = system roots). |
 | `-gnmi-dialout-mtls` | bool | `false` | **seed** | Present the shared TLS certificate as a client cert (mutual TLS). |
+| `-yang-push-collector` | `host:port` | empty | **seed** | YANG-Push over UDP-notif collector that auto-started `huawei_ne8000` devices stream to. Empty means off. Applies only with `-auto-start-ip`. |
 
 ## UDP syslog export flags
 

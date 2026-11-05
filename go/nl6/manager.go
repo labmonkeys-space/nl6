@@ -319,6 +319,7 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		info.Syslog = echoSyslogConfig(device.syslogConfig)
 		info.GnmiDialout = device.gnmiDialoutConfig
 		info.NetconfCallHome = device.netconfCallHomeConfig
+		info.YangPush = device.yangPushConfig
 		info.EffectiveIntervals = buildEffectiveIntervals(device, effSnap)
 		// Emit scenario on GET only when non-default, so clean-mode
 		// devices (the common case) don't clutter the response. Matches
@@ -702,6 +703,9 @@ func (sm *SimulatorManager) Shutdown() error {
 	// Stop the gNMI dial-out subsystem (per-device push exporters: cancel
 	// each run loop and close its ClientConn). Safe to call when never started.
 	sm.StopGnmiDialout()
+
+	// Stop the YANG-Push exporters. Safe to call when never started.
+	sm.StopYangPush()
 
 	// Stop the shared optical SD/SF alarm evaluator alongside its peer
 	// subsystems. Without this it is the one goroutine Shutdown leaves

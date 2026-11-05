@@ -797,6 +797,20 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 				continue
 			}
 
+			// YANG-Push over UDP-notif, same failure handling as dial-out. It
+			// starts after Start: the first messages make the collector SSH to
+			// the NETCONF listener Start binds, and a device whose Start failed
+			// must not stream. The sysName cache is set above, so the envelope
+			// hostname is known. Mirror in createSingleDevice.
+			if device.yangPushConfig != nil {
+				if err := sm.startDeviceYangPushExporter(device); err != nil {
+					log.Printf("yang_push: skipping device %s: %v", device.IP, err)
+					device.mu.Lock()
+					device.yangPushConfig = nil
+					device.mu.Unlock()
+				}
+			}
+
 			// NETCONF call home dials into the session registry the NETCONF
 			// listener created in Start, so it attaches after Start, unlike
 			// the exporters above. It attaches before the device is
@@ -1147,6 +1161,17 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 		return false
 	}
 
+	// YANG-Push over UDP-notif (mirrors the sequential path): after Start, so
+	// a device whose Start failed never streams and the NETCONF listener is up.
+	if device.yangPushConfig != nil {
+		if err := sm.startDeviceYangPushExporter(device); err != nil {
+			log.Printf("yang_push: skipping device %s: %v", device.IP, err)
+			device.mu.Lock()
+			device.yangPushConfig = nil
+			device.mu.Unlock()
+		}
+	}
+
 	// NETCONF call home attaches after Start and before the device is
 	// published (mirrors the sequential path).
 	sm.attachNetconfCallHome(device)
@@ -1258,6 +1283,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&
 		d.gnmiDialoutExporter == nil &&
+		d.yangPushExporter == nil &&
 		d.tunIface == nil {
 		return nil
 	}
@@ -1354,6 +1380,17 @@ func (d *DeviceSimulator) Stop() error {
 		}
 		_ = d.gnmiDialoutExporter.Close()
 		d.gnmiDialoutExporter = nil
+	}
+
+	// YANG-Push: Close first (stops the run loop, so no send is in flight),
+	// then persist counters (sync.Once-gated).
+	if d.yangPushExporter != nil {
+		_ = d.yangPushExporter.Close()
+		if wasRunning && manager != nil {
+			manager.persistYangPushCounters(d.yangPushExporter)
+		}
+		d.yangPushExporter = nil
+		d.yangPushExporterPtr.Store(nil)
 	}
 
 	// Clear the Tier C state-change hook before the engine outlives the
@@ -1461,6 +1498,14 @@ func (d *DeviceSimulator) stopListenersOnly() {
 		}
 		_ = d.gnmiDialoutExporter.Close()
 		d.gnmiDialoutExporter = nil
+	}
+	if d.yangPushExporter != nil {
+		_ = d.yangPushExporter.Close()
+		if manager != nil {
+			manager.persistYangPushCounters(d.yangPushExporter)
+		}
+		d.yangPushExporter = nil
+		d.yangPushExporterPtr.Store(nil)
 	}
 	if d.tunIface != nil {
 		d.tunIface.destroy() // Close FD only, no ip link delete

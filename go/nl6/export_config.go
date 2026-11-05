@@ -8,9 +8,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -249,6 +252,91 @@ type DeviceGnmiDialoutConfig struct {
 	Paths          []string          `json:"paths,omitempty"`
 	SampleInterval jsonDuration      `json:"sample_interval,omitempty"`
 	TLS            *DialoutTLSConfig `json:"tls,omitempty"`
+}
+
+// DeviceYangPushConfig is the per-device YANG-Push over UDP-notif opt-in
+// (RFC 9187 transport, RFC 8641 subscriptions). nil = the device does not
+// stream. Only huawei_ne8000 can (SupportsYangPush). Collector is the UDP
+// target (host:port). SegmentSize is the maximum UDP-notif segment size in
+// bytes (default 1436, the captured max-segment-size).
+type DeviceYangPushConfig struct {
+	Collector   string `json:"collector"`
+	SegmentSize int    `json:"segment_size,omitempty"`
+}
+
+const (
+	defaultYangPushSegmentSize = 1436
+	minYangPushSegmentSize     = 512
+	maxYangPushSegmentSize     = 65507
+)
+
+// yangPushDeviceTypes is the CAPABLE set: only the NE8000 profile (modelled
+// on VRP R025C00) streams YANG-Push. Keyed like flowIncapableTypes.
+var yangPushDeviceTypes = map[string]struct{}{"huawei_ne8000.json": {}}
+
+// yangPushUnsupportedLogged remembers the profiles already logged as
+// skipped, so a large mixed batch logs each profile once.
+var yangPushUnsupportedLogged sync.Map
+
+// SupportsYangPush reports whether a device type can stream YANG-Push.
+func SupportsYangPush(deviceType string) bool {
+	_, ok := yangPushDeviceTypes[resourceFileKey(deviceType)]
+	return ok
+}
+
+// yangPushIncapableRequest reports whether a creation request with a
+// yang_push block resolves only to types that cannot stream, and returns
+// one to name. A request with neither resource_file nor round_robin resolves
+// to defaultKey, the simulator's default profile. A mixed round-robin batch is
+// accepted; its incapable devices are skipped with a log line (see
+// applyExportSeed).
+func yangPushIncapableRequest(req CreateDevicesRequest, defaultKey string) (string, bool) {
+	if req.ResourceFile != "" {
+		return req.ResourceFile, !SupportsYangPush(req.ResourceFile)
+	}
+	if !req.RoundRobin {
+		if defaultKey == "" {
+			return "the default profile", true
+		}
+		return defaultKey, !SupportsYangPush(defaultKey)
+	}
+	types := roundRobinTypesForCategory(req.Category)
+	if len(types) == 0 || slices.ContainsFunc(types, SupportsYangPush) {
+		return "", false
+	}
+	return types[0], true
+}
+
+// ApplyDefaults fills SegmentSize. Safe on nil.
+func (c *DeviceYangPushConfig) ApplyDefaults() {
+	if c == nil {
+		return
+	}
+	if c.SegmentSize == 0 {
+		c.SegmentSize = defaultYangPushSegmentSize
+	}
+}
+
+// Validate checks the collector and the segment size bounds. Safe on nil.
+func (c *DeviceYangPushConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if err := validateCollector("yang_push", c.Collector); err != nil {
+		return err
+	}
+	// Devices stream from IPv4 addresses, so an IPv6 literal would fail every
+	// bind after the request was accepted.
+	if host, _, err := net.SplitHostPort(c.Collector); err == nil {
+		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+			return fmt.Errorf("yang_push: collector %q is IPv6; devices stream over IPv4 only", c.Collector)
+		}
+	}
+	if c.SegmentSize < minYangPushSegmentSize || c.SegmentSize > maxYangPushSegmentSize {
+		return fmt.Errorf("yang_push: segment_size must be %d..%d, got %d",
+			minYangPushSegmentSize, maxYangPushSegmentSize, c.SegmentSize)
+	}
+	return nil
 }
 
 // Defaults applied by ApplyDefaults. Sourced from `simulator.go` flag
@@ -734,6 +822,14 @@ func applyExportSeed(device *DeviceSimulator, seed *ExportSeed) {
 	if seed.NetconfCallHome != nil {
 		c := *seed.NetconfCallHome
 		device.netconfCallHomeConfig = &c
+	}
+	if seed.YangPush != nil {
+		if SupportsYangPush(device.resourceFile) {
+			y := *seed.YangPush
+			device.yangPushConfig = &y
+		} else if _, seen := yangPushUnsupportedLogged.LoadOrStore(resourceDirName(device.resourceFile), true); !seen {
+			log.Printf("yang_push: profile %s cannot stream YANG-Push; its devices are skipped", resourceDirName(device.resourceFile))
+		}
 	}
 	// IfErrorScenario has value semantics; copy directly. Empty string
 	// on the seed maps to "" on the device, which InitIfCounters later

@@ -24,6 +24,9 @@ type NetconfSubsystemConfig struct {
 	TLSPort int
 	// TLSIdentity is the initial client identity table, nil for an empty one.
 	TLSIdentity *NetconfTLSIdentity
+	// AuthorizedKeys are public keys in marshalled wire form that log in as
+	// USERNAME on every NETCONF SSH listener, next to the password.
+	AuthorizedKeys [][]byte
 }
 
 // NetconfStatus is the body of GET /api/v1/netconf/status.
@@ -82,8 +85,9 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	sm.netconfTLSIdentity.Store(id)
 	sm.netconfTLSPort = tlsPort
 	sm.netconfPort = port
+	sm.netconfAuthorizedKeys = cfg.AuthorizedKeys
 	sm.netconfSubsystemActive.Store(true)
-	log.Printf("NETCONF subsystem enabled on SSH port %d and TLS port %d (cisco_catalyst_9500 over SSH, juniper_mx10004 over SSH and TLS)", port, tlsPort)
+	log.Printf("NETCONF subsystem enabled on SSH port %d and TLS port %d (cisco_catalyst_9500 and huawei_ne8000 over SSH, juniper_mx10004 over SSH and TLS), %d authorized public keys", port, tlsPort, len(cfg.AuthorizedKeys))
 	return nil
 }
 

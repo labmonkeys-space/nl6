@@ -132,6 +132,14 @@ type DeviceSimulator struct {
 	// the dial-in gNMI listener, so the fleet can run mixed.
 	gnmiDialoutConfig   *DeviceGnmiDialoutConfig
 	gnmiDialoutExporter *GnmiDialoutExporter // nil if dial-out disabled
+	// yangPushConfig is the per-device YANG-Push over UDP-notif opt-in (nil =
+	// no streaming). Only huawei_ne8000 ever holds one.
+	yangPushConfig   *DeviceYangPushConfig
+	yangPushExporter *YangPushExporter // nil unless streaming; guarded by mu
+	// yangPushExporterPtr mirrors yangPushExporter for readers that must not
+	// take mu: a NETCONF session, because stopNetconfServer holds mu while it
+	// waits for the sessions. Stored wherever yangPushExporter is assigned.
+	yangPushExporterPtr atomic.Pointer[YangPushExporter]
 	// netconfCallHomeConfig is the per-device NETCONF call-home
 	// configuration (nil = no call home), set at creation from the CLI seed
 	// or the `netconf_callhome` block in POST /api/v1/devices.
@@ -742,6 +750,10 @@ type SimulatorManager struct {
 	// StartNetconfSubsystem. The subsystem is off by default.
 	netconfPort            int
 	netconfSubsystemActive atomic.Bool
+	// netconfAuthorizedKeys holds the -netconf-authorized-keys keys in
+	// marshalled wire form, accepted for USERNAME on every NETCONF SSH
+	// listener. Set once by StartNetconfSubsystem, read-only after.
+	netconfAuthorizedKeys [][]byte
 
 	// NETCONF over TLS. netconfTLSIdentity is the fleet-wide client identity
 	// table, never nil after StartNetconfSubsystem and replaced whole by PUT
@@ -761,6 +773,10 @@ type SimulatorManager struct {
 	// deletion, mirroring the flow/trap/syslog status pattern.
 	gnmiDialoutSubsystemActive atomic.Bool
 	gnmiDialoutAggregates      sync.Map // key: gnmiDialoutKey, value: *gnmiDialoutAggregate
+	// YANG-Push subsystem state: an active flag and per-collector counters
+	// that survive device deletion.
+	yangPushSubsystemActive atomic.Bool
+	yangPushAggregates      sync.Map // key: collector string, value: *yangPushAggregate
 	// netconfCallHomeAggregates keeps per-client call-home counters across
 	// device deletion. Key: client address, value: *netconfCallHomeAggregate.
 	netconfCallHomeAggregates sync.Map
@@ -858,6 +874,8 @@ type CreateDevicesRequest struct {
 	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
 	// NetconfCallHome opts the created devices into NETCONF call home.
 	NetconfCallHome *DeviceNetconfCallHomeConfig `json:"netconf_callhome,omitempty"`
+	// YangPush opts huawei_ne8000 devices into YANG-Push over UDP-notif.
+	YangPush *DeviceYangPushConfig `json:"yang_push,omitempty"`
 
 	// IfErrorScenario selects the per-device error / discard counter
 	// scenario: "clean" | "typical" | "degraded" | "failing". Empty
@@ -970,6 +988,7 @@ type DeviceInfo struct {
 	Syslog          *DeviceSyslogConfig          `json:"syslog,omitempty"`
 	GnmiDialout     *DeviceGnmiDialoutConfig     `json:"gnmi_dialout,omitempty"`
 	NetconfCallHome *DeviceNetconfCallHomeConfig `json:"netconf_callhome,omitempty"`
+	YangPush        *DeviceYangPushConfig        `json:"yang_push,omitempty"`
 	// EffectiveIntervals reports the scheduler cadences actually in force
 	// (-flow-tick-interval, -trap-interval, -syslog-interval) for the
 	// subsystems this device participates in. Present only when the device
@@ -1110,6 +1129,7 @@ type ExportSeed struct {
 	Syslog          *DeviceSyslogConfig
 	GnmiDialout     *DeviceGnmiDialoutConfig
 	NetconfCallHome *DeviceNetconfCallHomeConfig
+	YangPush        *DeviceYangPushConfig
 	// IfErrorScenario is the per-device counter scenario for every
 	// device created from this seed. Empty string = "clean" default.
 	// Despite its home in ExportSeed, this is not an export concept —

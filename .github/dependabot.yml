@@ -74,6 +74,22 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # NetGauze collector image for the YANG-Push interop gate: the Dockerfile's
+  # digest-pinned debian base. The collector itself is the pinned release .deb,
+  # bumped by hand.
+  - package-ecosystem: docker
+    directory: /examples/netgauze
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Redpanda image (Kafka and schema registry) for the same gate.
+  - package-ecosystem: docker-compose
+    directory: /examples/netgauze
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   # Docs site (Docusaurus) npm dependencies, manifest at the repo root.
   - package-ecosystem: npm
     directory: /

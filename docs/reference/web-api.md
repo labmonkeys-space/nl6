@@ -53,6 +53,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/netconf/tls` | PUT | Replace the whole NETCONF over TLS client trust. An omitted field clears it. `404` when the subsystem is off, `400` for a bad body. |
 | `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. `404` when no shared TLS certificate exists. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
+| `/api/v1/yangpush/status` | GET | YANG-Push over UDP-notif status: per-collector devices, messages and segments sent, send failures, state events dropped, fidelity-suppressed messages. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/api/v1/prometheus/sd` | GET | Prometheus HTTP service discovery: one target group per running device, for snmp_exporter. See [Prometheus service discovery](prometheus-sd.md). |
 | `/api/v1/fidelity` | GET | Fidelity mode: the value **in force**, the startup flag it began from, and any pending auto-revert. |
@@ -250,7 +251,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 | `if_flap_scenario` | string | `clean` | Per-device link-flap scenario: `clean`, `rare`, `typical` or `aggressive`. Not inherited from `-if-flap-scenario`. An unknown value is rejected with 400. |
 | `optical_scenario` | string | `clean` | Optical health band. See [Optical health band](#optical-health-band). |
 | `write_community` | string | empty | SNMPv1/v2c write community. See [Write admission](#write-admission). |
-| `flow`, `traps`, `syslog`, `gnmi_dialout` | object | absent | Per-device export blocks. See [Per-device export blocks](#per-device-export-blocks). |
+| `flow`, `traps`, `syslog`, `gnmi_dialout`, `yang_push` | object | absent | Per-device export blocks. See [Per-device export blocks](#per-device-export-blocks). |
 | `netconf_callhome` | object | absent | NETCONF call home for the created `juniper_mx10004` devices: `client` (`host:port`, required) and `device_id` (optional, default sysName). `400` when `-netconf-enable` is off, when `client` is IPv6, or when no requested profile has call home. See [NETCONF reference](netconf.md#call-home). |
 
 An unknown field anywhere in the body is rejected with 400.
@@ -462,7 +463,7 @@ A request naming a good one proceeds, and without root gets `500` `root privileg
 
 ### Per-device export blocks
 
-`POST /api/v1/devices` accepts four optional top-level blocks (`flow`, `traps`, `syslog`, `gnmi_dialout`) that attach export configuration to every device created by the request.
+`POST /api/v1/devices` accepts five optional top-level blocks (`flow`, `traps`, `syslog`, `gnmi_dialout`, `yang_push`) that attach export configuration to every device created by the request.
 Any block can be omitted; omitted blocks mean "this batch does not participate in that export subsystem."
 
 The export subsystems run whether or not any CLI seed was supplied, so REST-created devices can opt in to any combination.
@@ -584,6 +585,20 @@ POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
 
 Durations accept Go duration strings (`"10s"`, `"5m"`, `"1m30s"`); integer seconds are rejected.
 
+**`yang_push` block** (see the [YANG-Push reference](yang-push-udp-notif.md) for full semantics):
+
+```json
+"yang_push": {
+  "collector":    "10.254.0.1:10000",   // required; host:port of the UDP-notif collector
+  "segment_size": 1436                  // optional; 512..65507; default 1436 (the captured max-segment-size)
+}
+```
+
+Only `huawei_ne8000` streams.
+A request whose devices cannot stream gets `400`.
+A mixed round-robin batch is accepted and the other types are skipped.
+NETCONF must be on (`-netconf-enable`) for a collector to fetch the YANG library.
+
 **Combined example with flow + traps + syslog on the same batch:**
 
 ```bash
@@ -632,7 +647,7 @@ Two paths produce that:
 
 POSTs that name a `resource_file` or use `round_robin: true` always carry it.
 
-Each record also echoes the per-device export blocks that were configured at creation (`flow`, `traps`, `syslog`, `gnmi_dialout`), so a GET response can be replayed against `POST /api/v1/devices` without reconstructing the export config.
+Each record also echoes the per-device export blocks that were configured at creation (`flow`, `traps`, `syslog`, `gnmi_dialout`, `yang_push`), so a GET response can be replayed against `POST /api/v1/devices` without reconstructing the export config.
 Blocks are omitted (`omitempty`) for devices that don't participate in that subsystem.
 
 Each record also carries the device's geolocation: `location` (the world-city string also served as SNMP `sysLocation.0`), and `latitude` / `longitude` (decimal degrees, drawn from the same world-cities dataset).

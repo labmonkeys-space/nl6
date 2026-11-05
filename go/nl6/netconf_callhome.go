@@ -277,7 +277,7 @@ func (sm *SimulatorManager) startDeviceNetconfCallHome(d *DeviceSimulator) error
 		preamble = dia.CallHomePreamble(id)
 	}
 	srv := d.newNetconfServer(nil, sm, dia)
-	srv.cfg = newDeviceSSHConfig(sm.sharedSSHSigner)
+	srv.cfg = newNetconfSSHConfig(sm.sharedSSHSigner, sm.netconfAuthorizedKeys)
 	srv.keepAlive = netconfCallHomeKeepAlive
 	srv.keepAliveMisses = netconfCallHomeKeepAliveMisses
 	// A client that accepts and never speaks SSH is as dead as one that
