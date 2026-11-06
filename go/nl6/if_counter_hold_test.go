@@ -122,7 +122,16 @@ func TestCounterHold_HoldsEveryColumnWhileDown(t *testing.T) {
 		}
 		// Interface 2 stayed up and keeps growing on the octet columns.
 		if strings.HasSuffix(col, ".6.") || strings.HasSuffix(col, ".10.") {
-			if a, b := ctr(t, ic.GetDynamicAt(col+"2", 100)), ctr(t, ic.GetDynamicAt(col+"2", 110)); b <= a {
+			a, b := ctr(t, ic.GetDynamicAt(col+"2", 100)), ctr(t, ic.GetDynamicAt(col+"2", 110))
+			grew := b > a
+			if strings.HasPrefix(col, ifTablePrefix) {
+				// ifInOctets is a Counter32, which wraps in under a minute at
+				// 1 Gbps, so it grew if the delta modulo 2^32 is non-zero.
+				// Comparing raw values passed only because the old seeded
+				// draw happened not to wrap inside these 10 s (nl6#989).
+				grew = uint32(b)-uint32(a) != 0
+			}
+			if !grew {
 				t.Errorf("%s2 did not grow while up: %d -> %d", col, a, b)
 			}
 		}

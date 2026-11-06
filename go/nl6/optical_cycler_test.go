@@ -25,6 +25,40 @@ func readSourceFile(t *testing.T, name string) string {
 	return string(b)
 }
 
+// createPathsSource returns device.go and the body of initDeviceCyclers, after
+// checking that both creation paths call it. The paths share that helper since
+// nl6#989, so a parity check requires each call once inside it and nowhere
+// else: a second call is a path that bypasses the helper.
+func createPathsSource(t *testing.T) (src, body string) {
+	t.Helper()
+	src = readSourceFile(t, "device.go")
+	if n := strings.Count(src, "initDeviceCyclers(device)"); n != 2 {
+		t.Fatalf("device.go calls initDeviceCyclers %d time(s), want 2 — the sequential "+
+			"(CreateDevicesWithOptions) and parallel (createSingleDevice) paths", n)
+	}
+	start := strings.Index(src, "\nfunc initDeviceCyclers(")
+	if start < 0 {
+		t.Fatal("device.go defines no initDeviceCyclers")
+	}
+	end := strings.Index(src[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("cannot find the end of initDeviceCyclers")
+	}
+	return src, src[start : start+end]
+}
+
+// requireOnceInCreatePaths fails unless call appears exactly once in
+// device.go, inside initDeviceCyclers.
+func requireOnceInCreatePaths(t *testing.T, src, body, call, why string) {
+	t.Helper()
+	if n := strings.Count(body, call); n != 1 {
+		t.Errorf("initDeviceCyclers calls %s %d time(s), want 1: %s", call, n, why)
+	}
+	if n := strings.Count(src, call); n != 1 {
+		t.Errorf("device.go calls %s %d time(s), want 1, inside initDeviceCyclers: %s", call, n, why)
+	}
+}
+
 // twoChannelInventory is the shipped Waveserver shape: two WL5e modems.
 func twoChannelInventory() *DeviceResources {
 	return &DeviceResources{Optical: []OpticalChannel{
@@ -540,19 +574,16 @@ func TestOpticalChannelsIndependent(t *testing.T) {
 
 // TestBothCreatePathsInitOpticalCycler guards the divergence that has
 // bitten this repo before: the sequential and parallel device-creation
-// paths must both initialise the engine. Asserted by source inspection
-// because exercising the real paths needs root and a network namespace.
+// paths must both initialise the engine. They do it through the one helper
+// initDeviceCyclers. Asserted by source inspection because exercising the
+// real paths needs root and a network namespace.
 func TestBothCreatePathsInitOpticalCycler(t *testing.T) {
-	src := readSourceFile(t, "device.go")
-	if n := strings.Count(src, "InitOpticalCycler("); n != 2 {
-		t.Errorf("device.go calls InitOpticalCycler %d time(s), want 2 — the sequential "+
-			"(CreateDevicesWithOptions) and parallel (createSingleDevice) paths must both "+
-			"initialise the engine, or optical devices silently vary by batch size", n)
-	}
+	src, body := createPathsSource(t)
+	requireOnceInCreatePaths(t, src, body, "InitOpticalCycler(",
+		"both paths must initialise the engine, or optical devices silently vary by batch size")
 	// The interface cycler is the reference: both paths init it too.
-	if n := strings.Count(src, "InitIfCountersWithScenario("); n != 2 {
-		t.Errorf("InitIfCountersWithScenario appears %d time(s); this test's premise assumed 2", n)
-	}
+	requireOnceInCreatePaths(t, src, body, "InitIfCountersWithScenario(",
+		"both paths must initialise the interface cycler")
 }
 
 // TestSinBelowMeasureDifferenceIsNonNegative mirrors the way

@@ -83,10 +83,11 @@ const shippedServedCounterDigestUpOnly = "0aa03e2ce2b70fe116319e67f98aeaa67e4142
 const shippedServedCounterDigestStandaloneUp = "cf0125dff1e55a46bcbe0b4fe5c648e39186f129b3a190e8dbbcaf7b25da06cd"
 
 // normaliseDialsForDigest replaces every per-interface random draw with a
-// deterministic function of the slot. InitIfCountersWithScenario draws the
-// phases, bases, packet sizes and mix ratios from the seeded RNG while
-// iterating a map, so the draw order and therefore every dial differ from
-// run to run; a digest over the raw values would never repeat. With the
+// deterministic function of the slot. InitIfCountersWithScenario used to draw
+// the phases, bases, packet sizes and mix ratios while iterating a map, so
+// every dial differed from run to run and a digest over the raw values never
+// repeated. The draws are reproducible since nl6#989, but a raw-dial digest
+// would also move with any change to the generator or the seed. With the
 // dials fixed, the digest pins the serve arithmetic, which is what a change
 // to the dispatcher moves, and nothing else.
 func normaliseDialsForDigest(ic *IfCounterCycler) {

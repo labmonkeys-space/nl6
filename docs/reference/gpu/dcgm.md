@@ -64,7 +64,7 @@ With the three Host Resources OIDs under [Standard MIBs](#standard-mibs), each d
 
 ### Value behaviour
 
-Each GPU holds a pre-generated cycle of 100 points per metric, seeded per device and per GPU.
+Each GPU holds a pre-generated cycle of 100 points per metric, seeded from a hash of the device IP and the GPU number.
 The point served depends on the time since the device was created: one point per minute, so a cycle lasts 100 minutes.
 Reading a column does not move it, so two collectors polling the same OID read the same value, and a walk that reads a dynamic OID without returning it changes nothing.
 Every metric of every GPU of a device reads the same point at the same instant, so power, temperature, fan speed and both clocks follow the utilization they were derived from.

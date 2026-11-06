@@ -536,7 +536,7 @@ Properties common to every dynamic counter:
 
 - **Monotonic.** The underlying octet integral never decreases (rate floor is 60 % of `ifSpeed`), and every derivation is base-plus-growth, so Counter64 columns are strictly increasing. Counter32 shadow columns wrap naturally at 2³². `ifCounterDiscontinuityTime` (`.19`) is not served: no shipped profile carries it and the cycler does not synthesise it, so a GET answers `noSuchObject`. Wrap is inherent, not a discontinuity.
 - **Pre-seeded.** Each counter starts at a base derived from ~24 h of traffic, ratios, and the active error scenario (see below) so a fresh device doesn't look unrealistically pristine.
-- **Per-interface variance.** Packet-size divisor jitters ±20 % around 500 B. Mix ratios jitter ±3 % around 85 / 10 / 5 (in) and 90 / 8 / 2 (out). Error and discard ppm values are drawn once from the scenario band, all deterministic from the device seed.
+- **Per-interface variance.** Packet-size divisor jitters ±20 % around 500 B. Mix ratios jitter ±3 % around 85 / 10 / 5 (in) and 90 / 8 / 2 (out). Error and discard ppm values are drawn once from the scenario band. Every draw comes from a seed hashed from the device IP, interface by interface in ascending ifIndex order, so a device draws the same values after a restart and two devices draw different ones.
 - **Sine-driven correlation.** All derived counters share the master octet sine wave, so when a link is "quiet" (60 % of `ifSpeed`) the full counter family slows together, matching how real hardware behaves under reduced traffic.
 - **SNMP ↔ sFlow agreement.** Both read paths resolve the same counter engine, so an sFlow `counter_sample` and an SNMP GET evaluated at the same instant carry the same values. Two varbinds in one SNMP response are two instants (see above).
 - **Zero-goroutine cost.** Every counter is computed on-demand from the current time against analytic formulas. There is no per-interface goroutine, no polling loop.
@@ -592,6 +592,7 @@ watch -n 5 "snmpget -v2c -c public 10.42.0.1 \
 ## Dynamic CPU / memory / temperature metrics
 
 CPU, memory, and temperature OIDs cycle through a 100-point pre-generated sine-wave pattern per device.
+The pattern is seeded from a hash of the device IP, so two devices of one type serve different curves, and a device serves the same curve after a restart whichever request created it.
 The point served depends on the time since the device was created, one point per minute, and reading an OID does not move it.
 All of a device's metrics read the same point at the same instant.
 One SNMP request reads the point once, so every OID in a GET, GETNEXT or GETBULK comes from the same point, even across a minute boundary.
