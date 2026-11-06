@@ -8,7 +8,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -835,7 +834,7 @@ func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64
 		episodes:     make([]atomic.Pointer[opticalEpisodeLog], n),
 	}
 
-	rng := rand.New(rand.NewSource(seed ^ opticalSeedSalt))
+	rng := newSeededRand(seed ^ opticalSeedSalt)
 	for i, ch := range chans {
 		oc.names[i] = ch.Name
 		oc.slot[ch.Name] = i
@@ -874,7 +873,7 @@ func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64
 		oc.pmdPs[i] = 4 + rng.Float64()*2
 		oc.pdlDB[i] = 0.4 + rng.Float64()*0.3
 
-		oc.uncorrBase[i] = uint64(rng.Int63n(64))
+		oc.uncorrBase[i] = uint64(rng.Int64N(64))
 		oc.uncorrRate[i] = 900 + rng.Float64()*600
 	}
 

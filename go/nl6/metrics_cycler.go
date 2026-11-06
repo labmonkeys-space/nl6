@@ -18,7 +18,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sync/atomic"
 	"time"
 )
@@ -69,10 +68,10 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 		startTime: time.Now(),
 	}
 
-	rng := rand.New(rand.NewSource(seed))
+	rng := newSeededRand(seed)
 
 	// Generate CPU curve: overlapping sine waves + jitter
-	cpuBase := profile.CPUBaseMin + rng.Intn(profile.CPUBaseMax-profile.CPUBaseMin+1)
+	cpuBase := profile.CPUBaseMin + rng.IntN(profile.CPUBaseMax-profile.CPUBaseMin+1)
 	// Random phase offsets for sine waves
 	phase1 := rng.Float64() * 2 * math.Pi
 	phase2 := rng.Float64() * 2 * math.Pi
@@ -84,14 +83,14 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 		wave1 := math.Sin(t+phase1) * float64(profile.CPUSpike) * 0.5
 		wave2 := math.Sin(t*2.7+phase2) * float64(profile.CPUSpike) * 0.25
 		wave3 := math.Sin(t*5.3+phase3) * float64(profile.CPUSpike) * 0.1
-		jitter := float64(rng.Intn(5) - 2) // -2 to +2
+		jitter := float64(rng.IntN(5) - 2) // -2 to +2
 
 		cpu := float64(cpuBase) + wave1 + wave2 + wave3 + jitter
 		c.cpuPoints[i] = clampInt(int(math.Round(cpu)), 1, 100)
 	}
 
 	// Generate memory curve: higher base, lower variance than CPU
-	memBasePercent := profile.MemBaseMin + rng.Intn(profile.MemBaseMax-profile.MemBaseMin+1)
+	memBasePercent := profile.MemBaseMin + rng.IntN(profile.MemBaseMax-profile.MemBaseMin+1)
 	memPhase1 := rng.Float64() * 2 * math.Pi
 	memPhase2 := rng.Float64() * 2 * math.Pi
 
@@ -99,7 +98,7 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 		t := float64(i) / float64(numDataPoints) * 2 * math.Pi
 		wave1 := math.Sin(t*0.8+memPhase1) * float64(profile.MemVariance) * 0.6
 		wave2 := math.Sin(t*2.1+memPhase2) * float64(profile.MemVariance) * 0.3
-		jitter := float64(rng.Intn(3) - 1) // -1 to +1
+		jitter := float64(rng.IntN(3) - 1) // -1 to +1
 
 		memPct := float64(memBasePercent) + wave1 + wave2 + jitter
 		memPct = math.Max(1, math.Min(99, memPct))
@@ -107,7 +106,7 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 	}
 
 	// Generate temperature curve: slow sine wave with small jitter
-	tempBase := profile.TempBaseMin + rng.Intn(profile.TempBaseMax-profile.TempBaseMin+1)
+	tempBase := profile.TempBaseMin + rng.IntN(profile.TempBaseMax-profile.TempBaseMin+1)
 	tempPhase1 := rng.Float64() * 2 * math.Pi
 	tempPhase2 := rng.Float64() * 2 * math.Pi
 
@@ -115,7 +114,7 @@ func NewMetricsCycler(seed int64, profile DeviceProfile) *MetricsCycler {
 		t := float64(i) / float64(numDataPoints) * 2 * math.Pi
 		wave1 := math.Sin(t*0.6+tempPhase1) * float64(profile.TempSpike) * 0.6
 		wave2 := math.Sin(t*1.9+tempPhase2) * float64(profile.TempSpike) * 0.3
-		jitter := float64(rng.Intn(3) - 1) // -1 to +1
+		jitter := float64(rng.IntN(3) - 1) // -1 to +1
 
 		temp := float64(tempBase) + wave1 + wave2 + jitter
 		c.tempPoints[i] = clampInt(int(math.Round(temp)), 15, 95)

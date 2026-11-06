@@ -643,30 +643,11 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 				device.netNamespace = sm.netNamespace
 			}
 
-			// Initialize per-device metrics cycler for dynamic CPU/memory values
-			profile := GetDeviceProfile(deviceResourceFile)
-			device.metricsCycler = NewMetricsCycler(int64(i), profile)
-			device.metricsCycler.InitGPUMetrics(int64(i), profile.GPU)
-
-			// Apply the batch-level export seed BEFORE InitIfCounters so
+			// Apply the batch-level export seed BEFORE initDeviceCyclers so
 			// device.IfErrorScenario is populated in time for the cycler
 			// to draw scenario-banded ppms.
 			applyExportSeed(device, seed)
-
-			scenario, _ := ParseIfErrorScenario(device.IfErrorScenario)
-			device.IfErrorScenario = string(scenario) // canonicalise for GET /api/v1/devices
-			device.metricsCycler.InitIfCountersWithScenario(deviceResources, int64(i)^0x4843_0000, scenario)
-
-			// Optical value engine, for optical transport types only. A
-			// no-op when the device has no OCH inventory, so packet types
-			// are unaffected. Single-init, and it must happen here in the
-			// creation window: the engine is immutable after publication
-			// and a device's type is fixed at creation.
-			opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
-			// Canonicalise for GET /api/v1/devices, and only for types that
-			// actually have channels — see opticalScenarioFieldFor.
-			device.OpticalScenario = opticalScenarioFieldFor(deviceResourceFile, opticalScenario)
-			device.metricsCycler.InitOpticalCycler(deviceResources, int64(i), opticalBandFor(opticalScenario))
+			initDeviceCyclers(device)
 			// Enrol with the shared SD/SF evaluator. No-op for packet types
 			// (no engine published) and before the subsystem starts.
 			sm.RegisterOpticalDevice(device)
@@ -952,7 +933,7 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 		}
 
 		wg.Add(1)
-		go func(deviceIndex int, ip net.IP, devID string, devResources *DeviceResources, devResourceFile string) {
+		go func(ip net.IP, devID string, devResources *DeviceResources, devResourceFile string) {
 			defer wg.Done()
 
 			// Acquire worker slot
@@ -960,7 +941,7 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 			defer func() { <-sem }()
 
 			// Create device in parallel
-			if sm.createSingleDevice(deviceIndex, ip, devID, netmask, devResourceFile, devResources, v3Config, snmpPort, seed) {
+			if sm.createSingleDevice(ip, devID, netmask, devResourceFile, devResources, v3Config, snmpPort, seed) {
 				mu.Lock()
 				(*successCount)++
 				progress := *successCount
@@ -970,7 +951,7 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 				sm.deviceCreateProgress.Store(progress)
 			}
 
-		}(i, deviceIP, deviceID, deviceResources, deviceResourceFile)
+		}(deviceIP, deviceID, deviceResources, deviceResourceFile)
 	}
 
 	// Wait for all workers to complete
@@ -984,9 +965,40 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 	log.Printf("Parallel creation rate: %.2f devices/second", float64(*successCount)/parallelElapsed.Seconds())
 }
 
+// initDeviceCyclers builds a new device's metrics cycler and the engines it
+// carries: CPU, memory and temperature curves, GPUs, interface counters and
+// optical channels. Both creation paths call it, after applyExportSeed has set
+// the scenarios it reads and before the device starts serving; they used to
+// carry a copy each, and the copies had diverged before.
+//
+// Every curve and dial is seeded from a hash of the device's IP. It used to be
+// the device's index within its creation request, which restarts at 0 on
+// every request, so the first device of every request served identical curves
+// (nl6#989). Round-robin type assignment stays on the index.
+func initDeviceCyclers(device *DeviceSimulator) {
+	profile := GetDeviceProfile(device.resourceFile)
+	devSeed := deviceSeed(device.IP)
+	device.metricsCycler = NewMetricsCycler(devSeed, profile)
+	device.metricsCycler.InitGPUMetrics(devSeed, profile.GPU)
+
+	scenario, _ := ParseIfErrorScenario(device.IfErrorScenario)
+	device.IfErrorScenario = string(scenario) // canonicalise for GET /api/v1/devices
+	device.metricsCycler.InitIfCountersWithScenario(device.resources, devSeed^0x4843_0000, scenario)
+
+	// Optical value engine, for optical transport types only. A no-op when
+	// the device has no OCH inventory, so packet types are unaffected.
+	// Single-init, and it must happen in the creation window: the engine is
+	// immutable after publication and a device's type is fixed at creation.
+	opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
+	// Canonicalise for GET /api/v1/devices, and only for types that actually
+	// have channels — see opticalScenarioFieldFor.
+	device.OpticalScenario = opticalScenarioFieldFor(device.resourceFile, opticalScenario)
+	device.metricsCycler.InitOpticalCycler(device.resources, devSeed, opticalBandFor(opticalScenario))
+}
+
 // createSingleDevice creates a single device - used by parallel device creation.
 // `seed` propagates the batch-level export configuration (phase 3).
-func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP, deviceID string, netmask string, resourceFile string, resources *DeviceResources, v3Config *SNMPv3Config, snmpPort int, seed *ExportSeed) bool {
+func (sm *SimulatorManager) createSingleDevice(deviceIP net.IP, deviceID string, netmask string, resourceFile string, resources *DeviceResources, v3Config *SNMPv3Config, snmpPort int, seed *ExportSeed) bool {
 	// Check if we have a pre-allocated interface for this IP
 	var tunIface *TunInterface
 
@@ -1039,25 +1051,10 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 		device.netNamespace = sm.netNamespace
 	}
 
-	// Initialize per-device metrics cycler for dynamic CPU/memory values
-	profile := GetDeviceProfile(resourceFile)
-	device.metricsCycler = NewMetricsCycler(int64(deviceIndex), profile)
-	device.metricsCycler.InitGPUMetrics(int64(deviceIndex), profile.GPU)
-
-	// Apply the batch-level export seed BEFORE InitIfCounters so the
+	// Apply the batch-level export seed BEFORE initDeviceCyclers so the
 	// scenario is known when the cycler draws its ppm bands.
 	applyExportSeed(device, seed)
-
-	scenario, _ := ParseIfErrorScenario(device.IfErrorScenario)
-	device.IfErrorScenario = string(scenario)
-	device.metricsCycler.InitIfCountersWithScenario(resources, int64(deviceIndex)^0x4843_0000, scenario)
-
-	// Optical value engine — mirrors the sequential path in
-	// CreateDevicesWithOptions. These two paths have diverged before, so
-	// any change here belongs in both.
-	opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
-	device.OpticalScenario = opticalScenarioFieldFor(resourceFile, opticalScenario)
-	device.metricsCycler.InitOpticalCycler(resources, int64(deviceIndex), opticalBandFor(opticalScenario))
+	initDeviceCyclers(device)
 	// Mirrors the sequential path: enrol with the shared SD/SF evaluator.
 	sm.RegisterOpticalDevice(device)
 

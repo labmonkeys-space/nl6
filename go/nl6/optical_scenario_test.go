@@ -271,14 +271,12 @@ func TestOpticalScenarioCanonicalisedForDeviceInfo(t *testing.T) {
 
 // TestOpticalScenarioWiredInBothCreatePaths guards the divergence that
 // has bitten this repo: the scenario must be canonicalised and the band
-// applied in both the sequential and parallel creation paths.
+// applied in both the sequential and parallel creation paths, which share
+// initDeviceCyclers.
 func TestOpticalScenarioWiredInBothCreatePaths(t *testing.T) {
-	src := readSourceFile(t, "device.go")
-	if n := strings.Count(src, "opticalBandFor("); n != 2 {
-		t.Errorf("device.go uses opticalBandFor %d time(s), want 2 (sequential + parallel paths)", n)
-	}
-	if n := strings.Count(src, "ParseOpticalScenario("); n != 2 {
-		t.Errorf("device.go canonicalises the scenario %d time(s), want 2; a path that skips it "+
-			"leaves a non-canonical value in GET /api/v1/devices", n)
-	}
+	src, body := createPathsSource(t)
+	requireOnceInCreatePaths(t, src, body, "opticalBandFor(",
+		"both paths must apply the band")
+	requireOnceInCreatePaths(t, src, body, "ParseOpticalScenario(",
+		"a path that skips it leaves a non-canonical value in GET /api/v1/devices")
 }

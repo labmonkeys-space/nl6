@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
@@ -1007,10 +1007,13 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		hold:            make([]atomic.Pointer[counterHold], maxIdx),
 	}
 
-	rng := rand.New(rand.NewSource(seed))
+	rng := newSeededRand(seed)
 	errLo, errHi, discLo, discHi := scenarioBand(scenario)
 
-	for idx := range knownIdxs {
+	// Draw in ascending ifIndex order. Every interface takes its dials from
+	// one stream, so ranging the map gave each interface a different draw on
+	// every run and the dials were not reproducible from the seed (nl6#989).
+	for _, idx := range sortedIndexList {
 		slot := idx - 1
 
 		// Prefer ifHighSpeed (Mbps → bps) over ifSpeed (bps, capped ~4 Gbps).
@@ -1217,5 +1220,5 @@ func drawPpm(rng *rand.Rand, lo, hi uint32) uint32 {
 	if hi <= lo {
 		return lo
 	}
-	return lo + uint32(rng.Intn(int(hi-lo)+1))
+	return lo + uint32(rng.IntN(int(hi-lo)+1))
 }
