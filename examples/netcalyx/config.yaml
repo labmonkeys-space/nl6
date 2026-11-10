@@ -1,0 +1,61 @@
+# NetCalyx collector config for `make test-interop-yangpush`.
+#
+# Adapted from crates/collector/config_udpnotif_telemetry.yaml in NetCalyx
+# v0.4.0. Changes: the listener is UDP 10000 on the host network, the NETCONF
+# login is nl6's simadmin with the key the make target generates and mounts at
+# /keys/id_ed25519, and the output is the Kafka JSON endpoint instead of the
+# YANG endpoint, so the test reads plain JSON and needs no schema registry.
+# Enrichment and custom YANG schemas are left out on purpose: the gate checks
+# that NetCalyx fetches the YANG library from the device itself.
+runtime:
+  threads: 4
+
+logging:
+  level: netcalyx_collector=info,netcalyx_yang_push=info,info
+  ansi: false
+
+# The OpenTelemetry Collector in compose.yml receives these over gRPC on 4317 and serves
+# them to the test as Prometheus text. A 10 s interval fits the 150 s run.
+# v0.4.0 replaced telemetry.id with telemetry.service_name and takes the bare
+# gRPC endpoint, no /v1/metrics path.
+telemetry:
+  url: http://127.0.0.1:4317
+  service_name: nl6-interop-netcalyx
+  exporter_timeout: 3000
+  reader_interval: 10000
+  reader_timeout: 3000
+
+udp_notif:
+  subscriber_timeout: 100
+  listeners:
+    - address: "[::]:10000"
+      workers: 2
+
+  cache_location: /tmp/netcalyx-udpnotif-cache
+
+  # Off on purpose. With it on, NetCalyx v0.4.0 hands the whole payload to
+  # libyang with ANYDATA_STRICT and drops two kinds of messages the real NE8000
+  # sends the same way: subscription 9 push-updates, because the identityref
+  # iana-if-type:ethernetCsmacd cannot be resolved (NetCalyx loads only the
+  # modules named in subscription-started's module-version plus their imports,
+  # and nothing imports iana-if-type), and the subscription 10 change-update,
+  # because the RFC 8072 patch value {"ietf-interfaces:interface":[...]} is not
+  # a top-level tree. Both are collector-side; see context/yang-push.md.
+  anydata_strict_validation: false
+
+  netconf:
+    username: simadmin
+    private_key_path: /keys/id_ed25519
+    port: 830
+
+  publishers:
+    group1:
+      buffer_size: 1000
+      endpoints:
+        json-endpoint: !TelemetryKafkaJson
+          topic: telemetry-message-json
+          producer_config:
+            bootstrap.servers: 127.0.0.1:19092
+            message.timeout.ms: "60000"
+            queue.buffering.max.messages: "1000"
+          writer_id: nl6-interop-netcalyx-json

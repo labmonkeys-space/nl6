@@ -1,7 +1,7 @@
-# OpenTelemetry Collector for `make test-interop-yangpush`. NetGauze pushes
+# OpenTelemetry Collector for `make test-interop-yangpush`. NetCalyx pushes
 # OTLP over gRPC to 127.0.0.1:4317. The collector re-exposes the metrics in
 # Prometheus text format on 127.0.0.1:8889/metrics, where the test reads
-# NetGauze's own decode and validation counters.
+# NetCalyx's own decode and validation counters.
 receivers:
   otlp:
     protocols:

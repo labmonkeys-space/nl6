@@ -12,7 +12,7 @@ The subscriptions follow RFC 8641.
 Opt in per device.
 Devices of other types never stream.
 
-NetGauze v0.13.0 is the collector nl6 is checked against.
+NetCalyx v0.4.0 is the collector nl6 is checked against.
 The collector learns the schema by logging in to the device over NETCONF, so NETCONF must be on too.
 
 ```
@@ -23,7 +23,7 @@ The collector learns the schema by logging in to the device over NETCONF, so NET
 ## Enable it
 
 NETCONF needs `-netconf-enable`.
-A collector such as NetGauze logs in with a key, so also pass an `authorized_keys` file.
+A collector such as NetCalyx logs in with a key, so also pass an `authorized_keys` file.
 
 ```bash
 sudo ./nl6 -netconf-enable -netconf-authorized-keys ~/.ssh/authorized_keys
@@ -108,7 +108,7 @@ The device IPv4 address as a big-endian unsigned integer is both the header obse
 NETCONF over SSH on `-netconf-port` serves the VRP dialect.
 A collector can read the YANG library with `yang-library-content-id`, the module list, and the modules with `get-schema`.
 Only IETF and IANA modules ship.
-The library lists `augmented-by` entries so NetGauze can load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
+The library lists `augmented-by` entries so NetCalyx can load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
 `ietf-netconf-monitoring` is served because the device lists it.
 The library lists each implemented module's features, in both `yang-library` and `modules-state`.
 The `content-id` is the FNV-32a hash of the module list and the features, as a decimal string.
@@ -117,7 +117,7 @@ The `content-id` is the FNV-32a hash of the module list and the features, as a d
 The filters are answered by reference.
 The dialect serves only `get`, `get-schema`, `close-session` and `kill-session`.
 A `get` on one subscription by ID also returns its `receiver-instances`.
-An unknown ID returns an empty `<data/>`, and NetGauze reports that as a parse error.
+An unknown ID returns an empty `<data/>`, and NetCalyx reports that as a parse error.
 
 ## Status
 
@@ -166,7 +166,7 @@ These differences are deliberate.
 - Subscription 10 is not verified against a real device. The NE8000 advertises on-change; nl6 builds the subscription from RFC 8641 and the same envelope.
 - Every interface appears in subscription 8. The real device sent statistics for a subset.
 - The `ietf-udp-client` module revision `2025-05-14` is a guess. The device library lists none.
-- `ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
+- `ietf-yang-push-revision` is served at revision `2025-08-29`, the revision NetGauze v0.13.0 bundled when the fixtures were written. NetCalyx v0.4.0 bundles 2025-12-07, not yet checked against nl6. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
 - Two `augmented-by` rows under `ietf-subscribed-notifications` (`ietf-yang-push-revision` and `ietf-udp-notif-transport`) follow a Huawei MA5800T, not the NE8000.
 - Features follow the NE8000. nl6 adds `encode-json` under `ietf-subscribed-notifications` and `yang-push-revision-supported` under `ietf-yang-push-revision`, because the payloads it sends sit behind them.
 - The NE lists only `ietf-notification-capabilities` as augmenting `ietf-system-capabilities`. nl6 also lists `ietf-yang-push-revision`, `ietf-yp-notification` and `ietf-yp-observation`, because their YANG text augments `/sysc:system-capabilities`.
@@ -175,9 +175,9 @@ These differences are deliberate.
 
 See the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/huawei_ne8000_limitations.md) for the full list.
 
-## Test it against NetGauze
+## Test it against NetCalyx
 
-`make test-interop-yangpush` runs three devices against a real NetGauze v0.13.0 and Redpanda in Docker, on a Linux host.
-NetGauze v0.13.0 validates the messages with libyang and finds none invalid.
+`make test-interop-yangpush` runs three devices against a real NetCalyx v0.4.0 and Redpanda in Docker, on a Linux host.
+The gate requires NetCalyx to validate the messages with libyang and find none invalid.
 It checks the YANG library fetch, the Kafka output for subscriptions 8, 9 and 10, segmentation, and an interface going down.
-The stack is in `examples/netgauze/`.
+The stack is in `examples/netcalyx/`.

@@ -21,7 +21,7 @@ A default fleet behaves exactly as without it.
 |------|------|---------|-------------|
 | `-netconf-enable` | bool | `false` | Enable the NETCONF subsystem. `cisco_catalyst_9500` and `huawei_ne8000` devices listen on `-netconf-port`. `juniper_mx10004` devices listen on `-netconf-port` and on `-netconf-tls-port`. |
 | `-netconf-port` | int | `830` | TCP port of the per-device NETCONF over SSH listener. |
-| `-netconf-authorized-keys` | path | empty | OpenSSH `authorized_keys` file. Its keys log in as `simadmin` on every NETCONF SSH listener, next to the password. Key options are ignored. A YANG-Push collector such as NetGauze needs it. |
+| `-netconf-authorized-keys` | path | empty | OpenSSH `authorized_keys` file. Its keys log in as `simadmin` on every NETCONF SSH listener, next to the password. Key options are ignored. A YANG-Push collector such as NetCalyx needs it. |
 | `-netconf-tls-port` | int | `6513` | TCP port of the per-device NETCONF over TLS listener. |
 | `-netconf-tls-client-ca` | path | empty | PEM file with the CA that must have signed the client certificates. The path is flag-only. Requires `-netconf-enable`. |
 | `-netconf-tls-client-identity` | `fingerprint=username` | none | One entry of the client identity table. Repeat the flag for more entries. The fingerprint is the SHA-256 of the client certificate, with or without the `04:` prefix. Requires `-netconf-enable`. |

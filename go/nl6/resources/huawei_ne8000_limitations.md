@@ -22,7 +22,7 @@ A real NE8000 sends statistics for a subset.
 ## A guessed module revision
 
 The `ietf-udp-client` revision `2025-05-14` is a guess.
-`ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
+`ietf-yang-push-revision` is served at revision `2025-08-29`, the revision NetGauze v0.13.0 bundled when the fixtures were written. NetCalyx v0.4.0 bundles 2025-12-07, not yet checked against nl6. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
 The device library lists none.
 Two `augmented-by` rows under `ietf-subscribed-notifications` follow a Huawei MA5800T, not the NE8000.
 
@@ -40,7 +40,7 @@ NETCONF sends no notifications, because the subscriptions stream over UDP-notif.
 
 A `get` on a subscription by ID also returns its `receiver-instances`.
 An unknown ID returns an empty `<data/>`.
-NetGauze reports that as a parse error.
+NetCalyx reports that as a parse error.
 
 ## Fidelity and scenarios
 
