@@ -37,7 +37,6 @@ type yangModule struct {
 // vrpYangImplemented names the modules the device implements. The rest of the
 // served set is import-only.
 var vrpYangImplemented = map[string]bool{
-	"iana-if-type":                    true,
 	"ietf-interfaces":                 true,
 	"ietf-ip":                         true,
 	"ietf-network-instance":           true,
