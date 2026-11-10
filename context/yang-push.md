@@ -124,9 +124,20 @@ Redpanda has a healthcheck and NetCalyx waits for it.
 
 ## Interop record
 
-The referee switched to NetCalyx v0.4.0 on 2026-11-10. The gate has not yet run against it; the record below is the last NetGauze run.
+`make test-interop-yangpush` passed on 2026-11-10 on an Ubuntu 26.04 guest (Proxmox, 8 vCPU, 16 GB; Docker 29.1.3, Compose 2.40.3, Go 1.27.3) against NetCalyx v0.4.0 and Redpanda v26.2.6, branch `netcalyx-referee` at `764acf1e`.
+Result: `--- PASS: TestYangPushInterop (157.46s)`.
+NetCalyx fetched the YANG library from all three devices (32 schemas each), built a context, validated 24 of 24 messages and skipped none.
+Kafka held subscriptions 8, 9 and 10 for every device, 9 reassembled subscription 8 records, and the on-change `down` within 5 s.
+nl6 reported `messages_sent=27 segments_sent=372 send_failures=0`.
 
-`make test-interop-yangpush` passed on 2026-11-05 on an Ubuntu 26.04 VM (Docker 2.40 compose, Go 1.27.3) against NetGauze v0.13.0, Redpanda v25.3.1 and yanglint 3.13.6.
+The same day, three runs with `anydata_strict_validation: true` failed and produced two findings. Both apply to the captured NE8000 as much as to nl6:
+
+- NetCalyx seeds the library load from subscription-started's `module-version` (only `ietf-interfaces`, as the NE sends it) plus transitive imports. `iana-if-type` is imported by nothing, so libyang never sees it and rejects `iana-if-type:ethernetCsmacd` in every subscription 9 push-update. nl6 now serves `iana-if-type@2017-01-19` as import-only, which the NE library lists and nl6 had missed; serving it, and even listing it as implemented, does not make NetCalyx load it.
+- NetCalyx parses the whole payload with libyang `ANYDATA_STRICT`, so the RFC 8072 patch value `{"ietf-interfaces:interface":[...]}` in the subscription 10 change-update fails with `Node "interface" not found in the "ietf-interfaces" module`.
+
+The gate therefore runs with strict anydata validation off, which is what NetGauze v0.13.0 checked. Follow-up and the options are in nl6#1017.
+
+The last NetGauze run, for comparison: `make test-interop-yangpush` passed on 2026-11-05 on an Ubuntu 26.04 VM (Docker 2.40 compose, Go 1.27.3) against NetGauze v0.13.0, Redpanda v25.3.1 and yanglint 3.13.6.
 Result: `--- PASS: TestYangPushInterop (157.41s)`.
 NetGauze fetched the YANG library from all three devices, built a YANG context from it and validated 27 of 30 messages with no invalid one.
 It skipped validation for 3 messages, one per device: the subscription 10 sync push-update, which arrives before NetGauze has built the context.
