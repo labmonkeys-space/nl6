@@ -21,10 +21,10 @@ import (
 
 // yangpush_interop_test.go is the check with detection power for YANG-Push
 // over UDP-notif. Every other yangpush test decodes nl6's bytes with nl6's own
-// code. This one runs REAL huawei_ne8000 devices against a REAL NetGauze
-// v0.13.0 collector, started by `make test-interop-yangpush` (examples/
-// netgauze/compose.yml, host network, Kafka JSON output on Redpanda) and reads
-// what NetGauze's own log and Kafka output say it decoded.
+// code. This one runs REAL huawei_ne8000 devices against a REAL NetCalyx
+// v0.4.0 collector, started by `make test-interop-yangpush` (examples/
+// netcalyx/compose.yml, host network, Kafka JSON output on Redpanda) and reads
+// what NetCalyx's own log and Kafka output say it decoded.
 //
 // Gated on NL6_YANGPUSH_INTEROP=1 like the IPFIX gate: env unset skips, env set
 // with the stack unreachable FAILS, because a silent skip asserts nothing.
@@ -39,7 +39,7 @@ import (
 const (
 	yangPushInteropEnvGate    = "NL6_YANGPUSH_INTEROP"
 	yangPushInteropTopic      = "telemetry-message-json"
-	yangPushInteropNetGauze   = "nl6-yangpush-netgauze"
+	yangPushInteropNetCalyx   = "nl6-yangpush-netcalyx"
 	yangPushInteropRedpanda   = "nl6-yangpush-redpanda"
 	yangPushInteropDeviceIP   = "10.42.0.1"
 	yangPushInteropDeviceN    = 3
@@ -89,7 +89,7 @@ func yangPushInteropMessages(t *testing.T) []yangPushInteropMsg {
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Fatalf("Kafka record is not JSON: %v\n%s", err, line)
 		}
-		// NetGauze listens on [::], so an IPv4 device shows as ::ffff:a.b.c.d.
+		// NetCalyx listens on [::], so an IPv4 device shows as ::ffff:a.b.c.d.
 		m.Message.Meta.Export = strings.TrimPrefix(m.Message.Meta.Export, "::ffff:")
 		m.raw = line
 		msgs = append(msgs, m)
@@ -99,7 +99,7 @@ func yangPushInteropMessages(t *testing.T) []yangPushInteropMsg {
 
 // yangPushInteropMetrics reads the OpenTelemetry Collector's Prometheus text
 // and sums each series by name, dropping labels and the _total suffix. A name
-// is absent when NetGauze has not exported it.
+// is absent when NetCalyx has not exported it.
 func yangPushInteropMetrics(t *testing.T) map[string]float64 {
 	t.Helper()
 	resp, err := http.Get("http://127.0.0.1:8889/metrics")
@@ -108,7 +108,7 @@ func yangPushInteropMetrics(t *testing.T) map[string]float64 {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	// Label values can hold "}" (NetGauze puts the subscription target in a
+	// Label values can hold "}" (NetCalyx puts the subscription target in a
 	// label), so take the name up to the first "{" or space and the value
 	// after the last space. The exporter writes no timestamps.
 	out := map[string]float64{}
@@ -169,8 +169,8 @@ func TestYangPushInterop(t *testing.T) {
 	t.Logf("3 huawei_ne8000 devices created, letting the subscriptions run for %s", wait)
 	time.Sleep(wait)
 
-	// 1. NetGauze fetched the YANG library from every device.
-	logs := yangPushInteropRun(t, "docker", "logs", yangPushInteropNetGauze)
+	// 1. NetCalyx fetched the YANG library from every device.
+	logs := yangPushInteropRun(t, "docker", "logs", yangPushInteropNetCalyx)
 	for _, ip := range yangPushInteropDevices {
 		found := false
 		for _, line := range strings.Split(logs, "\n") {
@@ -180,46 +180,48 @@ func TestYangPushInterop(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("NetGauze never logged `YANG Library fetched from device` for %s", ip)
+			t.Errorf("NetCalyx never logged `YANG Library fetched from device` for %s", ip)
 		}
 	}
 
-	// 1b. NetGauze's own counters, read through the OpenTelemetry Collector's
+	// 1b. NetCalyx's own counters, read through the OpenTelemetry Collector's
 	// Prometheus endpoint: no decode, validation or fetch failure, and some
-	// decoded and validated messages. NetGauze exports every 10 s, so the 150 s
-	// run is long enough for the series to exist.
+	// decoded and validated messages. NetCalyx exports every 10 s, so the 150 s
+	// run is long enough for the series to exist. Names are NetCalyx v0.4.0's
+	// (crates/yang-push validation/stats.rs, crates/udp-notif-service actor.rs,
+	// crates/collector yang_push caching) with dots and dashes mapped to
+	// underscores by the Prometheus exporter. `validation.dropped` carries a
+	// reason label (decode error, buffer full, validation failed, ...); the
+	// sum over every reason must be 0.
 	metrics := yangPushInteropMetrics(t)
 	for _, name := range []string{
-		"netgauze_collector_yang_push_validation_messages_decode_fail",
-		"netgauze_collector_yang_push_validation_invalid",
-		"netgauze_collector_yang_push_validation_malformed",
-		"netgauze_collector_yang_push_caching_device_fetch_response_failed",
-		"netgauze_collector_yang_push_validation_cache_yang_ctx_invalid",
-		"netgauze_udp_notif_decoder_malformed",
+		"netcalyx_yang_push_validation_dropped",
+		"netcalyx_yang_push_validation_yang_context_failed",
+		"netcalyx_yang_push_validation_yang_context_empty",
+		"netcalyx_collector_yang_push_caching_device_fetch_response_failed",
+		"netcalyx_udp_notif_decoder_malformed",
+		"netcalyx_udp_notif_reassembly_max_segments_exceeded",
 	} {
 		if v := metrics[name]; v != 0 {
-			t.Errorf("NetGauze counter %s = %v, want 0", name, v)
+			t.Errorf("NetCalyx counter %s = %v, want 0", name, v)
 		}
 	}
-	// NetGauze v0.13.0 declares validation.success and decode.success but
-	// never increments them. Proof of validation instead: a YANG context was
-	// built from the served library, and more messages left the validation
-	// step than skipped it (the rest passed libyang; failures count as invalid).
+	// Proof of validation: the library was fetched from a device, a libyang
+	// context was built from it, and messages passed schema validation.
+	// NetCalyx counts `validation.validated` directly; `validation.skipped`
+	// (forwarded without validation) is logged for the record.
 	for _, name := range []string{
-		"netgauze_collector_yang_push_caching_device_fetch_response_succeeded",
-		"netgauze_collector_yang_push_validation_cache_yang_ctx_created",
-		"netgauze_collector_yang_push_validation_messages_sent",
+		"netcalyx_collector_yang_push_caching_device_fetch_response_succeeded",
+		"netcalyx_yang_push_validation_yang_context_loaded",
+		"netcalyx_yang_push_validation_validated",
 	} {
 		if v, ok := metrics[name]; !ok || v <= 0 {
-			t.Errorf("NetGauze counter %s = %v (present %v), want > 0", name, v, ok)
+			t.Errorf("NetCalyx counter %s = %v (present %v), want > 0", name, v, ok)
 		}
 	}
-	validated := metrics["netgauze_collector_yang_push_validation_messages_sent"] - metrics["netgauze_collector_yang_push_validation_skipped"]
-	t.Logf("NetGauze validated %v messages (sent %v, skipped %v)", validated,
-		metrics["netgauze_collector_yang_push_validation_messages_sent"], metrics["netgauze_collector_yang_push_validation_skipped"])
-	if validated <= 0 {
-		t.Errorf("NetGauze validated no message")
-	}
+	t.Logf("NetCalyx validated %v messages (sent %v, skipped %v)",
+		metrics["netcalyx_yang_push_validation_validated"],
+		metrics["netcalyx_yang_push_validation_sent"], metrics["netcalyx_yang_push_validation_skipped"])
 
 	// 2. Kafka holds messages for subscriptions 8, 9 and 10 from every device.
 	msgs := yangPushInteropMessages(t)
@@ -235,7 +237,7 @@ func TestYangPushInterop(t *testing.T) {
 		}
 	}
 
-	// 3. Segmentation reached NetGauze intact. A subscription 8 payload larger
+	// 3. Segmentation reached NetCalyx intact. A subscription 8 payload larger
 	// than one segment can only have arrived through reassembly. The payload
 	// JSON is smaller than the wire message, so the size is a lower bound.
 	big := 0

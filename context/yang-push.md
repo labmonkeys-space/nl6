@@ -4,7 +4,7 @@ Engineering record for the YANG-Push exporter.
 Files: `go/nl6/yangpush_*.go`, the VRP NETCONF dialect in `go/nl6/netconf_vrp.go`.
 Operator reference: `docs/reference/yang-push-udp-notif.md`.
 Limitations: `go/nl6/resources/huawei_ne8000_limitations.md`.
-Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpush_interop_test.go`.
+Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpush_interop_test.go`.
 
 ## Sources
 
@@ -16,7 +16,8 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
   If it is refused, replace the derived fixtures with synthetic ones of the same byte layout before merge.
 - Fixtures are anonymised.
   The hostname is `ne8000-sim-1`, interface names are synthetic and the publisher ID is `192.0.2.13` (`0xC000020D`).
-- The referee is NetGauze v0.13.0, behaviour read at commit `e13b74f`.
+- The referee is NetCalyx v0.4.0 (`network-analytics/NetCalyx`, tag `v0.4.0`, commit `90e364e`), the Swisscom fork of NetGauze that the IETF NMOP test chain runs, since 2026-11-10.
+  Until then it was NetGauze v0.13.0, behaviour read at commit `e13b74f`. The VRP dialect was written against NetGauze's parsers; NetCalyx inherits them.
 - Vendor survey.
   Among nl6 types, only Huawei VRP R025C00 and later and Cisco IOS XR 25.3.1 and later ship YANG-Push over UDP-notif.
   Catalyst 9500 and Junos MX do not.
@@ -40,7 +41,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 - A link-down interface reports `oper-status` `down`.
   The capture has 49 interfaces admin up and oper down, and none `lower-layer-down`.
 - The YANG library carries `augmented-by` entries (draft-ietf-netmod-yang-library-augmentedby).
-  They let NetGauze load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
+  They let NetCalyx load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
 - `ietf-netconf-monitoring` is served because the NE lists it.
 - The library lists the features of each implemented module, copied from the NE capture.
 - `content-id` is the FNV-32a hash of the module list and the features, as a decimal string.
@@ -60,12 +61,12 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 - Every interface appears in subscription 8.
   The device sent statistics for a subset.
 - `ietf-udp-client` revision `2025-05-14` is a guess.
-- `ietf-yang-push-revision` is served at revision `2025-08-29`, the copy NetGauze bundles. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
-  The NE library lists none.
+- `ietf-yang-push-revision` is served at revision `2025-08-29`, the revision NetGauze v0.13.0 bundled when the fixtures were written. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).
+  NetCalyx v0.4.0 bundles `2025-12-07` under `assets/yang/`. Whether that revision keeps the `name` key is not yet checked.
 - The `augmented-by` rows for `ietf-yang-push-revision` and `ietf-udp-notif-transport` under `ietf-subscribed-notifications` come from the MA5800T capture, not the NE.
 - A `get` on a subscription by ID also returns `receiver-instances`.
   Strict subtree filtering would not.
-  An unknown ID returns an empty `<data/>`, and NetGauze reports that as a parse error.
+  An unknown ID returns an empty `<data/>`, and NetCalyx reports that as a parse error.
 - Scenario-window participation is not implemented.
 
 ## Operational decisions
@@ -75,7 +76,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
   Only `huawei_ne8000` streams.
   An all-incapable request gets `400`.
   A mixed batch skips the others with one log line per profile per process.
-- NetGauze needs NETCONF, so `-netconf-enable` is required.
+- NetCalyx needs NETCONF, so `-netconf-enable` is required.
   `-netconf-authorized-keys <authorized_keys file>` enables key login for `simadmin` on every NETCONF SSH listener and on call home.
   Password login stays.
   Key options in the file are ignored.
@@ -102,24 +103,28 @@ Interop gate: `make test-interop-yangpush`, `examples/netgauze/`, `go/nl6/yangpu
 
 `make test-interop-yangpush` (Linux only) does the following.
 
-1. Builds NetGauze v0.13.0 from its release `.deb` (`examples/netgauze/Dockerfile`, base and `.deb` pinned by digest) and starts it with Redpanda on the host network (`examples/netgauze/compose.yml`).
+1. Builds NetCalyx v0.4.0 from its release `.deb` (`examples/netcalyx/Dockerfile`, base and `.deb` pinned by digest) and starts it with Redpanda on the host network (`examples/netcalyx/compose.yml`).
 2. Generates a throwaway ed25519 key.
-   NetGauze uses the private key and nl6 gets the public key through `-netconf-authorized-keys`.
+   NetCalyx uses the private key and nl6 gets the public key through `-netconf-authorized-keys`.
 3. Starts nl6 and creates three `huawei_ne8000` devices with a `yang_push` block.
    The collector address is `10.254.0.1:10000`, the host end of the nl6sim veth.
 4. Waits 150 s, then asserts the following.
-   - NetGauze logged `YANG Library fetched from device` for each device.
-   - NetGauze's own counters, read through an OpenTelemetry Collector (OTLP gRPC in on 4317, Prometheus text out on 8889), show 0 for `validation_messages_decode_fail`, `validation_invalid`, `validation_malformed`, `caching_device_fetch_response_failed`, `validation_cache_yang_ctx_invalid` and `udp_notif_decoder_malformed`, and more than 0 for `caching_device_fetch_response_succeeded`, `validation_cache_yang_ctx_created` and validated messages (`validation_messages_sent` minus `validation_skipped`).
+   - NetCalyx logged `YANG Library fetched from device` for each device.
+   - NetCalyx's own counters, read through an OpenTelemetry Collector (OTLP gRPC in on 4317, Prometheus text out on 8889), show 0 for `netcalyx_yang_push_validation_dropped` (summed over its `reason` label), `netcalyx_yang_push_validation_yang_context_failed`, `netcalyx_yang_push_validation_yang_context_empty`, `netcalyx_collector_yang_push_caching_device_fetch_response_failed`, `netcalyx_udp_notif_decoder_malformed` and `netcalyx_udp_notif_reassembly_max_segments_exceeded`, and more than 0 for `netcalyx_collector_yang_push_caching_device_fetch_response_succeeded`, `netcalyx_yang_push_validation_yang_context_loaded` and `netcalyx_yang_push_validation_validated`.
    - The Kafka JSON topic holds messages for subscriptions 8, 9 and 10 from each device.
    - A subscription 8 Kafka record has a payload above 1436 bytes, which only reassembly can deliver.
      nl6's `segments_sent` above `messages_sent` and `send_failures` 0 (summed over collectors) are a secondary check.
    - An interface taken down through the REST API produces a subscription 10 message with `oper-status` `down` within 5 s.
 
-The collector config is NetGauze's `config_udpnotif_telemetry.yaml` with the Kafka JSON endpoint, `netconf.username: simadmin` and the generated key.
-The counter names are from NetGauze v0.13 (`crates/yang-push`, `crates/udp-notif-service`).
-Redpanda has a healthcheck and NetGauze waits for it.
+The collector config is NetCalyx's `config_udpnotif_telemetry.yaml` with the Kafka JSON endpoint, `netconf.username: simadmin` and the generated key.
+NetCalyx v0.4.0 renamed `telemetry.id` to `telemetry.service_name`, the log targets to `netcalyx_collector` and `netcalyx_yang_push`, and the metric prefix to `netcalyx.`.
+The counter names are from NetCalyx v0.4.0 (`crates/yang-push/src/validation/stats.rs`, `crates/udp-notif-service/src/actor.rs`, `crates/collector/src/yang_push/`).
+Unlike NetGauze v0.13.0, NetCalyx increments a real `validation.validated` counter, so the test no longer derives it from `sent` minus `skipped`.
+Redpanda has a healthcheck and NetCalyx waits for it.
 
 ## Interop record
+
+The referee switched to NetCalyx v0.4.0 on 2026-11-10. The gate has not yet run against it; the record below is the last NetGauze run.
 
 `make test-interop-yangpush` passed on 2026-11-05 on an Ubuntu 26.04 VM (Docker 2.40 compose, Go 1.27.3) against NetGauze v0.13.0, Redpanda v25.3.1 and yanglint 3.13.6.
 Result: `--- PASS: TestYangPushInterop (157.41s)`.
@@ -129,12 +134,12 @@ Kafka held subscriptions 8, 9 and 10 for every device, 9 reassembled subscriptio
 nl6 reported `messages_sent=30 segments_sent=411 send_failures=0`.
 `TestYangPushPayloadsValidateWithYanglint` passes with yanglint 3.13.6.
 
-What the first runs taught, now built into the stack and test:
+What the NetGauze runs taught, now built into the stack and test (kept for NetCalyx unless a run shows otherwise):
 
-- NetGauze does not create its `cache_location`. The image creates `/tmp/netgauze-udpnotif-cache`.
-- NetGauze listens on `[::]`, so Kafka `export-address` and the metric `network_peer_address` read `::ffff:10.42.0.x`. The test strips the prefix.
-- v0.13.0 declares `validation.success`, `validation.messages.decode.success` and `validation.malformed` but never increments them. The test proves validation with `caching.device.fetch.response.succeeded`, `validation.cache.yang_ctx.created` and `validation.messages.sent` minus `validation.skipped`, with `validation.invalid` and `validation.cache.yang_ctx.invalid` at 0.
-- NetGauze puts the subscription target, which can hold `}`, in a metric label. The test does not parse labels.
+- The collector does not create its `cache_location`. The image creates `/tmp/netcalyx-udpnotif-cache`.
+- The collector listens on `[::]`, so Kafka `export-address` and the metric `network_peer_address` read `::ffff:10.42.0.x`. The test strips the prefix.
+- NetGauze v0.13.0 declared `validation.success`, `validation.messages.decode.success` and `validation.malformed` but never incremented them, so the test derived validated messages from `sent` minus `skipped`. NetCalyx v0.4.0 counts `validation.validated` and the test reads it directly.
+- The collector puts the subscription target, which can hold `}`, in a metric label. The test does not parse labels.
 - `rpk topic consume` on v25.3.1 has no `--timeout`. The test reads with `--offset :end`.
 - libyang needs `<modules-state>` in the library file, because `module-set-id` is mandatory.
 - The NE sends `module-version` keyed by `name`, which only `ietf-yang-push-revision@2025-08-29` defines.
