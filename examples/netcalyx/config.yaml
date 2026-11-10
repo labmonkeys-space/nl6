@@ -33,8 +33,15 @@ udp_notif:
 
   cache_location: /tmp/netcalyx-udpnotif-cache
 
-  # Validate anydata nodes against their schema, as the sample config does.
-  anydata_strict_validation: true
+  # Off on purpose. With it on, NetCalyx v0.4.0 hands the whole payload to
+  # libyang with ANYDATA_STRICT and drops two kinds of messages the real NE8000
+  # sends the same way: subscription 9 push-updates, because the identityref
+  # iana-if-type:ethernetCsmacd cannot be resolved (NetCalyx loads only the
+  # modules named in subscription-started's module-version plus their imports,
+  # and nothing imports iana-if-type), and the subscription 10 change-update,
+  # because the RFC 8072 patch value {"ietf-interfaces:interface":[...]} is not
+  # a top-level tree. Both are collector-side; see context/yang-push.md.
+  anydata_strict_validation: false
 
   netconf:
     username: simadmin
