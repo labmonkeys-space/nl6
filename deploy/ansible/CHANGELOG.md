@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.40.2
+
+- No role changes. The collection version follows the nl6 0.40.2 release.
+
 ## 0.40.1
 
 - No role changes. The collection version follows the nl6 0.40.1 release.
