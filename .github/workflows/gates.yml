@@ -123,8 +123,15 @@ jobs:
       # structurally cannot cover — nothing polls a trap. make test-interop
       # FAILS rather than skips when either is missing, so installing only
       # `snmp` would break the gate rather than silently halve it.
+      # The runner's mirror list starts with azure.archive.ubuntu.com, and on
+      # 2026-11-11 no ubuntu.com host resolved from the runner for hours
+      # (nl6#1020), while other domains did. Put a mirror on a different
+      # domain first; the Ubuntu mirrors stay as fallbacks.
       - name: Install net-snmp
-        run: sudo apt-get update && sudo apt-get install -y snmp snmptrapd
+        run: |
+          sudo sed -i '1i https://mirror.informatik.hs-fulda.de/ubuntu/\tpriority:0' /etc/apt/apt-mirrors.txt
+          cat /etc/apt/apt-mirrors.txt
+          sudo apt-get update && sudo apt-get install -y snmp snmptrapd
 
       - name: Test (SNMPv3 interop with net-snmp)
         run: make test-interop
