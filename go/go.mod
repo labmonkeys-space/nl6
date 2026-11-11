@@ -1,6 +1,6 @@
 module github.com/labmonkeys-space/nl6/go
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/aristanetworks/goarista v0.0.0-20251201112602-a373d7c9f0d9
