@@ -481,6 +481,17 @@ ok('summariseOps treats a body without the flag as applied', () => {
   assert.deepStrictEqual(s, { applied: 3, masked: 0, failed: 0, total: 3 });
 });
 
+ok('summariseOps counts a port held only by its silent partner as applied (nl6#1023)', () => {
+  // The restore click posts UP to both ends at once; the end served first
+  // reads held until the other answers. That is not admin-down masking.
+  const s = T.summariseOps(settled([
+    { masked: true, peer_down: true, admin_status: 'UP', link: 'UP', oper_status: 'DOWN' },
+    { masked: false, peer_down: false, admin_status: 'UP', link: 'UP', oper_status: 'UP' },
+    { masked: true, peer_down: true, admin_status: 'DOWN', link: 'UP', oper_status: 'DOWN' }
+  ]));
+  assert.deepStrictEqual(s, { applied: 2, masked: 1, failed: 0, total: 3 });
+});
+
 ok('summariseOps handles an empty batch', () => {
   assert.deepStrictEqual(T.summariseOps([]), { applied: 0, masked: 0, failed: 0, total: 0 });
   assert.deepStrictEqual(T.summariseOps(undefined), { applied: 0, masked: 0, failed: 0, total: 0 });

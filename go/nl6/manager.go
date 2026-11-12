@@ -463,10 +463,15 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	// required because DeregisterOpticalDevice takes sm.mu itself and Go's
 	// RWMutex is not reentrant.
 	var deregisterOpticalIP net.IP
+	// prunedLinks are released by the same deferred hook, for the same
+	// reason: the release resolves the surviving ends through FindDeviceByIP,
+	// which takes sm.mu (link propagation, nl6#1023).
+	var prunedLinks []topoLink
 	defer func() {
 		if deregisterOpticalIP != nil {
 			sm.DeregisterOpticalDevice(deregisterOpticalIP)
 		}
+		sm.releaseLinks(prunedLinks)
 	}()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -541,7 +546,7 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	// device leaves no dangling links (which would otherwise surface a
 	// stale neighbor row or a malformed `to__` ifAlias on the peer).
 	if sm.topology != nil {
-		sm.topology.PruneDevice(device.IP.String())
+		prunedLinks = sm.topology.PruneDevice(device.IP.String())
 	}
 
 	// Republish DNS zones now the device is gone (debounced; no-op if DNS off).
@@ -588,10 +593,15 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 	sm.tunPoolMutex.Unlock()
 	// Every device is gone, so every topology edge is now dangling —
 	// drop them all (matches the per-device prune in DeleteDevice).
+	var clearedLinks []topoLink
 	if sm.topology != nil {
-		sm.topology.Clear()
+		clearedLinks = sm.topology.Clear()
 	}
 	sm.mu.Unlock()
+	// Release after the unlock, as DeleteDevice does. Every end is already
+	// gone from devicesByIP, so today this stores nothing; it keeps Clear's
+	// contract (no peerDown outlives its link) independent of who calls it.
+	sm.releaseLinks(clearedLinks)
 
 	// The fleet reset must also empty the alarm evaluator: DeleteAllDevices
 	// bypasses DeleteDevice, and without this every optical channel stayed

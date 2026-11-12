@@ -206,26 +206,36 @@ func (t *Topology) validateAgainstLinks(nl topoLink) error {
 	return nil
 }
 
-// Clear removes every link. Used when all devices are deleted so no
-// dangling edges survive.
-func (t *Topology) Clear() {
+// Clear removes every link and returns them. Used when all devices are
+// deleted so no dangling edges survive; the caller releases the removed links'
+// ends (link propagation).
+func (t *Topology) Clear() []topoLink {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	removed := t.links
 	t.links = nil
 	t.adj = make(map[string][]localLink)
 	t.bumpGen()
+	return removed
 }
 
 // RemoveLink removes the undirected link identified by its two endpoints.
 // Returns true if a matching link was found and removed, false otherwise.
 func (t *Topology) RemoveLink(a, b LinkEndpointJSON) bool {
+	_, ok := t.RemoveLinkReturning(a, b)
+	return ok
+}
+
+// RemoveLinkReturning is RemoveLink that also returns the removed link in its
+// stored, normalised form, for a caller that must release its ends.
+func (t *Topology) RemoveLinkReturning(a, b LinkEndpointJSON) (topoLink, bool) {
 	ae, err := normEndpoint(a)
 	if err != nil {
-		return false
+		return topoLink{}, false
 	}
 	be, err := normEndpoint(b)
 	if err != nil {
-		return false
+		return topoLink{}, false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -234,25 +244,28 @@ func (t *Topology) RemoveLink(a, b LinkEndpointJSON) bool {
 			t.links = append(t.links[:i], t.links[i+1:]...)
 			t.rebuildAdj()
 			t.bumpGen()
-			return true
+			return l, true
 		}
 	}
-	return false
+	return topoLink{}, false
 }
 
-// PruneDevice removes every link with an endpoint on the given device IP.
-// Called from DeleteDevice so a deleted device leaves no dangling edges.
-func (t *Topology) PruneDevice(ip string) {
+// PruneDevice removes every link with an endpoint on the given device IP and
+// returns them. Called from DeleteDevice so a deleted device leaves no
+// dangling edges; the caller releases the surviving ends (link propagation).
+func (t *Topology) PruneDevice(ip string) []topoLink {
 	parsed := net.ParseIP(ip)
 	if parsed == nil || parsed.To4() == nil {
-		return
+		return nil
 	}
 	norm := parsed.To4().String()
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	var removed []topoLink
 	kept := t.links[:0]
 	for _, l := range t.links {
 		if l.A.IP == norm || l.B.IP == norm {
+			removed = append(removed, l)
 			continue
 		}
 		kept = append(kept, l)
@@ -260,6 +273,23 @@ func (t *Topology) PruneDevice(ip string) {
 	t.links = kept
 	t.rebuildAdj()
 	t.bumpGen()
+	return removed
+}
+
+// PeerOf returns the far end of the link on (ip, ifIndex), if there is one.
+// O(degree) and allocation-free, for the link-propagation resync, which runs
+// after every interface mutation. ip must already be the canonical dotted quad
+// (DeviceSimulator.IP.String(), which every caller has); unlike LinksFor it
+// does not re-parse it.
+func (t *Topology) PeerOf(ip string, ifIndex int) (linkEndpoint, bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for _, l := range t.adj[ip] {
+		if l.LocalIfIndex == ifIndex {
+			return linkEndpoint{IP: l.PeerIP, IfIndex: l.PeerIfIndex}, true
+		}
+	}
+	return linkEndpoint{}, false
 }
 
 // LinksFor returns the device-centric links touching the given IP, in

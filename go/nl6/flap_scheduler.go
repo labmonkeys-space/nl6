@@ -162,14 +162,23 @@ type FlapScheduler struct {
 	// caller. Same shape as SyslogScheduler (#410) and TrapScheduler (#408).
 	started atomic.Bool
 	runDone chan struct{}
+
+	// publish runs after every fire that moved the link, visible or masked.
+	publish func(deviceIP net.IP, state *InterfaceState, ifIndex int, evts []StateChange)
 }
 
 // FlapSchedulerOptions configures a new scheduler. Pass GlobalCapPerSecond=0
 // for no cap. Now/Seed are exposed for deterministic tests.
+//
+// Publish is what a fire hands its outcome to. The manager passes
+// publishStateChanges, which broadcasts and then resyncs the far end of a
+// topology link (nl6#1023); nil broadcasts only, which is what a scheduler
+// built by a test without a manager gets.
 type FlapSchedulerOptions struct {
 	GlobalCapPerSecond int
 	Seed               int64
 	Now                func() time.Time
+	Publish            func(deviceIP net.IP, state *InterfaceState, ifIndex int, evts []StateChange)
 }
 
 // NewFlapScheduler constructs a scheduler. Call Run to start the loop.
@@ -195,7 +204,21 @@ func NewFlapScheduler(opts FlapSchedulerOptions) *FlapScheduler {
 		seed = time.Now().UnixNano()
 	}
 	s.rnd = rand.New(rand.NewSource(seed))
+	s.publish = opts.Publish
 	return s
+}
+
+// publishFire hands a fire's outcome to the configured Publish. Without one
+// (a scheduler built with no Publish, or the zero value tests construct) it
+// broadcasts the events, which is everything a fire did before nl6#1023.
+func (s *FlapScheduler) publishFire(deviceIP net.IP, state *InterfaceState, ifIndex int, evts []StateChange) {
+	if s.publish != nil {
+		s.publish(deviceIP, state, ifIndex, evts)
+		return
+	}
+	for _, evt := range evts {
+		state.Broadcast(evt)
+	}
 }
 
 // Register attaches a device's interfaces to the scheduler under a
@@ -462,15 +485,18 @@ func (s *FlapScheduler) fireWithRecover(state *InterfaceState, ifIndex int, targ
 	// visible the moment admin comes up — which is what the hardware does.
 	switch res, evts := state.SetLinkState(ifIndex, target); res {
 	case LinkMovedVisible:
-		for _, evt := range evts {
-			state.Broadcast(evt)
-		}
+		s.publishFire(deviceIP, state, ifIndex, evts)
 	case LinkMovedMasked:
 		// The link moved; admin-down or admin-testing masks it. Designed
 		// behaviour, NOT an anomaly — deliberately unlogged. Under
 		// `-if-scenario 1 -if-flap-scenario aggressive` every fire on the
 		// fleet is masked, so a log line here is ~30k lines a minute
 		// describing the feature working.
+		//
+		// Still published, with no events: a masked move changes nothing
+		// this port shows but can change what it transmits, which the far
+		// end of a topology link must see (nl6#1023).
+		s.publishFire(deviceIP, state, ifIndex, nil)
 	case LinkUnchanged:
 		// The slot is already at `target` — a REST POST flipped it between
 		// schedule and fire. The counterpart event was already scheduled

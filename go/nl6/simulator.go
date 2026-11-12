@@ -216,6 +216,10 @@ func main() {
 		// reference auto-start devices not yet created. See CLAUDE.md
 		// "LLDP topology".
 		topologyConfig = flag.String("topology-config", "", "Path to a JSON inter-device link graph ({\"links\":[{\"a\":{\"ip\",\"ifindex\"},\"b\":{\"ip\",\"ifindex\"}}]}); enables LLDP topology when set")
+		// Off by default: turning it on changes what an existing lab sees
+		// (the far end of a downed link goes down too, with its own traps).
+		// See link_propagation.go (nl6#1023).
+		topologyLinkPropagation = flag.Bool("topology-link-propagation", false, "Take the far end of a topology link down while the near end does not transmit (anything but admin up with link up), with its own ifOperStatus transition, traps and syslog")
 
 		// scenarioPEN forms PEN-dependent load-test run tags (syslog SD-PARAM,
 		// SNMP enterprise varbind). 0 = unset → those levers degrade to
@@ -419,6 +423,12 @@ func main() {
 			log.Fatalf("topology: %v", err)
 		}
 		log.Printf("topology: loaded %d link(s) from %s", manager.topology.Count(), *topologyConfig)
+	}
+	// Before any device exists: each device resyncs its links when it is
+	// published, so the startup file needs no resync of its own.
+	manager.SetLinkPropagation(*topologyLinkPropagation)
+	if *topologyLinkPropagation {
+		log.Printf("topology: link propagation on: the far end of a link goes down while the near end does not transmit (-topology-link-propagation)")
 	}
 
 	// Setup signal handler for graceful shutdown

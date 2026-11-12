@@ -200,9 +200,9 @@ func (s *SNMPServer) applySetActions(actions []setAction) setVerdict {
 		if a.column != ifAdminStatusColumn || state == nil {
 			return setVerdict{snmpErrGenErr, i + 1}
 		}
-		for _, evt := range state.ApplyAdminStatus(a.ifIndex, uint8(a.value)) {
-			state.Broadcast(evt)
-		}
+		// Through the same post-mutation helper as the REST POST, which also
+		// resyncs the far end of a topology link (nl6#1023).
+		lldpManager().publishStateChanges(s.device.IP.String(), state, a.ifIndex, state.ApplyAdminStatus(a.ifIndex, uint8(a.value)))
 	}
 	return setVerdict{snmpErrNoError, 0}
 }

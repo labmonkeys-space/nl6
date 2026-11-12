@@ -42,7 +42,7 @@ func TestDeriveOperMatchesRFC2863(t *testing.T) {
 			quote: "If ifAdminStatus is down(2) then ifOperStatus should be down(2).",
 			check: func(t *testing.T) {
 				for link := OperUp; link <= OperLowerLayerDn; link++ {
-					if got := deriveOper(AdminDown, link); got != OperDown {
+					if got := deriveOper(AdminDown, link, false); got != OperDown {
 						t.Errorf("deriveOper(down, link=%d) = %d, want down(2)", link, got)
 					}
 				}
@@ -54,7 +54,7 @@ func TestDeriveOperMatchesRFC2863(t *testing.T) {
 			// ready, and the next clause says so explicitly.
 			quote: "If ifAdminStatus is changed to up(1) then ifOperStatus should change to up(1) if the interface is ready to transmit and receive network traffic",
 			check: func(t *testing.T) {
-				if got := deriveOper(AdminUp, OperUp); got != OperUp {
+				if got := deriveOper(AdminUp, OperUp, false); got != OperUp {
 					t.Errorf("deriveOper(up, link=up) = %d, want up(1)", got)
 				}
 			},
@@ -62,7 +62,7 @@ func TestDeriveOperMatchesRFC2863(t *testing.T) {
 		{
 			quote: "it should remain in the down(2) state if and only if there is a fault that prevents it from going to the up(1) state",
 			check: func(t *testing.T) {
-				if got := deriveOper(AdminUp, OperDown); got != OperDown {
+				if got := deriveOper(AdminUp, OperDown, false); got != OperDown {
 					t.Errorf("deriveOper(up, link=down) = %d, want down(2): admin-up does not "+
 						"clear a fault, and treating it as if it did is what let an admin "+
 						"bounce repair a simulated cable pull", got)
@@ -73,7 +73,7 @@ func TestDeriveOperMatchesRFC2863(t *testing.T) {
 			quote: "The testing(3) state indicates that no operational packets can be passed.",
 			check: func(t *testing.T) {
 				for link := OperUp; link <= OperLowerLayerDn; link++ {
-					if got := deriveOper(AdminTesting, link); got != OperTesting {
+					if got := deriveOper(AdminTesting, link, false); got != OperTesting {
 						t.Errorf("deriveOper(testing, link=%d) = %d, want testing(3)", link, got)
 					}
 				}
@@ -113,7 +113,7 @@ func TestDeriveOperIsTheOnlyRule(t *testing.T) {
 				t.Errorf("slot %d stored (link=%d admin=%d), want (%d %d)",
 					slot, snap.Link, snap.Admin, link, admin)
 			}
-			if want := deriveOper(snap.Admin, snap.Link); snap.Oper != want {
+			if want := deriveOper(snap.Admin, snap.Link, snap.PeerDown); snap.Oper != want {
 				t.Errorf("slot %d: Snapshot.Oper = %d, want deriveOper(%d, %d) = %d",
 					slot, snap.Oper, snap.Admin, snap.Link, want)
 			}

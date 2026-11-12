@@ -492,8 +492,11 @@ func (s *netconfSession) iosxeStateEvent(e *netconfStateEvent) {
 // link is not up, the switch sends nothing when only admin moves, or when
 // oper moves only between no-pass and lower-layer-down. Link moves are
 // always reported.
+//
+// A port whose topology partner is silent (PeerDown, link propagation) has
+// no carrier either, whatever its own link reads, so it counts as link down.
 func iosxeSuppress(evt StateChange) bool {
-	if evt.Link == OperUp || evt.Changed&LeafAdminStatus == 0 {
+	if (evt.Link == OperUp && !evt.PeerDown) || evt.Changed&LeafAdminStatus == 0 {
 		return false
 	}
 	if evt.PrevOper == evt.Oper {

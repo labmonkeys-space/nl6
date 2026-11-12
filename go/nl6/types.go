@@ -392,6 +392,20 @@ type SimulatorManager struct {
 	// POST/DELETE /api/v1/topology endpoints at runtime; pruned on
 	// DeleteDevice. nil only in tests that construct the manager directly.
 	topology *Topology
+	// linkPropagation is -topology-link-propagation (nl6#1023): the far end of
+	// a topology link loses link while the near end does not transmit. Set
+	// once at startup. See link_propagation.go.
+	linkPropagation atomic.Bool
+	// linkPropMu serialises every peerDown resync: the topology lookup, the
+	// near end's read and the far end's write happen under it, so the last
+	// resync to run sees the newest state and a link removal's release cannot
+	// be overtaken by a resync that read the link before it went. Lock order:
+	// linkPropMu, then the topology's mutex and a device's familyMu. sm.mu is
+	// never taken under it (the ends are resolved before), so a DeleteDevice
+	// holding sm.mu across a teardown delays the resyncs that resolve an end
+	// meanwhile, never one already holding linkPropMu and everyone queued on
+	// it. It is never held across Broadcast either.
+	linkPropMu sync.Mutex
 	// currentIP and nextTunIndex are the two allocation counters of the
 	// device-creation path and are BOTH guarded by sm.mu (nl6#556).
 	//

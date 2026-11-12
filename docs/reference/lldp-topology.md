@@ -208,6 +208,8 @@ It joins the link graph with device identity and live per-link state, so a clien
 The graph is **edge-driven**.
 Nodes are the distinct endpoints of configured links (a link-less device does not appear); a link endpoint with no live device is flagged `missing: true`.
 `active` uses the same liveness rule as `/topology/status`; `downEnd` is omitted when the edge is active.
+`downEnd` names the end or ends that are not up.
+With [link propagation](#link-propagation), an end held down only because its partner is silent is not named: one shut port reads `"a"`, and `"both"` means two independent faults.
 This is the data source for the web-console visualization, and is handy on its own for reconciling a deployed topology against intent (`missing` nodes + inactive edges surface dangling links automatically).
 
 ## What is served
@@ -236,6 +238,32 @@ These are identical to what the peer advertises in its local data, so Enlinkd ma
 
 An `ifAlias` is emitted only for a link whose peer is resolvable; an unresolvable peer yields no label (never a malformed `to__`), leaving any static `ifAlias` in place.
 
+## Link propagation
+
+By default a link goes down on the end you take down and nowhere else: the neighbor rows disappear on both sides, but the far end keeps `ifOperStatus` `up(1)` and raises nothing.
+Start the simulator with `-topology-link-propagation` and the far end loses link too, as the far end of a pulled cable or a shut port does on point-to-point Ethernet.
+
+What propagates is what the near end **transmits**: admin `up` and its own link `up`.
+Any other state (admin `down` or `testing`, a link that is `down`, `testing`, `dormant` or anything but `up`) does not transmit.
+Shut the port, `POST .../oper-status DOWN`, or let the flap scheduler down it, and the far end goes `down(2)` with its own `ifLastChange`, `linkDown` trap and syslog message, gNMI ON_CHANGE update, NETCONF and YANG-Push notification where enabled, and counter hold.
+Bring the near end back and the far end comes back with the matching `linkUp`.
+
+The far end's fault is a **separate cause**, not a copy of the near end's link:
+
+- **Faults compose.** A fault on each end keeps the link down until both clear. Each end's flap schedule, REST POST and auto-revert keep owning that end's own link.
+- **It is masked like the link.** On a far end that is itself shut, the cause is stored and fires nothing; `no shutdown` then leaves the port down while its partner is silent.
+- **It never comes back.** A port held down by its partner still transmits, so nothing propagates back to the end that caused it.
+- **The REST body says so.** Every `POST .../oper-status` or `admin-status` on a held port answers `"peer_down": true`. An `oper-status` POST that leaves the link `UP` also answers `"masked": true`: that link is not what collectors see until the partner transmits.
+
+The graph follows its lifecycle. Adding a link whose near end is already down holds the far end down at once, and so does creating a device a configured link was waiting for. Removing a link, or deleting the device on one end, releases the survivor.
+A link end that names a device that does not exist yet, or an `ifIndex` its device does not have, holds nothing and takes nothing; a device type with no interface-state engine counts as transmitting.
+Propagation reads each end's own admin and link, so configure links on physical ports: a subinterface used as an end propagates its own shutdown but not its parent's outage.
+
+**At startup.** With `-topology-config`, a device's links are resolved when the later of the two devices is created. If either end does not transmit at that moment (a port seeded `down` by its resource file or by `-if-scenario`), the other end takes a visible transition then: its `ifLastChange` is stamped at that instant, not at boot, and, when the device exports traps or syslog and `-fidelity` is not muting the fleet, its `linkDown` trap and syslog message go out, because a device's exporters attach before it is published. An end that is itself shut stores the cause and fires nothing.
+
+**Volume.** `-if-flap-global-cap` bounds scheduler fires, not transitions. With propagation one fire on a linked port moves both ends, so a linked port counts twice against what the cap admits, and a linked fleet can see up to twice the link traps and syslog messages it saw without the flag.
+A propagated transition takes no `-if-flap-global-cap` token of its own, because waiting on the cap would pull the two ends apart in time; and, like every state-change trap, its link trap bypasses `-trap-global-cap`.
+
 ## Walking it
 
 LLDP lives at `1.0.8802.1.1.2`, which sorts **before** the standard mib-2 tree.
@@ -255,7 +283,7 @@ It renders `GET /api/v1/topology/graph` with a locally-vendored sigma.js + graph
 
 - **Live liveness.** Edges are **green** when up, **red** when down; nodes are labeled by `sysName` (type + degree on hover), and dangling endpoints render grey. The view refreshes on the console's poll cadence. It **recolors in place** on a state change and only re-runs the layout when the graph *structure* changes, so nodes don't jump every tick.
 - **Two layouts.** *Tiered* (the default) places devices in horizontal fabric bands ranked by device model, so a Clos fabric reads top-down; *Force* is a deterministic, seeded Fruchterman-Reingold layout. A Force/Tiered toggle in the topology panel switches between them.
-- **Click-to-flap.** Click an edge to toggle the link (down one end; click again to restore). The edge thickens on hover so it's an easy target. Click a node to **fail the device** (downs all its links) after a confirm dialog. Both reuse `POST .../oper-status`; the canvas refreshes immediately after.
+- **Click-to-flap.** Click an edge to toggle the link (down one end; click again to restore). The edge thickens on hover so it's an easy target. Click a node to **fail the device** (downs all its links) after a confirm dialog. Both reuse `POST .../oper-status`; the canvas refreshes immediately after. With link propagation the far end goes down too, and the restore click brings both back.
 - **Scale guard.** Above 500 nodes / 2000 links the panel shows a summary (device/link/active counts) with a *render anyway* control instead of drawing the graph.
 
 ## Out of scope

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 )
 
 // FlapSubsystemConfig groups the once-per-process knobs StartFlapSubsystem
@@ -49,6 +50,9 @@ func (sm *SimulatorManager) StartFlapSubsystem(cfg FlapSubsystemConfig) error {
 
 	scheduler := NewFlapScheduler(FlapSchedulerOptions{
 		GlobalCapPerSecond: cfg.GlobalCap,
+		Publish: func(deviceIP net.IP, state *InterfaceState, ifIndex int, evts []StateChange) {
+			sm.publishStateChanges(deviceIP.String(), state, ifIndex, evts)
+		},
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

@@ -294,6 +294,27 @@ func TestNetconfShutdownOnLinkDownIsSilent(t *testing.T) {
 	sentinel.expectNext()
 }
 
+// A port held down by its silent topology partner has no carrier, so a
+// shutdown on it is as silent as on a link-down port (nl6#1023).
+func TestNetconfShutdownOnPeerHeldPortIsSilent(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	sentinel := newNcSentinel(c, st)
+	c.sub(ncXPath("GigabitEthernet1/0/24", "oper-status"))
+	c.sub(ncXPath("GigabitEthernet1/0/24", "admin-status"))
+	c.sub(ncXPath("GigabitEthernet1/0/24", ""))
+
+	ncBroadcast(st, st.SetPeerDown(24, true))
+	c.drain(3)
+
+	ncAdmin(st, 24, AdminDown)
+	ncAdmin(st, 24, AdminUp)
+	if s := st.Snapshot(24); s.Admin != AdminUp || s.Link != OperUp || !s.PeerDown {
+		t.Fatalf("state after the admin bounce: %+v", s)
+	}
+	sentinel.expectNext()
+}
+
 func TestNetconfReverseSubscriptionOrder(t *testing.T) {
 	dev, st := newNetconfTestDevice(t)
 	c := startIOSXETestClient(t, dev)
