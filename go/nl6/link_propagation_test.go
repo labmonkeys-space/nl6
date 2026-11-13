@@ -461,10 +461,13 @@ func TestLinkPropagation_DevicePublishedNextToADownPartnerIsHeldSilently(t *test
 	// startup, before the auto-start batch).
 	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep("10.42.0.2", 2)}}))
 
-	b := f.addDevice(t, 2, 4, "bravo")
+	// Publication runs the tail shared by createSingleDevice and the batch
+	// loop, not the resync helper on its own: deleting the resync from that
+	// tail is what this test must catch.
+	b := f.buildDevice(t, 2, 4, "bravo")
 	rb := recordNotify(b)
 	lastBefore := deviceInterfaceState(b).LastChangeNs(2)
-	f.mgr.resyncDeviceLinks(b)
+	f.mgr.publishDevice(b)
 
 	wantOper(t, "published", b, 2, "2")
 	if got := rb.opers(2); got != nil {
@@ -485,6 +488,14 @@ func TestLinkPropagation_DevicePublishedNextToADownPartnerIsHeldSilently(t *test
 	if got := rb.opers(2); len(got) != 1 || got[0] != OperUp {
 		t.Errorf("bravo notify events after release = %v, want exactly [up]", got)
 	}
+	// Release closes the counter hold: the octet counters advance again.
+	// (The discard and error columns stay zero under the clean scenario, so
+	// they cannot show a release.)
+	for _, col := range []string{".1.3.6.1.2.1.2.2.1.10.", ".1.3.6.1.2.1.2.2.1.16."} {
+		if x, y := ic.GetDynamicAt(col+"2", 10), ic.GetDynamicAt(col+"2", 3600); x == y {
+			t.Errorf("released %s2 still held: %s at t=10 and t=3600", col, x)
+		}
+	}
 }
 
 func TestLinkPropagation_PartnerOfASeededDownPortIsHeldSilently(t *testing.T) {
@@ -495,8 +506,8 @@ func TestLinkPropagation_PartnerOfASeededDownPortIsHeldSilently(t *testing.T) {
 	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep("10.42.0.2", 2)}}))
 	lastBefore := deviceInterfaceState(a).LastChangeNs(1)
 
-	b := f.addDeviceWithLinkDown(t, 2, 4, "bravo", 2)
-	f.mgr.resyncDeviceLinks(b)
+	b := f.buildDeviceWithLinkDown(t, 2, 4, "bravo", 2)
+	f.mgr.publishDevice(b)
 
 	wantOper(t, "partner published with its port seeded down", a, 1, "2")
 	if got := ra.opers(1); got != nil {

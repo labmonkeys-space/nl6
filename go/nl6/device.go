@@ -799,23 +799,10 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			// longer changes. Mirror in createSingleDevice.
 			sm.attachNetconfCallHome(device)
 
-			// Add device to map with a write lock. deviceTypesByIP was
-			// populated earlier (before exporter registration) to avoid a
-			// fire-timing race; repeated write here is idempotent.
+			sm.publishDevice(device)
 			sm.mu.Lock()
-			sm.devices[deviceID] = device
-			sm.deviceIPs[currentIP.String()] = struct{}{}
-			sm.indexDeviceByIP(device)
 			sm.incrementIP(prefix)
 			sm.mu.Unlock()
-			sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
-
-			// A new device may resolve a peer that an existing device's
-			// topology link referenced before it existed, changing that
-			// device's LLDP view and, with link propagation, which of the
-			// two ends holds the other down. (Mirror in createSingleDevice.)
-			invalidateLLDPServedCache()
-			sm.resyncDeviceLinks(device)
 
 			successCount++
 
@@ -1175,11 +1162,25 @@ func (sm *SimulatorManager) createSingleDevice(deviceIP net.IP, deviceID string,
 	// published (mirrors the sequential path).
 	sm.attachNetconfCallHome(device)
 
-	// Add device to map with a write lock. deviceTypesByIP was populated
-	// earlier (before exporter registration) to avoid a fire-timing race.
+	sm.publishDevice(device)
+
+	return true
+}
+
+// publishDevice is the tail both creation paths (the sequential batch loop in
+// createDevicesWithOptionsLocked and createSingleDevice) run once a device has
+// started: it goes into the device maps, DNS republishes, and the topology
+// catches up. It is one function rather than a mirrored block so neither path
+// can drop a step the other keeps, and so a test can run it without root
+// (both paths bind listeners on the device IP before reaching here).
+//
+// deviceTypesByIP was populated earlier (before exporter registration) to
+// avoid a fire-timing race; the batch path's incrementIP stays with the
+// caller, which owns the IP cursor.
+func (sm *SimulatorManager) publishDevice(device *DeviceSimulator) {
 	sm.mu.Lock()
-	sm.devices[deviceID] = device
-	sm.deviceIPs[deviceIP.String()] = struct{}{}
+	sm.devices[device.ID] = device
+	sm.deviceIPs[device.IP.String()] = struct{}{}
 	sm.indexDeviceByIP(device)
 	sm.mu.Unlock()
 	sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
@@ -1187,11 +1188,8 @@ func (sm *SimulatorManager) createSingleDevice(deviceIP net.IP, deviceID string,
 	// A new device may resolve a peer that an existing device's topology link
 	// referenced before it existed, changing that device's LLDP view and, with
 	// link propagation, which of the two ends holds the other down.
-	// (Mirror in CreateDevicesWithOptions.)
 	invalidateLLDPServedCache()
 	sm.resyncDeviceLinks(device)
-
-	return true
 }
 
 // incrementIP advances sm.currentIP to the next assignable host of the given

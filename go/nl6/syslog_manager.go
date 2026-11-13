@@ -888,14 +888,18 @@ func adminStatusValue(admin uint8) string {
 // deviceInterfaceState returns the device's interface state engine, or nil
 // for a device without one (no cycler yet, or a type with no interfaces).
 func deviceInterfaceState(device *DeviceSimulator) *InterfaceState {
+	return deviceIfCounters(device).State()
+}
+
+// deviceIfCounters is the one nil ladder from a device to its interface
+// counter cycler: nil for no device, a type with no cycler, or a cycler not
+// yet loaded. Every reader of the cycler's state or ifIndex list goes
+// through here, so the contract has a single spelling.
+func deviceIfCounters(device *DeviceSimulator) *IfCounterCycler {
 	if device == nil || device.metricsCycler == nil {
 		return nil
 	}
-	ic := device.metricsCycler.ifCounters.Load()
-	if ic == nil {
-		return nil
-	}
-	return ic.State()
+	return device.metricsCycler.ifCounters.Load()
 }
 
 // deviceIfAdminStatusFn returns the `{{.IfAdminStatus}}` source for a

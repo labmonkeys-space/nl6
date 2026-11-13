@@ -114,12 +114,8 @@ type propEnd struct {
 
 // resolveEnd looks end up. Called without linkPropMu.
 func (sm *SimulatorManager) resolveEnd(end linkEndpoint) propEnd {
-	dev := sm.FindDeviceByIP(end.IP)
-	if dev == nil || dev.metricsCycler == nil {
-		return propEnd{end: end}
-	}
-	ic := dev.metricsCycler.ifCounters.Load()
-	if ic == nil || ic.State() == nil || !containsInt(ic.IfIndices(), end.IfIndex) {
+	ic := deviceIfCounters(sm.FindDeviceByIP(end.IP))
+	if ic.State() == nil || !containsInt(ic.IfIndices(), end.IfIndex) {
 		return propEnd{end: end}
 	}
 	return propEnd{end: end, state: ic.State()}

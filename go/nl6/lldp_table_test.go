@@ -39,16 +39,38 @@ func (f *lldpFixture) addDeviceAt(t *testing.T, ipStr string, maxIf int, name st
 	return f.addDeviceAtWithBoot(t, ipStr, maxIf, name, seed, nil)
 }
 
-// addDeviceWithLinkDown is addDevice with ifOperStatus.<downIf> seeded down(2)
-// by the resource file, as -if-scenario or a captured resource file does.
-func (f *lldpFixture) addDeviceWithLinkDown(t *testing.T, host, maxIf int, name string, downIf int) *DeviceSimulator {
-	t.Helper()
-	return f.addDeviceAtWithBoot(t, net.IPv4(10, 42, 0, byte(host)).String(), maxIf, name, int64(host), map[int]bool{downIf: true})
-}
-
 // addDeviceAtWithBoot is addDeviceAt with the boot link state of each
 // interface in linkDown seeded down(2) instead of up(1).
 func (f *lldpFixture) addDeviceAtWithBoot(t *testing.T, ipStr string, maxIf int, name string, seed int64, linkDown map[int]bool) *DeviceSimulator {
+	t.Helper()
+	d := f.buildDeviceAtWithBoot(t, ipStr, maxIf, name, seed, linkDown)
+	f.mgr.mu.Lock()
+	f.mgr.devices[d.ID] = d
+	f.mgr.deviceIPs[d.IP.String()] = struct{}{}
+	f.mgr.indexDeviceByIP(d)
+	f.mgr.mu.Unlock()
+	f.devs[d.IP.String()] = d
+	return d
+}
+
+// buildDevice is addDevice without the registration: the device exists but
+// the manager has not published it. A test that wants to observe publication
+// itself (recorders attached, timestamps read) builds here and then calls
+// the manager's publishDevice, the tail both production creation paths run.
+func (f *lldpFixture) buildDevice(t *testing.T, host, maxIf int, name string) *DeviceSimulator {
+	t.Helper()
+	return f.buildDeviceAtWithBoot(t, net.IPv4(10, 42, 0, byte(host)).String(), maxIf, name, int64(host), nil)
+}
+
+// buildDeviceWithLinkDown is buildDevice with ifOperStatus.<downIf> seeded
+// down(2) by the resource file, as -if-scenario or a captured resource file
+// does.
+func (f *lldpFixture) buildDeviceWithLinkDown(t *testing.T, host, maxIf int, name string, downIf int) *DeviceSimulator {
+	t.Helper()
+	return f.buildDeviceAtWithBoot(t, net.IPv4(10, 42, 0, byte(host)).String(), maxIf, name, int64(host), map[int]bool{downIf: true})
+}
+
+func (f *lldpFixture) buildDeviceAtWithBoot(t *testing.T, ipStr string, maxIf int, name string, seed int64, linkDown map[int]bool) *DeviceSimulator {
 	t.Helper()
 	speeds := make([]uint64, maxIf)
 	for i := range speeds {
@@ -78,13 +100,6 @@ func (f *lldpFixture) addDeviceAtWithBoot(t *testing.T, ipStr string, maxIf int,
 	d.cachedSysName.Store(name)
 	d.metricsCycler.InitIfCountersWithScenario(res, seed, IfErrorClean)
 	d.snmpServer = &SNMPServer{device: d}
-
-	f.mgr.mu.Lock()
-	f.mgr.devices[d.ID] = d
-	f.mgr.deviceIPs[d.IP.String()] = struct{}{}
-	f.mgr.indexDeviceByIP(d)
-	f.mgr.mu.Unlock()
-	f.devs[d.IP.String()] = d
 	return d
 }
 
