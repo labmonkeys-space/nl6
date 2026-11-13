@@ -145,6 +145,7 @@ Every other path stays visible.
 **Edge cases:**
 
 - A missing device, or an `ifIndex` its device does not have, holds nothing and takes nothing.
+- A seed never clears a bit in practice. A port carries one link (`AddLinks` rejects a second), a fresh engine holds no bit, and a pruned partner was released visibly by `PruneDevice` first. The symmetric write stays because the same-value no-op is what makes a resync idempotent.
 - A device type with no engine transmits.
 - `Transmits` reads the port's own admin and link only, so a subinterface end does not propagate its parent's outage. Documented: configure links on physical ports.
 - `StateChange.PeerDown` lets the IOS XE NETCONF dialect treat a held port as carrier-less (`iosxeSuppress`).
