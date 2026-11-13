@@ -211,6 +211,84 @@ func TestSetPeerDown_CascadesToSubinterfaces(t *testing.T) {
 	}
 }
 
+func TestSeedPeerDown_StoresTheCauseWithoutATransition(t *testing.T) {
+	clock := time.Unix(1_800_000_000, 0)
+	s := newInterfaceStateWithClock(1, nil, nil, func() time.Time { return clock })
+	s.Seed(1, OperUp, AdminUp)
+	before := s.LastChangeNs(1)
+	var hooked []int
+	s.setOperHook(func(ifIndex int) { hooked = append(hooked, ifIndex) })
+
+	clock = clock.Add(5 * time.Second)
+	if moved := s.SeedPeerDown(1, true); len(moved) != 1 || moved[0] != 1 {
+		t.Fatalf("SeedPeerDown(true) moved %v, want [1]", moved)
+	}
+	if snap := s.Snapshot(1); !snap.PeerDown || snap.Link != OperUp || snap.Oper != OperDown {
+		t.Errorf("snapshot = %+v, want peerDown, own link up, oper down", snap)
+	}
+	if got := s.LastChangeNs(1); got != before {
+		t.Errorf("lastChange = %d, want %d unchanged: a seed is not a transition", got, before)
+	}
+	if len(hooked) != 1 || hooked[0] != 1 {
+		t.Errorf("hold hook calls = %v, want [1]", hooked)
+	}
+	if again := s.SeedPeerDown(1, true); again != nil {
+		t.Errorf("SeedPeerDown(true) twice moved %v, want nil", again)
+	}
+	// Release after boot is a real transition.
+	evts := s.SetPeerDown(1, false)
+	if len(evts) != 1 || evts[0].Oper != OperUp || evts[0].PrevOper != OperDown {
+		t.Fatalf("SetPeerDown(false) after a seed = %+v, want one oper event down -> up", evts)
+	}
+	if got, want := s.LastChangeNs(1), uint64(clock.UnixNano()); got != want {
+		t.Errorf("lastChange after release = %d, want %d", got, want)
+	}
+}
+
+func TestSeedPeerDown_CascadesToSubinterfacesWithoutStamping(t *testing.T) {
+	s := NewInterfaceState(2, nil, nil)
+	s.setParents(map[int]int{2: 1})
+	s.Seed(1, OperUp, AdminUp)
+	s.Seed(2, OperUp, AdminUp)
+	before := s.LastChangeNs(2)
+	var hooked []int
+	s.setOperHook(func(ifIndex int) { hooked = append(hooked, ifIndex) })
+
+	if moved := s.SeedPeerDown(1, true); len(moved) != 2 || moved[0] != 1 || moved[1] != 2 {
+		t.Fatalf("moved = %v, want [1 2]", moved)
+	}
+	if got := s.OperStatus(2); got != OperLowerLayerDn {
+		t.Errorf("unit oper = %d, want lowerLayerDown(7)", got)
+	}
+	if got := s.LastChangeNs(2); got != before {
+		t.Errorf("unit lastChange = %d, want %d unchanged", got, before)
+	}
+	if len(hooked) != 2 || hooked[0] != 1 || hooked[1] != 2 {
+		t.Errorf("hold hook calls = %v, want [1 2]", hooked)
+	}
+}
+
+func TestSeedPeerDown_MaskedBeneathAdminDownStoresTheBit(t *testing.T) {
+	s := NewInterfaceState(1, nil, nil)
+	s.Seed(1, OperUp, AdminDown)
+	hooked := 0
+	s.setOperHook(func(int) { hooked++ })
+
+	if moved := s.SeedPeerDown(1, true); moved != nil {
+		t.Fatalf("SeedPeerDown under admin down moved %v, want nil", moved)
+	}
+	if hooked != 0 {
+		t.Errorf("hold hook called %d times under admin down, want 0", hooked)
+	}
+	if !s.Snapshot(1).PeerDown {
+		t.Fatal("the bit was not stored")
+	}
+	s.ApplyAdminStatus(1, AdminUp)
+	if got := s.OperStatus(1); got != OperDown {
+		t.Errorf("oper after admin up = %d, want down(2): the far end is still silent", got)
+	}
+}
+
 func TestStateSnapshotTransmitsIgnoresPeerDown(t *testing.T) {
 	s := NewInterfaceState(3, nil, nil)
 	s.Seed(1, OperUp, AdminUp)
@@ -324,9 +402,15 @@ func TestLinkPropagation_AddLinkWithTheNearEndAlreadyDownHoldsTheFarEnd(t *testi
 	a := f.addDevice(t, 1, 4, "alpha")
 	b := f.addDevice(t, 2, 4, "bravo")
 	postStatus(t, a, 1, "oper-status", "DOWN")
+	rb := recordNotify(b)
 
 	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep(b.IP.String(), 2)}}))
 	wantOper(t, "link added to a down port", b, 2, "2")
+	// A runtime link add is an operator action: the far end's transition is
+	// visible, unlike a seed at device publication.
+	if got := rb.opers(2); len(got) != 1 || got[0] != OperDown {
+		t.Errorf("bravo notify events on a runtime link add = %v, want exactly [down]", got)
+	}
 }
 
 func TestLinkPropagation_RESTTopologyPostAndDeleteResyncAndRelease(t *testing.T) {
@@ -368,7 +452,7 @@ func TestLinkPropagation_ClearReleasesEveryEnd(t *testing.T) {
 	wantOper(t, "graph cleared", b, 2, "1")
 }
 
-func TestLinkPropagation_DevicePublishedAfterItsLinkResyncsBothEnds(t *testing.T) {
+func TestLinkPropagation_DevicePublishedNextToADownPartnerIsHeldSilently(t *testing.T) {
 	f := newLLDPFixture(t)
 	f.mgr.SetLinkPropagation(true)
 	a := f.addDevice(t, 1, 4, "alpha")
@@ -378,9 +462,52 @@ func TestLinkPropagation_DevicePublishedAfterItsLinkResyncsBothEnds(t *testing.T
 	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep("10.42.0.2", 2)}}))
 
 	b := f.addDevice(t, 2, 4, "bravo")
-	wantOper(t, "published, before the resync", b, 2, "1")
+	rb := recordNotify(b)
+	lastBefore := deviceInterfaceState(b).LastChangeNs(2)
 	f.mgr.resyncDeviceLinks(b)
-	wantOper(t, "published and resynced", b, 2, "2")
+
+	wantOper(t, "published", b, 2, "2")
+	if got := rb.opers(2); got != nil {
+		t.Errorf("bravo notify events at publication = %v, want none", got)
+	}
+	if got := deviceInterfaceState(b).LastChangeNs(2); got != lastBefore {
+		t.Errorf("bravo lastChange.2 = %d, want %d unchanged: held from boot", got, lastBefore)
+	}
+	ic := b.metricsCycler.ifCounters.Load()
+	for _, col := range heldColumns() {
+		if x, y := ic.GetDynamicAt(col+"2", 10), ic.GetDynamicAt(col+"2", 3600); x != y {
+			t.Errorf("held %s2 moved: %s at t=10, %s at t=3600", col, x, y)
+		}
+	}
+
+	postStatus(t, a, 1, "oper-status", "UP")
+	wantOper(t, "partner recovered", b, 2, "1")
+	if got := rb.opers(2); len(got) != 1 || got[0] != OperUp {
+		t.Errorf("bravo notify events after release = %v, want exactly [up]", got)
+	}
+}
+
+func TestLinkPropagation_PartnerOfASeededDownPortIsHeldSilently(t *testing.T) {
+	f := newLLDPFixture(t)
+	f.mgr.SetLinkPropagation(true)
+	a := f.addDevice(t, 1, 4, "alpha")
+	ra := recordNotify(a)
+	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep("10.42.0.2", 2)}}))
+	lastBefore := deviceInterfaceState(a).LastChangeNs(1)
+
+	b := f.addDeviceWithLinkDown(t, 2, 4, "bravo", 2)
+	f.mgr.resyncDeviceLinks(b)
+
+	wantOper(t, "partner published with its port seeded down", a, 1, "2")
+	if got := ra.opers(1); got != nil {
+		t.Errorf("alpha notify events at partner publication = %v, want none", got)
+	}
+	if got := deviceInterfaceState(a).LastChangeNs(1); got != lastBefore {
+		t.Errorf("alpha lastChange.1 = %d, want %d unchanged", got, lastBefore)
+	}
+	if out := postStatus(t, a, 1, "oper-status", "UP"); !out.PeerDown || !out.Masked {
+		t.Errorf("alpha POST UP while held = %+v, want masked and peer_down", out)
+	}
 }
 
 func TestLinkPropagation_FlapSchedulerFiresReachTheFarEndIncludingMaskedOnes(t *testing.T) {

@@ -160,8 +160,11 @@ func (sm *SimulatorManager) resyncFarEnd(ip string, ifIndex int) {
 
 // resyncLinks resyncs both directions of every link in links. Called after a
 // link is added and after a device is created, the two moments a link can
-// start carrying state it did not carry before.
-func (sm *SimulatorManager) resyncLinks(links []topoLink) {
+// start carrying state it did not carry before. With seed (device
+// publication, nl6#1029) the ends are written through SeedPeerDown: an end
+// whose partner does not transmit is held with the bit and the counter hold
+// only, nothing is broadcast, and there is nothing to flush after the lock.
+func (sm *SimulatorManager) resyncLinks(links []topoLink, seed bool) {
 	if !sm.linkPropagationOn() || len(links) == 0 {
 		return
 	}
@@ -177,6 +180,11 @@ func (sm *SimulatorManager) resyncLinks(links []topoLink) {
 			continue
 		}
 		a, b := ends[i][0], ends[i][1]
+		if seed {
+			seedPeerDownLocked(b, !a.transmits())
+			seedPeerDownLocked(a, !b.transmits())
+			continue
+		}
 		pending = setPeerDownLocked(b, !a.transmits(), pending)
 		pending = setPeerDownLocked(a, !b.transmits(), pending)
 	}
@@ -217,13 +225,22 @@ func setPeerDownLocked(end propEnd, down bool, pending []pendingBroadcast) []pen
 	return pending
 }
 
+// seedPeerDownLocked is setPeerDownLocked for a seed: the end's hold is
+// stored without a transition. Caller holds linkPropMu.
+func seedPeerDownLocked(end propEnd, down bool) {
+	if end.state == nil {
+		return
+	}
+	end.state.SeedPeerDown(end.end.IfIndex, down)
+}
+
 // AddTopologyLinks adds links to the graph and resyncs them, so a link whose
 // near end is already down holds its far end down from the moment it exists.
 func (sm *SimulatorManager) AddTopologyLinks(links []LinkJSON) error {
 	if err := sm.topology.AddLinks(links); err != nil {
 		return err
 	}
-	sm.resyncLinks(normLinks(links))
+	sm.resyncLinks(normLinks(links), false)
 	return nil
 }
 
@@ -236,9 +253,20 @@ func (sm *SimulatorManager) RemoveTopologyLink(a, b LinkEndpointJSON) bool {
 	return ok
 }
 
-// resyncDeviceLinks resyncs every link touching a device that has just been
-// published, which may resolve the far end of a link configured before the
-// device existed.
+// resyncDeviceLinks seeds every link of a device that has just been
+// published (both creation paths, beside invalidateLLDPServedCache),
+// through resyncLinks with seed set. A link
+// loaded before its devices exist (-topology-config) resolves when the later
+// of the two is created, and the seed takes effect on both ends silently, as
+// if both boxes had booted together: an end whose partner does not transmit
+// at that moment goes down(2) with its counters held and its lastChange
+// untouched, and fires no linkDown trap, syslog message or ON_CHANGE update.
+// On the new device that is down(2) from the first poll with lastChange at
+// boot. On a partner that already existed, polls before this publication
+// read up(1) and lastChange stays wherever it was: that port was up only
+// because its neighbour did not exist yet, the simulator's fiction and not
+// the fleet's. The first later change on either end is a normal transition
+// (nl6#1029).
 func (sm *SimulatorManager) resyncDeviceLinks(device *DeviceSimulator) {
 	if !sm.linkPropagationOn() || device == nil {
 		return
@@ -251,7 +279,7 @@ func (sm *SimulatorManager) resyncDeviceLinks(device *DeviceSimulator) {
 			B: linkEndpoint{IP: l.PeerIP, IfIndex: l.PeerIfIndex},
 		})
 	}
-	sm.resyncLinks(links)
+	sm.resyncLinks(links, true)
 }
 
 // normLinks converts wire links that AddLinks has already accepted into the

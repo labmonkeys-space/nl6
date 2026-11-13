@@ -36,6 +36,20 @@ func (f *lldpFixture) addDevice(t *testing.T, host, maxIf int, name string) *Dev
 // (all UP), sysName = name, sysDescr = "<name> desc".
 func (f *lldpFixture) addDeviceAt(t *testing.T, ipStr string, maxIf int, name string, seed int64) *DeviceSimulator {
 	t.Helper()
+	return f.addDeviceAtWithBoot(t, ipStr, maxIf, name, seed, nil)
+}
+
+// addDeviceWithLinkDown is addDevice with ifOperStatus.<downIf> seeded down(2)
+// by the resource file, as -if-scenario or a captured resource file does.
+func (f *lldpFixture) addDeviceWithLinkDown(t *testing.T, host, maxIf int, name string, downIf int) *DeviceSimulator {
+	t.Helper()
+	return f.addDeviceAtWithBoot(t, net.IPv4(10, 42, 0, byte(host)).String(), maxIf, name, int64(host), map[int]bool{downIf: true})
+}
+
+// addDeviceAtWithBoot is addDeviceAt with the boot link state of each
+// interface in linkDown seeded down(2) instead of up(1).
+func (f *lldpFixture) addDeviceAtWithBoot(t *testing.T, ipStr string, maxIf int, name string, seed int64, linkDown map[int]bool) *DeviceSimulator {
+	t.Helper()
 	speeds := make([]uint64, maxIf)
 	for i := range speeds {
 		speeds[i] = 1_000_000_000
@@ -44,9 +58,13 @@ func (f *lldpFixture) addDeviceAt(t *testing.T, ipStr string, maxIf int, name st
 	res.oidIndex.Store(".1.3.6.1.2.1.1.1.0", name+" desc")
 	for i := 1; i <= maxIf; i++ {
 		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%d", i), fmt.Sprintf("GigabitEthernet0/%d", i))
-		// Boot state UP.
+		// Boot state UP unless seeded down.
 		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.7.%d", i), "1")
-		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.8.%d", i), "1")
+		link := "1"
+		if linkDown[i] {
+			link = "2"
+		}
+		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.8.%d", i), link)
 	}
 	indexResources(res)
 

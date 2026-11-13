@@ -747,6 +747,77 @@ func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) []StateChange {
 	}
 }
 
+// SeedPeerDown is SetPeerDown for device publication (nl6#1029): it stores
+// the far-end cause and moves the derived oper-status of the port and its
+// subinterfaces, but a seed is NOT a transition. No StateChange is returned
+// or broadcast, so no trap, syslog, ON_CHANGE or Tier C notify fires, and
+// lastChange is left where it was, on the port and on its children: a box
+// published next to a dead neighbour never saw the link come up. Because
+// Broadcast is not reached, the counter-hold hook is called here, after the
+// family lock is released, for every ifIndex whose derived oper moved. It
+// returns those ifIndexes (the port first, then its moved children), or nil
+// when nothing moved: the same value, or a change masked beneath admin down
+// or an own fault, which stores the bit and nothing else.
+func (s *InterfaceState) SeedPeerDown(ifIndex int, down bool) []int {
+	moved := s.seedPeerDownLocked(ifIndex, down)
+	if s.onOper != nil {
+		for _, idx := range moved {
+			s.onOper(idx)
+		}
+	}
+	return moved
+}
+
+func (s *InterfaceState) seedPeerDownLocked(ifIndex int, down bool) []int {
+	slot := ifIndex - 1
+	if slot < 0 || slot >= s.maxIfIndex {
+		return nil
+	}
+	defer s.lockFamily(slot)()
+	for {
+		cur := s.slots[slot].Load()
+		curLink, curAdmin, curPeerDown, curRel := unpackState(cur)
+		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
+		if curPeerDown == down {
+			return nil
+		}
+		if !s.slots[slot].CompareAndSwap(cur, packState(curLink, curAdmin, down, curRel)) {
+			continue
+		}
+		pOper := s.parentOper(slot)
+		wasOper := deriveChildOper(curAdmin, curLink, curPeerDown, pOper)
+		nowOper := deriveChildOper(curAdmin, curLink, down, pOper)
+		if wasOper == nowOper {
+			return nil
+		}
+		invalidateLLDPServedCache()
+		return append([]int{ifIndex}, s.seedChildren(slot, wasOper, nowOper)...)
+	}
+}
+
+// seedChildren is cascadeChildren for a seed: each subinterface whose derived
+// oper-status moved with its parent is reported by ifIndex, with its own
+// lastChange untouched. Nothing is written to the child's slot, because its
+// derived oper is a function of the parent's and it stores no parent bit;
+// the walk exists to name the children whose counters must now hold.
+//
+// The caller holds familyMu, so neither the parent nor any child can move
+// during the walk.
+func (s *InterfaceState) seedChildren(slot int, wasParent, nowParent uint8) []int {
+	if s.children == nil {
+		return nil
+	}
+	var out []int
+	for _, c := range s.children[slot] {
+		link, admin, peerDown, _ := unpackState(s.slots[c-1].Load())
+		link, admin = normaliseSlot(link, admin)
+		if deriveChildOper(admin, link, peerDown, wasParent) != deriveChildOper(admin, link, peerDown, nowParent) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // cascadeChildren is the other half of a parent's visible oper transition from
 // wasParent to nowParent: each subinterface whose derived oper-status moved with
 // it gets its lastChange stamped with the parent's transition time and an oper
