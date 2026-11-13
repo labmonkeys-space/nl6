@@ -402,9 +402,15 @@ func TestLinkPropagation_AddLinkWithTheNearEndAlreadyDownHoldsTheFarEnd(t *testi
 	a := f.addDevice(t, 1, 4, "alpha")
 	b := f.addDevice(t, 2, 4, "bravo")
 	postStatus(t, a, 1, "oper-status", "DOWN")
+	rb := recordNotify(b)
 
 	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep(b.IP.String(), 2)}}))
 	wantOper(t, "link added to a down port", b, 2, "2")
+	// A runtime link add is an operator action: the far end's transition is
+	// visible, unlike a seed at device publication.
+	if got := rb.opers(2); len(got) != 1 || got[0] != OperDown {
+		t.Errorf("bravo notify events on a runtime link add = %v, want exactly [down]", got)
+	}
 }
 
 func TestLinkPropagation_RESTTopologyPostAndDeleteResyncAndRelease(t *testing.T) {
@@ -446,7 +452,7 @@ func TestLinkPropagation_ClearReleasesEveryEnd(t *testing.T) {
 	wantOper(t, "graph cleared", b, 2, "1")
 }
 
-func TestLinkPropagation_DevicePublishedAfterItsLinkResyncsBothEnds(t *testing.T) {
+func TestLinkPropagation_DevicePublishedNextToADownPartnerIsHeldSilently(t *testing.T) {
 	f := newLLDPFixture(t)
 	f.mgr.SetLinkPropagation(true)
 	a := f.addDevice(t, 1, 4, "alpha")
@@ -456,9 +462,52 @@ func TestLinkPropagation_DevicePublishedAfterItsLinkResyncsBothEnds(t *testing.T
 	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep("10.42.0.2", 2)}}))
 
 	b := f.addDevice(t, 2, 4, "bravo")
-	wantOper(t, "published, before the resync", b, 2, "1")
+	rb := recordNotify(b)
+	lastBefore := deviceInterfaceState(b).LastChangeNs(2)
 	f.mgr.resyncDeviceLinks(b)
-	wantOper(t, "published and resynced", b, 2, "2")
+
+	wantOper(t, "published", b, 2, "2")
+	if got := rb.opers(2); got != nil {
+		t.Errorf("bravo notify events at publication = %v, want none", got)
+	}
+	if got := deviceInterfaceState(b).LastChangeNs(2); got != lastBefore {
+		t.Errorf("bravo lastChange.2 = %d, want %d unchanged: held from boot", got, lastBefore)
+	}
+	ic := b.metricsCycler.ifCounters.Load()
+	for _, col := range heldColumns() {
+		if x, y := ic.GetDynamicAt(col+"2", 10), ic.GetDynamicAt(col+"2", 3600); x != y {
+			t.Errorf("held %s2 moved: %s at t=10, %s at t=3600", col, x, y)
+		}
+	}
+
+	postStatus(t, a, 1, "oper-status", "UP")
+	wantOper(t, "partner recovered", b, 2, "1")
+	if got := rb.opers(2); len(got) != 1 || got[0] != OperUp {
+		t.Errorf("bravo notify events after release = %v, want exactly [up]", got)
+	}
+}
+
+func TestLinkPropagation_PartnerOfASeededDownPortIsHeldSilently(t *testing.T) {
+	f := newLLDPFixture(t)
+	f.mgr.SetLinkPropagation(true)
+	a := f.addDevice(t, 1, 4, "alpha")
+	ra := recordNotify(a)
+	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 1), B: ep("10.42.0.2", 2)}}))
+	lastBefore := deviceInterfaceState(a).LastChangeNs(1)
+
+	b := f.addDeviceWithLinkDown(t, 2, 4, "bravo", 2)
+	f.mgr.resyncDeviceLinks(b)
+
+	wantOper(t, "partner published with its port seeded down", a, 1, "2")
+	if got := ra.opers(1); got != nil {
+		t.Errorf("alpha notify events at partner publication = %v, want none", got)
+	}
+	if got := deviceInterfaceState(a).LastChangeNs(1); got != lastBefore {
+		t.Errorf("alpha lastChange.1 = %d, want %d unchanged", got, lastBefore)
+	}
+	if out := postStatus(t, a, 1, "oper-status", "UP"); !out.PeerDown || !out.Masked {
+		t.Errorf("alpha POST UP while held = %+v, want masked and peer_down", out)
+	}
 }
 
 func TestLinkPropagation_FlapSchedulerFiresReachTheFarEndIncludingMaskedOnes(t *testing.T) {
