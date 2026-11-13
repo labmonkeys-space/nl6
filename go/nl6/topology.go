@@ -221,13 +221,11 @@ func (t *Topology) Clear() []topoLink {
 
 // RemoveLink removes the undirected link identified by its two endpoints.
 // Returns true if a matching link was found and removed, false otherwise.
-func (t *Topology) RemoveLink(a, b LinkEndpointJSON) bool {
-	_, ok := t.RemoveLinkReturning(a, b)
-	return ok
-}
-
-// RemoveLinkReturning is RemoveLink that also returns the removed link in its
-// stored, normalised form, for a caller that must release its ends.
+// RemoveLinkReturning removes the link between a and b in either order and
+// returns it in its stored, normalised form, for a caller that must release
+// its ends. There is deliberately no boolean-only variant: every production
+// removal goes through SimulatorManager.RemoveTopologyLink so the ends are
+// released, and a wrapper that drops the link would let a caller skip that.
 func (t *Topology) RemoveLinkReturning(a, b LinkEndpointJSON) (topoLink, bool) {
 	ae, err := normEndpoint(a)
 	if err != nil {

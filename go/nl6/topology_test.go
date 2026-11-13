@@ -84,17 +84,21 @@ func TestTopology_PruneDevice(t *testing.T) {
 	}
 }
 
-func TestTopology_RemoveLink(t *testing.T) {
+func TestTopology_RemoveLinkReturning(t *testing.T) {
 	tp := NewTopology()
 	must(t, tp.AddLink(ep("10.0.0.1", 5), ep("10.0.0.2", 12)))
-	if !tp.RemoveLink(ep("10.0.0.2", 12), ep("10.0.0.1", 5)) {
-		t.Fatal("RemoveLink (reversed) should find the link")
+	removed, ok := tp.RemoveLinkReturning(ep("10.0.0.2", 12), ep("10.0.0.1", 5))
+	if !ok {
+		t.Fatal("RemoveLinkReturning (reversed) should find the link")
+	}
+	if want := (topoLink{A: linkEndpoint{"10.0.0.1", 5}, B: linkEndpoint{"10.0.0.2", 12}}); removed != want {
+		t.Fatalf("removed link = %+v, want the stored, normalised form", removed)
 	}
 	if tp.Count() != 0 {
 		t.Fatalf("expected empty after remove, got %d", tp.Count())
 	}
-	if tp.RemoveLink(ep("10.0.0.1", 5), ep("10.0.0.2", 12)) {
-		t.Fatal("RemoveLink of absent link should return false")
+	if _, ok := tp.RemoveLinkReturning(ep("10.0.0.1", 5), ep("10.0.0.2", 12)); ok {
+		t.Fatal("RemoveLinkReturning of absent link should return false")
 	}
 }
 
