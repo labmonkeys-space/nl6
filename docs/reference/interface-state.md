@@ -199,11 +199,12 @@ Returns:
 - `202 Accepted` with the outcome on success:
 
   ```json
-  { "link": "UP", "oper_status": "DOWN", "admin_status": "DOWN", "masked": true }
+  { "link": "UP", "oper_status": "DOWN", "admin_status": "DOWN", "masked": true, "peer_down": false }
   ```
 
   `masked` is `true` whenever `ifAdminStatus` is `DOWN` or `TESTING`.
   It is also `true` on a subinterface whose link is `UP` while its parent is not up, because it reads `LOWER_LAYER_DOWN` whatever the link does.
+  And it is `true` on a port whose link is `UP` while its topology partner does not transmit, which `peer_down: true` reports (only with `-topology-link-propagation`; see [Link propagation](lldp-topology.md#link-propagation)).
   In that state the link state you now hold is not what collectors see.
   While it is set, no link trap, syslog message or gNMI `ON_CHANGE` update will fire from this interface and `ifLastChange` will not move, whatever the link does.
   It is a property of the interface, not of the request, so a POST that changes nothing still reports it.
@@ -228,7 +229,7 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/interfaces/3/oper-st
 curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/interfaces/3/oper-status \
   -H 'Content-Type: application/json' \
   -d '{"status":"UP"}'
-# {"link":"UP","oper_status":"DOWN","admin_status":"DOWN","masked":true}
+# {"link":"UP","oper_status":"DOWN","admin_status":"DOWN","masked":true,"peer_down":false}
 # Raising admin-status afterwards surfaces the link with no further request.
 
 # Bad ifIndex: 400 with valid list

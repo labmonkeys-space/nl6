@@ -812,8 +812,10 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 
 			// A new device may resolve a peer that an existing device's
 			// topology link referenced before it existed, changing that
-			// device's LLDP view. (Mirror in createSingleDevice.)
+			// device's LLDP view and, with link propagation, which of the
+			// two ends holds the other down. (Mirror in createSingleDevice.)
 			invalidateLLDPServedCache()
+			sm.resyncDeviceLinks(device)
 
 			successCount++
 
@@ -1183,9 +1185,11 @@ func (sm *SimulatorManager) createSingleDevice(deviceIP net.IP, deviceID string,
 	sm.markDNSDirty() // republish DNS zones (debounced; no-op if DNS off)
 
 	// A new device may resolve a peer that an existing device's topology link
-	// referenced before it existed, changing that device's LLDP view.
+	// referenced before it existed, changing that device's LLDP view and, with
+	// link propagation, which of the two ends holds the other down.
 	// (Mirror in CreateDevicesWithOptions.)
 	invalidateLLDPServedCache()
+	sm.resyncDeviceLinks(device)
 
 	return true
 }

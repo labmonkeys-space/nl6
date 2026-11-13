@@ -15,23 +15,28 @@ import (
 func TestInterfaceState_PackUnpackRoundtrip(t *testing.T) {
 	cases := []struct {
 		oper, admin  uint8
+		peerDown     bool
 		lastChangeNs uint64
 		wantLastChng uint64 // after masking to 58 bits
 	}{
-		{OperUp, AdminUp, 0, 0},
-		{OperDown, AdminUp, 1_000_000_000, 1_000_000_000},
-		{OperLowerLayerDn, AdminTesting, 12345678901234, 12345678901234},
+		{OperUp, AdminUp, false, 0, 0},
+		{OperDown, AdminUp, false, 1_000_000_000, 1_000_000_000},
+		{OperLowerLayerDn, AdminTesting, false, 12345678901234, 12345678901234},
 		// 58-bit boundary
-		{OperUp, AdminDown, 1 << 57, 1 << 57},
+		{OperUp, AdminDown, false, 1 << 57, 1 << 57},
+		// peerDown sits between admin and lastChange: every neighbour at its
+		// widest value, so a bit leaking across a boundary shows.
+		{OperLowerLayerDn, AdminTesting, true, lastChangeMask, lastChangeMask},
+		{OperUp, AdminUp, true, 0, 0},
 	}
 	for _, tc := range cases {
-		w := packState(tc.oper, tc.admin, tc.lastChangeNs)
-		gotOper, gotAdmin, gotNs := unpackState(w)
-		if gotOper != tc.oper || gotAdmin != tc.admin || gotNs != tc.wantLastChng {
-			t.Errorf("pack(%d,%d,%d) → unpack = (%d,%d,%d); want (%d,%d,%d)",
-				tc.oper, tc.admin, tc.lastChangeNs,
-				gotOper, gotAdmin, gotNs,
-				tc.oper, tc.admin, tc.wantLastChng)
+		w := packState(tc.oper, tc.admin, tc.peerDown, tc.lastChangeNs)
+		gotOper, gotAdmin, gotPeer, gotNs := unpackState(w)
+		if gotOper != tc.oper || gotAdmin != tc.admin || gotPeer != tc.peerDown || gotNs != tc.wantLastChng {
+			t.Errorf("pack(%d,%d,%t,%d) → unpack = (%d,%d,%t,%d); want (%d,%d,%t,%d)",
+				tc.oper, tc.admin, tc.peerDown, tc.lastChangeNs,
+				gotOper, gotAdmin, gotPeer, gotNs,
+				tc.oper, tc.admin, tc.peerDown, tc.wantLastChng)
 		}
 	}
 }

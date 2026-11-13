@@ -56,8 +56,10 @@ func createTopologyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// AddLinks validates and commits the whole batch under one lock —
-	// atomic all-or-nothing even against concurrent topology requests.
-	if err := manager.topology.AddLinks(doc.Links); err != nil {
+	// atomic all-or-nothing even against concurrent topology requests. The
+	// manager wrapper then resyncs the new links, so a link whose near end is
+	// already down holds its far end down at once (link propagation).
+	if err := manager.AddTopologyLinks(doc.Links); err != nil {
 		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -97,7 +99,7 @@ func deleteTopologyHandler(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, "invalid topology body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if manager.topology.RemoveLink(link.A, link.B) {
+	if manager.RemoveTopologyLink(link.A, link.B) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

@@ -610,7 +610,14 @@
       var body = r.value;
       // A server that predates the outcome body (or any non-object value)
       // counts as applied: absence of the flag is not evidence of masking.
-      if (body && typeof body === 'object' && body.masked === true) { masked++; return; }
+      //
+      // A port that is admin-up and held down only by its silent topology
+      // partner (peer_down, -topology-link-propagation) counts as applied too:
+      // the restore click posts UP to both ends at once, and whichever end is
+      // served first reads held until the other end answers. Its link was set;
+      // nothing about admin-down applies to it.
+      if (body && typeof body === 'object' && body.masked === true &&
+          !(body.peer_down === true && body.admin_status === 'UP')) { masked++; return; }
       applied++;
     });
     return { applied: applied, masked: masked, failed: failed, total: applied + masked + failed };

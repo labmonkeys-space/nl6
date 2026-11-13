@@ -64,6 +64,7 @@ type StateChange struct {
 	PrevOper     uint8         // derived oper-status before the mutation
 	Admin        uint8         // current value after mutation
 	Link         uint8         // link-state at mutation time (normalised)
+	PeerDown     bool          // far-end cause at mutation time (link propagation)
 	LastChangeNs uint64        // absolute Unix nanos
 	Changed      StateLeafBits // which status leaves moved (last-change implied if non-zero)
 	At           time.Time
@@ -85,15 +86,15 @@ type StateChange struct {
 //
 // Slot layout (single atomic.Uint64 per slot, slot = ifIndex - 1):
 //
-//	bit 63 ──────────────────────── 0
-//	┌─────────────────┬────┬────┐
-//	│  lastChangeNs   │ AD │ OP │
-//	└─────────────────┴────┴────┘
-//	      58 bits      3 b  3 b
+//	bit 63 ─────────────────────────── 0
+//	┌─────────────────┬────┬────┬──────┐
+//	│  lastChangeNs   │ PD │ AD │ LINK │
+//	└─────────────────┴────┴────┴──────┘
+//	      58 bits      1 b  2 b   3 b
 //
 // 58 bits of nanoseconds-since-boot covers ~9.13 years; sufficient for
 // any realistic simulator session. Single atomic word guarantees a
-// reader never sees a torn (oper, admin, lastChange) tuple.
+// reader never sees a torn (link, admin, peerDown, lastChange) tuple.
 type InterfaceState struct {
 	slots          []atomic.Uint64 // slot = ifIndex - 1; out-of-range ifIndexes return zero values
 	maxIfIndex     int             // upper bound; slots has length maxIfIndex
@@ -244,7 +245,7 @@ func (s *InterfaceState) Seed(ifIndex int, link, admin uint8) {
 		log.Printf("interface_state: Seed rejected: ifIndex %d admin=%d outside IF-MIB range [%d..%d]", ifIndex, admin, AdminUp, AdminTesting)
 		return
 	}
-	s.slots[slot].Store(packState(link, admin, 0))
+	s.slots[slot].Store(packState(link, admin, false, 0))
 }
 
 // setParents records each subinterface's parent ifIndex (see
@@ -356,9 +357,9 @@ func (s *InterfaceState) parentOper(slot int) uint8 {
 	if s.parent == nil || s.parent[slot] == 0 {
 		return OperUp
 	}
-	link, admin, _ := unpackState(s.slots[s.parent[slot]-1].Load())
+	link, admin, peerDown, _ := unpackState(s.slots[s.parent[slot]-1].Load())
 	link, admin = normaliseSlot(link, admin)
-	return deriveOper(admin, link)
+	return deriveOper(admin, link, peerDown)
 }
 
 // StateSnapshot is the atomic (oper, admin, lastChange) tuple
@@ -375,10 +376,24 @@ type StateSnapshot struct {
 	// compare what was actually stored — notably the REST oper-status
 	// auto-revert — MUST use this, never Oper: reverting to a derived value
 	// writes the mask into the link and destroys the pre-mutation state.
-	Link         uint8
-	Admin        uint8
+	Link  uint8
+	Admin uint8
+	// PeerDown is the stored far-end cause: the other end of this port's
+	// topology link is not transmitting. Always false without
+	// -topology-link-propagation.
+	PeerDown     bool
 	LastChangeNs uint64
 	Found        bool
+}
+
+// Transmits reports whether the port is sending a signal its link partner
+// can see: admin up AND its own link up. PeerDown is deliberately left out.
+// It is what the far end receives from THIS port that matters, and a port held
+// down only because its partner is silent still transmits; counting the bit
+// here would make a propagated transition propagate back and latch both ends
+// down.
+func (snap StateSnapshot) Transmits() bool {
+	return snap.Found && snap.Admin == AdminUp && snap.Link == OperUp
 }
 
 // Snapshot atomically reads the (oper, admin, lastChange) tuple for
@@ -399,7 +414,7 @@ func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
 	if slot < 0 || slot >= s.maxIfIndex {
 		return StateSnapshot{}
 	}
-	link, admin, rel := unpackState(s.slots[slot].Load())
+	link, admin, peerDown, rel := unpackState(s.slots[slot].Load())
 	link, admin = normaliseSlot(link, admin)
 	var lc uint64
 	if rel == lastChangeMask {
@@ -408,9 +423,10 @@ func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
 		lc = s.bootTimeUnixNs + rel
 	}
 	return StateSnapshot{
-		Oper:         deriveChildOper(admin, link, s.parentOper(slot)),
+		Oper:         deriveChildOper(admin, link, peerDown, s.parentOper(slot)),
 		Link:         link,
 		Admin:        admin,
+		PeerDown:     peerDown,
 		LastChangeNs: lc,
 		Found:        true,
 	}
@@ -428,7 +444,7 @@ func (s *InterfaceState) LinkState(ifIndex int) uint8 {
 	if slot < 0 || slot >= s.maxIfIndex {
 		return OperUnknown
 	}
-	link, _, _ := unpackState(s.slots[slot].Load())
+	link, _, _, _ := unpackState(s.slots[slot].Load())
 	if link == 0 {
 		return OperUnknown
 	}
@@ -445,9 +461,9 @@ func (s *InterfaceState) OperStatus(ifIndex int) uint8 {
 	if slot < 0 || slot >= s.maxIfIndex {
 		return OperUnknown
 	}
-	link, admin, _ := unpackState(s.slots[slot].Load())
+	link, admin, peerDown, _ := unpackState(s.slots[slot].Load())
 	link, admin = normaliseSlot(link, admin)
-	return deriveChildOper(admin, link, s.parentOper(slot))
+	return deriveChildOper(admin, link, peerDown, s.parentOper(slot))
 }
 
 // AdminStatus returns the current admin-status enum value for ifIndex.
@@ -460,7 +476,7 @@ func (s *InterfaceState) AdminStatus(ifIndex int) uint8 {
 	if slot < 0 || slot >= s.maxIfIndex {
 		return AdminUp
 	}
-	_, admin, _ := unpackState(s.slots[slot].Load())
+	_, admin, _, _ := unpackState(s.slots[slot].Load())
 	if admin == 0 {
 		return AdminUp
 	}
@@ -485,7 +501,7 @@ func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 	if slot < 0 || slot >= s.maxIfIndex {
 		return 0
 	}
-	_, _, rel := unpackState(s.slots[slot].Load())
+	_, _, _, rel := unpackState(s.slots[slot].Load())
 	if rel == lastChangeMask {
 		// In-band sentinel: the mutator stored the max 58-bit value to
 		// flag a clock-rewind event. Surface as the public sentinel.
@@ -552,7 +568,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
-		curLink, curAdmin, curRel := unpackState(cur)
+		curLink, curAdmin, curPeerDown, curRel := unpackState(cur)
 		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
 		if curLink == newLink {
 			return LinkUnchanged, nil
@@ -562,13 +578,14 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 		// ifLastChange as the time the interface entered its current
 		// OPERATIONAL state, so a link flap on a shut port must not stamp it.
 		// A subinterface under a parent that is not up is masked the same
-		// way: its own link moves beneath lowerLayerDown(7).
+		// way: its own link moves beneath lowerLayerDown(7), and so is a port
+		// whose topology partner is silent: its link moves beneath peerDown.
 		pOper := s.parentOper(slot)
-		wasOper := deriveChildOper(curAdmin, curLink, pOper)
-		nowOper := deriveChildOper(curAdmin, newLink, pOper)
+		wasOper := deriveChildOper(curAdmin, curLink, curPeerDown, pOper)
+		nowOper := deriveChildOper(curAdmin, newLink, curPeerDown, pOper)
 		if wasOper == nowOper {
 			// Masked: store the link, carry lastChange forward untouched.
-			if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, curRel)) {
+			if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, curPeerDown, curRel)) {
 				return LinkMovedMasked, nil
 			}
 			continue
@@ -576,7 +593,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 
 		nowAbs := s.now()
 		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
-		if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, relNs)) {
+		if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, curPeerDown, relNs)) {
 			// An oper transition changes which lldpRemTable rows are live on
 			// both ends of the link, so invalidate cached LLDP served-OID
 			// sets. Only a VISIBLE transition can move a row — a masked flap
@@ -589,6 +606,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 				PrevOper:     wasOper,
 				Admin:        curAdmin,
 				Link:         newLink,
+				PeerDown:     curPeerDown,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
@@ -622,15 +640,15 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
-		curLink, curAdmin, curRel := unpackState(cur)
+		curLink, curAdmin, curPeerDown, curRel := unpackState(cur)
 		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
 		if curAdmin == newVal {
 			return nil
 		}
 
 		pOper := s.parentOper(slot)
-		wasOper := deriveChildOper(curAdmin, curLink, pOper)
-		nowOper := deriveChildOper(newVal, curLink, pOper)
+		wasOper := deriveChildOper(curAdmin, curLink, curPeerDown, pOper)
+		nowOper := deriveChildOper(newVal, curLink, curPeerDown, pOper)
 		operMoved := wasOper != nowOper
 
 		// lastChange keys on the DERIVED transition, so an admin change that
@@ -640,7 +658,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 		if operMoved {
 			relNs = wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
 		}
-		if !s.slots[slot].CompareAndSwap(cur, packState(curLink, newVal, relNs)) {
+		if !s.slots[slot].CompareAndSwap(cur, packState(curLink, newVal, curPeerDown, relNs)) {
 			continue
 		}
 
@@ -650,6 +668,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 			PrevOper:     wasOper,
 			Admin:        newVal,
 			Link:         curLink,
+			PeerDown:     curPeerDown,
 			LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 			Changed:      LeafAdminStatus,
 			At:           nowAbs,
@@ -662,6 +681,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 				PrevOper:     wasOper,
 				Admin:        newVal,
 				Link:         curLink,
+				PeerDown:     curPeerDown,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
@@ -669,6 +689,61 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 			evts = append(evts, s.cascadeChildren(slot, wasOper, nowOper, nowAbs, relNs)...)
 		}
 		return evts
+	}
+}
+
+// SetPeerDown atomically stores the far-end cause on ifIndex: down means the
+// other end of this port's topology link is not transmitting. The manager is
+// the only caller (linkPropagation); the engine knows nothing of the graph.
+//
+// Same contract as SetLinkState, minus the three-way outcome nobody here needs:
+// the returned events (the port's own, then any subinterface that moved with
+// it) are non-empty exactly when the DERIVED oper-status moved, and the caller
+// broadcasts them in order. A bit stored beneath admin down, or beneath a link
+// that is already down, moves nothing observable, stamps no lastChange and
+// returns nil, exactly like a masked link move. Storing the same value again is
+// a no-op, which is what makes the manager's resync idempotent.
+func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) []StateChange {
+	slot := ifIndex - 1
+	if slot < 0 || slot >= s.maxIfIndex {
+		return nil
+	}
+	defer s.lockFamily(slot)()
+	for {
+		cur := s.slots[slot].Load()
+		curLink, curAdmin, curPeerDown, curRel := unpackState(cur)
+		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
+		if curPeerDown == down {
+			return nil
+		}
+
+		pOper := s.parentOper(slot)
+		wasOper := deriveChildOper(curAdmin, curLink, curPeerDown, pOper)
+		nowOper := deriveChildOper(curAdmin, curLink, down, pOper)
+		if wasOper == nowOper {
+			if s.slots[slot].CompareAndSwap(cur, packState(curLink, curAdmin, down, curRel)) {
+				return nil
+			}
+			continue
+		}
+
+		nowAbs := s.now()
+		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
+		if s.slots[slot].CompareAndSwap(cur, packState(curLink, curAdmin, down, relNs)) {
+			invalidateLLDPServedCache()
+			evts := []StateChange{{
+				IfIndex:      ifIndex,
+				Oper:         nowOper,
+				PrevOper:     wasOper,
+				Admin:        curAdmin,
+				Link:         curLink,
+				PeerDown:     down,
+				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+				Changed:      LeafOperStatus,
+				At:           nowAbs,
+			}}
+			return append(evts, s.cascadeChildren(slot, wasOper, nowOper, nowAbs, relNs)...)
+		}
 	}
 }
 
@@ -689,20 +764,21 @@ func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, a
 		cs := c - 1
 		for {
 			cur := s.slots[cs].Load()
-			link, admin, _ := unpackState(cur)
+			link, admin, peerDown, _ := unpackState(cur)
 			link, admin = normaliseSlot(link, admin)
-			was := deriveChildOper(admin, link, wasParent)
-			now := deriveChildOper(admin, link, nowParent)
+			was := deriveChildOper(admin, link, peerDown, wasParent)
+			now := deriveChildOper(admin, link, peerDown, nowParent)
 			if was == now {
 				break
 			}
-			if s.slots[cs].CompareAndSwap(cur, packState(link, admin, relNs)) {
+			if s.slots[cs].CompareAndSwap(cur, packState(link, admin, peerDown, relNs)) {
 				out = append(out, StateChange{
 					IfIndex:      c,
 					Oper:         now,
 					PrevOper:     was,
 					Admin:        admin,
 					Link:         link,
+					PeerDown:     peerDown,
 					LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 					Changed:      LeafOperStatus,
 					At:           at,
@@ -741,12 +817,21 @@ func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, a
 // the LLDP peer graph is deliberately out of scope), but it stores and derives
 // it through unchanged if something else sets it. The one place the engine
 // does assign it is a subinterface whose parent is not up (deriveChildOper).
-func deriveOper(admin, link uint8) uint8 {
+//
+// `peerDown` is the second physical-layer cause: the far end of a topology
+// link is not transmitting (-topology-link-propagation). It is a fault in the
+// RFC's sense, so it holds an up link down(2) under admin up and, like the
+// link, is masked by admin down or testing. A link that is already not up
+// keeps its own value: the port's own reading is the more specific one.
+func deriveOper(admin, link uint8, peerDown bool) uint8 {
 	switch admin {
 	case AdminDown:
 		return OperDown
 	case AdminTesting:
 		return OperTesting
+	}
+	if peerDown && link == OperUp {
+		return OperDown
 	}
 	return link
 }
@@ -757,8 +842,8 @@ func deriveOper(admin, link uint8) uint8 {
 // the interface's own slot forces (admin down, a down link) wins, so a shut
 // unit reads down(2) whatever its port does. For a top-level interface
 // parentOper is up(1) and this is exactly deriveOper.
-func deriveChildOper(admin, link, parentOper uint8) uint8 {
-	oper := deriveOper(admin, link)
+func deriveChildOper(admin, link uint8, peerDown bool, parentOper uint8) uint8 {
+	oper := deriveOper(admin, link, peerDown)
 	if oper == OperUp && parentOper != OperUp {
 		return OperLowerLayerDn
 	}
@@ -967,7 +1052,8 @@ func (s *InterfaceState) incDropped() {
 // Slot layout (LSB-first):
 //
 //	[0..2]  link state    (3 bits, max 7 — the IF-MIB ifOperStatus enum, 1..7)
-//	[3..5]  admin-status  (3 bits, max 7 — only 1..3 used by IF-MIB)
+//	[3..4]  admin-status  (2 bits, max 3: the IF-MIB ifAdminStatus enum, 1..3)
+//	[5]     peerDown      (1 bit: the far end of a topology link is not transmitting)
 //	[6..63] lastChangeNs  (58 bits, max ~9.13 years)
 //
 // The low three bits held oper-status until nl6#694. They hold the LINK state
@@ -976,13 +1062,21 @@ func (s *InterfaceState) incDropped() {
 // have cost lastChange 3 of its 58 bits (~9.13 years down to ~1.14) AND created
 // a second source of truth for a value that is a pure function of the other
 // two, which is the bug class nl6#694 exists to remove.
+//
+// peerDown came from splitting the admin field, whose third bit no IF-MIB value
+// used, so lastChange keeps all 58 bits. It is a CAUSE, not a copy of the far
+// end's state: the port's own link and the far end's transmit state are stored
+// apart and the derivation combines them, so two faults on one link compose
+// instead of the later write erasing the earlier one.
 const (
-	_linkWidth   = 3
-	_adminWidth  = 3
-	_lastChWidth = 58
+	_linkWidth     = 3
+	_adminWidth    = 2
+	_peerDownWidth = 1
+	_lastChWidth   = 58
 
 	adminStatusShift = _linkWidth
-	lastChangeShift  = _linkWidth + _adminWidth
+	peerDownShift    = _linkWidth + _adminWidth
+	lastChangeShift  = _linkWidth + _adminWidth + _peerDownWidth
 
 	// Masks derived from widths so any change to a width
 	// automatically resizes the corresponding mask — fixes the
@@ -990,15 +1084,23 @@ const (
 	// review.
 	linkStateMask   uint64 = (1 << _linkWidth) - 1
 	adminStatusMask uint64 = (1 << _adminWidth) - 1
+	peerDownMask    uint64 = (1 << _peerDownWidth) - 1
 	lastChangeMask  uint64 = (1 << _lastChWidth) - 1
 
-	// _layoutGuard is a compile-time guard that the three field
+	// _layoutGuard is a compile-time guard that the four field
 	// widths fit in a uint64 with the documented packing
-	// (linkWidth + adminWidth + lastChWidth == 64). If any width
-	// changes without rebalancing the others, the array index goes
+	// (linkWidth + adminWidth + peerDownWidth + lastChWidth == 64). If any
+	// width changes without rebalancing the others, the array index goes
 	// negative and the package fails to compile.
-	_layoutGuard = 64 - _linkWidth - _adminWidth - _lastChWidth
+	_layoutGuard = 64 - _linkWidth - _adminWidth - _peerDownWidth - _lastChWidth
 )
+
+// The admin field holds every ifAdminStatus value. A width that cannot hold
+// AdminTesting fails to compile here (the constant subtraction overflows)
+// rather than truncating testing(3) to a different enum on the first store.
+// A wider field compiles; it only costs lastChange bits, which _layoutGuard
+// already accounts for.
+var _ = [adminStatusMask - uint64(AdminTesting)]struct{}{}
 
 var _ = [1]struct{}{}[_layoutGuard] // compile error if layout invariant breaks
 
@@ -1031,15 +1133,21 @@ func lastChangeAbs(bootTimeUnixNs, relNs uint64) uint64 {
 	return bootTimeUnixNs + relNs
 }
 
-func packState(link, admin uint8, lastChangeNs uint64) uint64 {
+func packState(link, admin uint8, peerDown bool, lastChangeNs uint64) uint64 {
+	var pd uint64
+	if peerDown {
+		pd = 1
+	}
 	return uint64(link)&linkStateMask |
 		(uint64(admin)&adminStatusMask)<<adminStatusShift |
+		(pd&peerDownMask)<<peerDownShift |
 		((lastChangeNs & lastChangeMask) << lastChangeShift)
 }
 
-func unpackState(w uint64) (link, admin uint8, lastChangeNs uint64) {
+func unpackState(w uint64) (link, admin uint8, peerDown bool, lastChangeNs uint64) {
 	link = uint8(w & linkStateMask)
 	admin = uint8((w >> adminStatusShift) & adminStatusMask)
+	peerDown = (w>>peerDownShift)&peerDownMask != 0
 	lastChangeNs = (w >> lastChangeShift) & lastChangeMask
 	return
 }

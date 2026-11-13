@@ -218,7 +218,14 @@ type stateChangeOutcome struct {
 	// oper-status: those can be equal while the request was still masked (a
 	// POST of DOWN on an admin-down interface whose link was up moves the link
 	// and fires nothing, yet leaves both reading DOWN).
+	//
+	// It is also true while PeerDown holds an up link down: the link the
+	// caller holds is not what collectors see until the far end transmits.
 	Masked bool `json:"masked"`
+	// PeerDown is true while the far end of this port's topology link is not
+	// transmitting (-topology-link-propagation), which holds oper-status down
+	// whatever the link reads. Always false without the flag.
+	PeerDown bool `json:"peer_down"`
 }
 
 // ifStatusName renders an IF-MIB status enum for the REST surface. Unknown
@@ -294,16 +301,16 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 	// follows by derivation and may be masked by admin. Admin goes through the
 	// engine's funnel, which returns one event per leaf that moved and leaves
 	// the broadcast to us, admin first.
+	//
+	// publishStateChanges broadcasts and then resyncs the far end of a topology
+	// link. A masked link move returns no events but still runs it: the move
+	// changes what this port transmits even when it changes nothing it shows.
 	if isOper {
-		if res, evts := state.SetLinkState(ifIndex, target); res == LinkMovedVisible {
-			for _, evt := range evts {
-				state.Broadcast(evt)
-			}
+		if res, evts := state.SetLinkState(ifIndex, target); res != LinkUnchanged {
+			sm.publishStateChanges(ip, state, ifIndex, evts)
 		}
 	} else {
-		for _, evt := range state.ApplyAdminStatus(ifIndex, target) {
-			state.Broadcast(evt)
-		}
+		sm.publishStateChanges(ip, state, ifIndex, state.ApplyAdminStatus(ifIndex, target))
 	}
 
 	// Read the post-mutation tuple from ONE Load so the reported link,
@@ -336,7 +343,11 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 		// way while its link is up: it reads lowerLayerDown(7) whatever this
 		// request did. deriveOper ignores the parent, so the two derivations
 		// differ exactly then.
-		Masked: isOper && (post.Admin != AdminUp || post.Oper != deriveOper(post.Admin, post.Link)),
+		//
+		// A port held down by its topology partner is masked the same way:
+		// deriveOper without the peerDown cause reads up while Oper reads down.
+		Masked:   isOper && (post.Admin != AdminUp || post.Oper != deriveOper(post.Admin, post.Link, false)),
+		PeerDown: post.PeerDown,
 	}
 
 	if revertAfter > 0 {
@@ -443,15 +454,11 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 			// revertTo is the LINK value captured at POST time (see
 			// mutateInterfaceState), so this restores what was found rather
 			// than what was observable.
-			if res, evts := state.SetLinkState(ifIndex, revertTo); res == LinkMovedVisible {
-				for _, e := range evts {
-					state.Broadcast(e)
-				}
+			if res, evts := state.SetLinkState(ifIndex, revertTo); res != LinkUnchanged {
+				sm.publishStateChanges(ip, state, ifIndex, evts)
 			}
 		} else {
-			for _, e := range state.ApplyAdminStatus(ifIndex, revertTo) {
-				state.Broadcast(e)
-			}
+			sm.publishStateChanges(ip, state, ifIndex, state.ApplyAdminStatus(ifIndex, revertTo))
 		}
 	}()
 	return nil
