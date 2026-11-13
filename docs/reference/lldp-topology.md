@@ -259,7 +259,10 @@ The graph follows its lifecycle. Adding a link whose near end is already down ho
 A link end that names a device that does not exist yet, or an `ifIndex` its device does not have, holds nothing and takes nothing; a device type with no interface-state engine counts as transmitting.
 Propagation reads each end's own admin and link, so configure links on physical ports: a subinterface used as an end propagates its own shutdown but not its parent's outage.
 
-**At startup.** With `-topology-config`, a device's links are resolved when the later of the two devices is created. If either end does not transmit at that moment (a port seeded `down` by its resource file or by `-if-scenario`), the other end takes a visible transition then: its `ifLastChange` is stamped at that instant, not at boot, and, when the device exports traps or syslog and `-fidelity` is not muting the fleet, its `linkDown` trap and syslog message go out, because a device's exporters attach before it is published. An end that is itself shut stores the cause and fires nothing.
+**At startup.** With `-topology-config`, a device's links take effect when the later of the two devices is published, as if both boxes had booted together.
+An end whose partner does not transmit at that moment (a port seeded `down` by its resource file or by `-if-scenario`) reads `down(2)` from its first poll with `ifLastChange` at boot, holds its counters, and fires no `linkDown` trap, syslog message or ON_CHANGE update.
+This holds for both ends, including a port that was up before its partner existed.
+The first later change on either end is a normal transition.
 
 **Volume.** `-if-flap-global-cap` bounds scheduler fires, not transitions. With propagation one fire on a linked port moves both ends, so a linked port counts twice against what the cap admits, and a linked fleet can see up to twice the link traps and syslog messages it saw without the flag.
 A propagated transition takes no `-if-flap-global-cap` token of its own, because waiting on the cap would pull the two ends apart in time; and, like every state-change trap, its link trap bypasses `-trap-global-cap`.
