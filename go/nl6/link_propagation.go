@@ -181,6 +181,10 @@ func (sm *SimulatorManager) resyncLinks(links []topoLink, seed bool) {
 		}
 		a, b := ends[i][0], ends[i][1]
 		if seed {
+			// SeedPeerDown runs the counter-hold hook here, under linkPropMu:
+			// the order is linkPropMu, familyMu (released), holdMu. Nothing
+			// takes holdMu and then linkPropMu; the hold side reads the engine
+			// without locks, which is what keeps that order one-way.
 			seedPeerDownLocked(b, !a.transmits())
 			seedPeerDownLocked(a, !b.transmits())
 			continue

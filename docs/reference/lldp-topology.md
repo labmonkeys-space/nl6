@@ -260,7 +260,7 @@ A link end that names a device that does not exist yet, or an `ifIndex` its devi
 Propagation reads each end's own admin and link, so configure links on physical ports: a subinterface used as an end propagates its own shutdown but not its parent's outage.
 
 **At startup.** With `-topology-config`, a device's links take effect when the later of the two devices is published, as if both boxes had booted together.
-An end whose partner does not transmit at that moment (a port seeded `down` by its resource file or by `-if-scenario`) goes `down(2)` with no `linkDown` trap, syslog message or ON_CHANGE update, holds its counters, and keeps its `ifLastChange`.
+An end whose partner does not transmit at that moment (a port seeded `down` by its resource file or by `-if-scenario`) goes `down(2)` and its subinterfaces read `lowerLayerDown(7)`, with no `linkDown` trap, syslog message or ON_CHANGE update, held counters, and `ifLastChange` kept on every one of them.
 On the newly published device that means `down(2)` from the first poll with `ifLastChange` at boot.
 On a partner that already existed, polls before the publication read `up(1)` and `ifLastChange` stays wherever it was.
 The first later change on either end is a normal transition.
