@@ -276,12 +276,14 @@ func (sm *SimulatorManager) RemoveTopologyLink(a, b LinkEndpointJSON) bool {
 // loaded before its devices exist (-topology-config) resolves when the later
 // of the two is created, and the seed takes effect on both ends silently, as
 // if both boxes had booted together: an end whose partner does not transmit
-// at that moment reads down(2) from its first poll with lastChange at boot
-// and its counters held, and fires no linkDown trap, syslog message or
-// ON_CHANGE update. That includes the existing partner's end, which was up
-// only because its neighbour did not exist yet, the simulator's fiction and
-// not the fleet's. The first later change on either end is a normal
-// transition (nl6#1029).
+// at that moment goes down(2) with its counters held and its lastChange
+// untouched, and fires no linkDown trap, syslog message or ON_CHANGE update.
+// On the new device that is down(2) from the first poll with lastChange at
+// boot. On a partner that already existed, polls before this publication
+// read up(1) and lastChange stays wherever it was: that port was up only
+// because its neighbour did not exist yet, the simulator's fiction and not
+// the fleet's. The first later change on either end is a normal transition
+// (nl6#1029).
 func (sm *SimulatorManager) resyncDeviceLinks(device *DeviceSimulator) {
 	if !sm.linkPropagationOn() || device == nil {
 		return
