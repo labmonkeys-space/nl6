@@ -771,3 +771,25 @@ func TestLinkPropagation_SubinterfaceEndWarnsOnceAndPropagatesItsOwnShutdown(t *
 		t.Errorf("subinterface link-end warning logged %d times, want exactly once:\n%s", got, logs.String())
 	}
 }
+
+func TestTopologyStatus_ReportsLinkPropagation(t *testing.T) {
+	f := newLLDPFixture(t)
+	router := setupRoutes()
+	read := func(step string, want bool) {
+		t.Helper()
+		w := doReq(t, router, http.MethodGet, "/api/v1/topology/status", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d %s", step, w.Code, w.Body.String())
+		}
+		var st topologyStatus
+		if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+			t.Fatal(err)
+		}
+		if st.LinkPropagation != want || !strings.Contains(w.Body.String(), `"link_propagation":`) {
+			t.Errorf("%s: body %s, want link_propagation=%v", step, w.Body.String(), want)
+		}
+	}
+	read("flag off", false)
+	f.mgr.SetLinkPropagation(true)
+	read("flag on", true)
+}

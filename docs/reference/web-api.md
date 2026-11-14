@@ -35,7 +35,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/topology` | POST | Add inter-device LLDP links. See [LLDP topology](./lldp-topology.md). |
 | `/api/v1/topology` | GET | List configured links. |
 | `/api/v1/topology` | DELETE | Remove links. |
-| `/api/v1/topology/status` | GET | `{subsystem_active, configured_links, active_links}`. |
+| `/api/v1/topology/status` | GET | `{subsystem_active, configured_links, active_links, link_propagation}`. See [LLDP topology](./lldp-topology.md). |
 | `/api/v1/topology/graph` | GET | Node and edge graph for the web console's topology view. |
 | `/api/v1/scenarios` | POST | Create a load-test scenario. See [Load-test scenario REST API](./loadtest-api.md). |
 | `/api/v1/scenarios` | GET | List scenarios. |

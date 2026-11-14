@@ -66,7 +66,7 @@ python3 gen-clos.py topology    # the link graph JSON
 Verify after provisioning:
 
 ```bash
-curl -s "$NL6_URL/api/v1/topology/status"   # {subsystem_active, configured_links, active_links}
+curl -s "$NL6_URL/api/v1/topology/status"   # {subsystem_active, configured_links, active_links, link_propagation}
 ```
 
 Import the devices into OpenNMS with the shared script (point `OPENNMS_BASE_URL`

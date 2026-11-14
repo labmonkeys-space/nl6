@@ -24,6 +24,10 @@ type topologyStatus struct {
 	SubsystemActive bool `json:"subsystem_active"`
 	ConfiguredLinks int  `json:"configured_links"`
 	ActiveLinks     int  `json:"active_links"`
+	// LinkPropagation reports -topology-link-propagation so a harness can
+	// state the simulator setting from an API read and attribute the far
+	// end's traps and syslog to it (nl6#1027).
+	LinkPropagation bool `json:"link_propagation"`
 }
 
 // decodeTopologyBody reads and strictly-decodes a topology document from
@@ -108,7 +112,10 @@ func deleteTopologyHandler(w http.ResponseWriter, r *http.Request) {
 
 // topologyStatusHandler implements GET /api/v1/topology/status.
 func topologyStatusHandler(w http.ResponseWriter, r *http.Request) {
-	st := topologyStatus{SubsystemActive: manager != nil && manager.topology != nil}
+	st := topologyStatus{
+		SubsystemActive: manager != nil && manager.topology != nil,
+		LinkPropagation: manager.linkPropagationOn(),
+	}
 	if st.SubsystemActive {
 		links := manager.topology.ListLinks()
 		st.ConfiguredLinks = len(links)

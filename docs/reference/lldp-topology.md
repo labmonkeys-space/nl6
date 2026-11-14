@@ -178,12 +178,13 @@ Unknown JSON fields are rejected.
 | `POST /api/v1/topology` | `{"links":[{"a":{...},"b":{...}}]}` | `201`; all-or-nothing (a rejected link rolls back the batch) |
 | `GET /api/v1/topology` | none | `200` `{"links":[…]}` |
 | `DELETE /api/v1/topology` | `{"a":{...},"b":{...}}` | `204`, or `404` if the link is absent |
-| `GET /api/v1/topology/status` | none | `200` `{"subsystem_active", "configured_links", "active_links"}` |
+| `GET /api/v1/topology/status` | none | `200` `{"subsystem_active", "configured_links", "active_links", "link_propagation"}` |
 | `GET /api/v1/topology/graph` | none | `200` `{"nodes":[…], "edges":[…]}`, viz-ready, with live per-link state |
 
 `active_links` counts links whose both endpoints are resolvable and operationally up.
 Those are the links currently producing a neighbor row.
 The difference between `configured_links` and `active_links` is your down-link count.
+`link_propagation` is `true` when the simulator started with `-topology-link-propagation` (see [Link propagation](#link-propagation)), so a benchmark or interop report can state the setting from an API read and attribute the far end's `linkDown` traps and syslog messages to it rather than to the system under test.
 
 ### Graph endpoint
 
