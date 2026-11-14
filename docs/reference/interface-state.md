@@ -247,6 +247,7 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/interfaces/999/oper-
 ### `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status`
 
 Same shape and semantics, mutates `ifAdminStatus.<ifIndex>`.
+`masked` and `masked_by` describe the link a caller sets, so admin-status bodies always answer `masked: false` and omit `masked_by`.
 Accepted statuses are `UP` / `DOWN` / `TESTING` (per IF-MIB ifAdminStatus enum).
 
 **`oper-status` follows `admin-status`, asymmetrically**, per RFC 2863:
