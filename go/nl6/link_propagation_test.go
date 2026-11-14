@@ -685,3 +685,54 @@ func TestLinkPropagation_ADeviceWithoutAnEngineTransmitsAndTakesNothing(t *testi
 	postStatus(t, a, 1, "oper-status", "UP")
 	wantOper(t, "after a flap towards it", a, 1, "1")
 }
+
+func TestStateChange_MaskedByNamesTheFirstEngineCause(t *testing.T) {
+	f, a, b := propagationFixture(t)
+
+	// Peer hold: the link the caller set is up, the partner is silent.
+	postStatus(t, a, 1, "oper-status", "DOWN")
+	if out := postStatus(t, b, 2, "oper-status", "UP"); !out.Masked || !out.PeerDown || out.MaskedBy != "peer" {
+		t.Errorf("held far end POST UP = %+v, want masked by peer", out)
+	}
+
+	// Admin down with no link and no partner.
+	postStatus(t, a, 3, "admin-status", "DOWN")
+	if out := postStatus(t, a, 3, "oper-status", "UP"); !out.Masked || out.PeerDown || out.MaskedBy != "admin" {
+		t.Errorf("shut port POST UP = %+v, want masked by admin", out)
+	}
+
+	// A subinterface under that shut parent: lowerLayerDown, named parent.
+	deviceInterfaceState(a).setParents(map[int]int{4: 3})
+	if out := postStatus(t, a, 4, "oper-status", "UP"); !out.Masked || out.MaskedBy != "parent" || out.OperStatus != "LOWER_LAYER_DOWN" {
+		t.Errorf("unit under a shut parent POST UP = %+v, want masked by parent", out)
+	}
+
+	// Precedence: admin down on the held port names admin, not peer. The
+	// engine's derivation returns on admin before it looks at the peer.
+	postStatus(t, b, 2, "admin-status", "DOWN")
+	if out := postStatus(t, b, 2, "oper-status", "UP"); !out.Masked || !out.PeerDown || out.MaskedBy != "admin" {
+		t.Errorf("shut and held port POST UP = %+v, want masked by admin ahead of peer", out)
+	}
+
+	// Partner silent AND parent shut: the engine returns down(2) on the peer
+	// clause before it reaches the parent clause, so the cause is peer. A
+	// REST-side order with parent first would name a cause whose outcome
+	// (lowerLayerDown) the body does not report.
+	postStatus(t, b, 2, "admin-status", "UP")
+	deviceInterfaceState(b).setParents(map[int]int{4: 3})
+	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 2), B: ep(b.IP.String(), 4)}}))
+	postStatus(t, b, 3, "admin-status", "DOWN")
+	postStatus(t, a, 2, "oper-status", "DOWN")
+	if out := postStatus(t, b, 4, "oper-status", "UP"); !out.Masked || !out.PeerDown || out.MaskedBy != "peer" || out.OperStatus != "DOWN" {
+		t.Errorf("unit under a shut parent with a silent partner POST UP = %+v, want oper DOWN masked by peer", out)
+	}
+
+	// Not masked: an unlinked, admin-up, top-level port carries no field.
+	postStatus(t, a, 2, "oper-status", "UP")
+	if !f.mgr.RemoveTopologyLink(ep(a.IP.String(), 2), ep(b.IP.String(), 4)) {
+		t.Fatal("remove the second link")
+	}
+	if out := postStatus(t, a, 2, "oper-status", "UP"); out.Masked || out.MaskedBy != "" {
+		t.Errorf("plain POST UP = %+v, want no masked_by", out)
+	}
+}
