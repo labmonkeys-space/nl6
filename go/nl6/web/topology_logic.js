@@ -611,13 +611,14 @@
       // A server that predates the outcome body (or any non-object value)
       // counts as applied: absence of the flag is not evidence of masking.
       //
-      // A port that is admin-up and held down only by its silent topology
-      // partner (peer_down, -topology-link-propagation) counts as applied too:
-      // the restore click posts UP to both ends at once, and whichever end is
-      // served first reads held until the other end answers. Its link was set;
-      // nothing about admin-down applies to it.
+      // A port held down only by its silent topology partner counts as
+      // applied too: the restore click posts UP to both ends at once, and
+      // whichever end is served first reads held until the other end
+      // answers. Its link was set; nothing about admin-down applies to it.
+      // The server names the cause in masked_by (nl6#1025), in the engine's
+      // own order, so a shut port that is also held still counts as masked.
       if (body && typeof body === 'object' && body.masked === true &&
-          !(body.peer_down === true && body.admin_status === 'UP')) { masked++; return; }
+          body.masked_by !== 'peer') { masked++; return; }
       applied++;
     });
     return { applied: applied, masked: masked, failed: failed, total: applied + masked + failed };
