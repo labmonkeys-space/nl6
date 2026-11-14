@@ -117,21 +117,19 @@ func topologyGraphHandler(w http.ResponseWriter, r *http.Request) {
 			// propagation) did not cause the outage, so it is not named:
 			// one shut port reads "a", not "both", and "both" stays for two
 			// independent faults. Without propagation no end is ever held,
-			// and this is the plain oper-status rule. The last three cases
-			// cover a read between a near end's recovery and the resync that
-			// releases its partner, when no end is down by its own fault.
+			// and this is the plain oper-status rule. When no end is down by
+			// its own fault (a read between a near end's recovery and the
+			// resync that releases its partner), fall back to the plain
+			// readings once and name whichever is not up.
 			aDown := !aUp && !heldDownByPeer(byIP[l.A.IP], l.A.IfIndex)
 			bDown := !bUp && !heldDownByPeer(byIP[l.B.IP], l.B.IfIndex)
+			if !aDown && !bDown {
+				aDown, bDown = !aUp, !bUp
+			}
 			switch {
 			case aDown && bDown:
 				edge.DownEnd = "both"
 			case aDown:
-				edge.DownEnd = "a"
-			case bDown:
-				edge.DownEnd = "b"
-			case !aUp && !bUp:
-				edge.DownEnd = "both"
-			case !aUp:
 				edge.DownEnd = "a"
 			default:
 				edge.DownEnd = "b"
