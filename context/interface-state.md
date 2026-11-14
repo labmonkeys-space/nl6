@@ -86,8 +86,9 @@ It needs no admin guard.
 An admin-down interface is protected by the derivation, so a masked flap moves real state that surfaces when the port is unshut.
 Masked flaps are deliberately not logged: at `aggressive` on a shut fleet that is about 30k lines per minute describing the feature working.
 
-**`POST .../oper-status` is breaking:** it sets the link and answers 202 with `{link, oper_status, admin_status, masked, peer_down}`.
+**`POST .../oper-status` is breaking:** it sets the link and answers 202 with `{link, oper_status, admin_status, masked, masked_by, peer_down}`.
 Under admin-down its effect is masked, not refused, because a 409 would make the contract depend on another leaf.
+`masked_by` (nl6#1025) names the cause, present only while `masked` is true: `admin`, `peer` or `parent`, the first clause of `deriveChildOper` that fired, in that function's order. The REST layer adds no rule of its own; a consumer reads the field instead of re-deriving the cause from `peer_down` and `admin_status`.
 
 **Counter roll-up (`if_counter_rollup.go`):** a child with one lower layer serves a hashed share of its parent's served delta.
 An aggregate with two or more `ifStackTable` lower layers (from `readStackLayers`) serves the sum of its members', composed inside the same bracket.
@@ -149,7 +150,7 @@ Every other path stays visible.
 - A device type with no engine transmits.
 - `Transmits` reads the port's own admin and link only, so a subinterface end does not propagate its parent's outage. Documented: configure links on physical ports.
 - `StateChange.PeerDown` lets the IOS XE NETCONF dialect treat a held port as carrier-less (`iosxeSuppress`).
-- The REST body reports `peer_down`. On an `oper-status` POST, `masked` is true while the bit holds an up link down.
+- The REST body reports `peer_down`. On an `oper-status` POST, `masked` is true while the bit holds an up link down, and `masked_by` is `peer` unless admin is also down (then `admin`: the engine returns on admin first).
 - `downEnd` in the graph names only ends down by their own admin or link.
 
 **Do not reintroduce:**
