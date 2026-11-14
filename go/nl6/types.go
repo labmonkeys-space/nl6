@@ -406,6 +406,9 @@ type SimulatorManager struct {
 	// meanwhile, never one already holding linkPropMu and everyone queued on
 	// it. It is never held across Broadcast either.
 	linkPropMu sync.Mutex
+	// subifEndWarned holds every linkEndpoint that resolved to a subinterface
+	// and has been warned about once (nl6#1028). Zero value ready.
+	subifEndWarned sync.Map
 	// currentIP and nextTunIndex are the two allocation counters of the
 	// device-creation path and are BOTH guarded by sm.mu (nl6#556).
 	//

@@ -148,7 +148,7 @@ Every other path stays visible.
 - A missing device, or an `ifIndex` its device does not have, holds nothing and takes nothing.
 - A seed never clears a bit in practice. A port carries one link (`AddLinks` rejects a second), a fresh engine holds no bit, and a pruned partner was released visibly by `PruneDevice` first. The symmetric write stays because the same-value no-op is what makes a resync idempotent.
 - A device type with no engine transmits.
-- `Transmits` reads the port's own admin and link only, so a subinterface end does not propagate its parent's outage. Documented: configure links on physical ports.
+- `Transmits` reads the port's own admin and link only, so a subinterface end does not propagate its parent's outage. Decided in nl6#1028 and documented: link physical ports, units follow through their parent (LLDP runs on the physical port; a parent fault reaches the far side through the physical link). A subinterface end logs one warning per end at resync (`warnSubinterfaceEnd`).
 - `StateChange.PeerDown` lets the IOS XE NETCONF dialect treat a held port as carrier-less (`iosxeSuppress`).
 - The REST body reports `peer_down`. On an `oper-status` POST, `masked` is true while the bit holds an up link down, and `masked_by` is `peer` unless admin is also down (then `admin`: the engine returns on admin first).
 - `downEnd` in the graph names only ends down by their own admin or link.
