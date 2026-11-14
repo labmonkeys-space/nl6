@@ -6,10 +6,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -734,5 +737,37 @@ func TestStateChange_MaskedByNamesTheFirstEngineCause(t *testing.T) {
 	}
 	if out := postStatus(t, a, 2, "oper-status", "UP"); out.Masked || out.MaskedBy != "" {
 		t.Errorf("plain POST UP = %+v, want no masked_by", out)
+	}
+}
+
+func TestLinkPropagation_SubinterfaceEndWarnsOnceAndPropagatesItsOwnShutdown(t *testing.T) {
+	var logs bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	f := newLLDPFixture(t)
+	f.mgr.SetLinkPropagation(true)
+	a := f.addDevice(t, 1, 4, "alpha")
+	b := f.addDevice(t, 2, 4, "bravo")
+	// A ifIndex 4 is a unit of A ifIndex 3. Linking it is a modelling
+	// mistake the docs explain; the engine still honours the unit's own
+	// state and says so once.
+	deviceInterfaceState(a).setParents(map[int]int{4: 3})
+	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 4), B: ep(b.IP.String(), 2)}}))
+
+	postStatus(t, a, 4, "oper-status", "DOWN")
+	wantOper(t, "unit's own shutdown", b, 2, "2")
+	postStatus(t, a, 4, "oper-status", "UP")
+	wantOper(t, "unit's own restore", b, 2, "1")
+
+	// The parent's shutdown does not travel through the unit's link: a
+	// physical outage is modelled by linking the physical ports.
+	postStatus(t, a, 3, "admin-status", "DOWN")
+	wantOper(t, "parent shut", a, 4, "7")
+	wantOper(t, "far end of a unit under a shut parent", b, 2, "1")
+
+	if got := strings.Count(logs.String(), "subinterface"); got != 1 {
+		t.Errorf("subinterface link-end warning logged %d times, want exactly once:\n%s", got, logs.String())
 	}
 }

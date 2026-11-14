@@ -118,7 +118,28 @@ func (sm *SimulatorManager) resolveEnd(end linkEndpoint) propEnd {
 	if ic.State() == nil || !containsInt(ic.IfIndices(), end.IfIndex) {
 		return propEnd{end: end}
 	}
+	sm.warnSubinterfaceEnd(end, ic.State())
 	return propEnd{end: end, state: ic.State()}
+}
+
+// warnSubinterfaceEnd logs once per end when a topology link names a
+// subinterface. The link still works on the unit's own admin and link, but a
+// parent outage does not travel through it: LLDP runs on the physical port,
+// and a real parent fault reaches the far side through the physical link,
+// which is the link to configure (nl6#1028, lldp-topology.md "Link
+// propagation"). Not refused: the link may be loaded before its device
+// exists, and the topology file is the user's.
+func (sm *SimulatorManager) warnSubinterfaceEnd(end linkEndpoint, st *InterfaceState) {
+	if st.Parent(end.IfIndex) == 0 {
+		return
+	}
+	if _, seen := sm.subifEndWarned.LoadOrStore(end, struct{}{}); seen {
+		return
+	}
+	log.Printf("topology: link end %s ifIndex %d is a subinterface of ifIndex %d; "+
+		"its own shutdown propagates, its parent's outage does not. Link the physical ports; "+
+		"units follow through their parent (see docs/reference/lldp-topology.md, Link propagation)",
+		end.IP, end.IfIndex, st.Parent(end.IfIndex))
 }
 
 // transmits reports whether the end sends its partner a signal. An end with no

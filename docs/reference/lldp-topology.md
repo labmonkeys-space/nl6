@@ -257,7 +257,11 @@ The far end's fault is a **separate cause**, not a copy of the near end's link:
 
 The graph follows its lifecycle. Adding a link whose near end is already down holds the far end down at once, and so does creating a device a configured link was waiting for. Removing a link, or deleting the device on one end, releases the survivor.
 A link end that names a device that does not exist yet, or an `ifIndex` its device does not have, holds nothing and takes nothing; a device type with no interface-state engine counts as transmitting.
-Propagation reads each end's own admin and link, so configure links on physical ports: a subinterface used as an end propagates its own shutdown but not its parent's outage.
+
+**Link physical ports; units follow through their parent.** LLDP and CDP run on the physical port, untagged, so a dot1q subinterface has no neighbour of its own and a collector's topology shows the physical pair and nothing between the units.
+nl6 models the same: a link joins two physical ports, and when one goes down its partner is held and every subinterface on both sides reads `lowerLayerDown(7)` through `ifStackTable`, as on a cable pulled between two routers.
+A VLAN carried across a switch cloud is the other real case, and there a parent shutdown changes nothing on the far router until a routing protocol notices; no propagation is the correct model.
+A link whose end is a subinterface matches neither case. It is accepted, works on the unit's own admin and link, and logs one warning per end at resync; the unit's parent outage does not travel through it.
 
 **At startup.** With `-topology-config`, a device's links take effect when the later of the two devices is published, as if both boxes had booted together.
 An end whose partner does not transmit at that moment (a port seeded `down` by its resource file or by `-if-scenario`) goes `down(2)` and its subinterfaces read `lowerLayerDown(7)`, with no `linkDown` trap, syslog message or ON_CHANGE update, held counters, and `ifLastChange` kept on every one of them.
