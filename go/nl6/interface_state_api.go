@@ -226,6 +226,28 @@ type stateChangeOutcome struct {
 	// transmitting (-topology-link-propagation), which holds oper-status down
 	// whatever the link reads. Always false without the flag.
 	PeerDown bool `json:"peer_down"`
+	// MaskedBy names the cause when Masked is true: "admin", "peer" or
+	// "parent". It is the first clause of deriveChildOper that fired, in that
+	// function's order (admin, then peer, then parent), so it is always the
+	// cause behind the reported OperStatus and never a second rule of its
+	// own: a shut port that is also held reads "admin", and a unit whose
+	// parent is shut while its partner is silent reads "peer", because the
+	// engine returned down(2) before it reached the parent clause. Absent
+	// when Masked is false.
+	MaskedBy string `json:"masked_by,omitempty"`
+}
+
+// maskedBy is the cause deriveChildOper applied to a masked snapshot, in the
+// derivation's own order. Callers pass only a snapshot whose move is masked.
+func maskedBy(post StateSnapshot) string {
+	switch {
+	case post.Admin != AdminUp:
+		return "admin"
+	case post.PeerDown && post.Link == OperUp:
+		return "peer"
+	default:
+		return "parent"
+	}
 }
 
 // ifStatusName renders an IF-MIB status enum for the REST surface. Unknown
@@ -348,6 +370,9 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 		// deriveOper without the peerDown cause reads up while Oper reads down.
 		Masked:   isOper && (post.Admin != AdminUp || post.Oper != deriveOper(post.Admin, post.Link, false)),
 		PeerDown: post.PeerDown,
+	}
+	if outcome.Masked {
+		outcome.MaskedBy = maskedBy(post)
 	}
 
 	if revertAfter > 0 {

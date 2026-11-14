@@ -199,7 +199,7 @@ Returns:
 - `202 Accepted` with the outcome on success:
 
   ```json
-  { "link": "UP", "oper_status": "DOWN", "admin_status": "DOWN", "masked": true, "peer_down": false }
+  { "link": "UP", "oper_status": "DOWN", "admin_status": "DOWN", "masked": true, "masked_by": "admin", "peer_down": false }
   ```
 
   `masked` is `true` whenever `ifAdminStatus` is `DOWN` or `TESTING`.
@@ -208,6 +208,11 @@ Returns:
   In that state the link state you now hold is not what collectors see.
   While it is set, no link trap, syslog message or gNMI `ON_CHANGE` update will fire from this interface and `ifLastChange` will not move, whatever the link does.
   It is a property of the interface, not of the request, so a POST that changes nothing still reports it.
+
+  `masked_by` names the cause, and is present only when `masked` is `true`: `admin`, `peer` or `parent`.
+  It is the first clause of the engine's own derivation that fired, in that derivation's order: admin, then peer, then parent.
+  So it is always the cause behind the reported `oper_status`, never a second rule: a shut port that is also held by its partner reads `admin`, and a subinterface whose parent is shut while its partner is silent reads `peer` with `oper_status: DOWN`, because the engine decided on the peer before it looked at the parent.
+  A consumer that wants "held by partner" versus "shut" reads this field and nothing else.
 - `400 Bad Request` for malformed body, unknown `status`, or unknown `ifIndex` (400 body includes `validIfIndexes` array)
 - `404 Not Found` for unknown device IP
 - `503 Service Unavailable` when the device has no metrics cycler / state engine
@@ -229,7 +234,7 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/interfaces/3/oper-st
 curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/interfaces/3/oper-status \
   -H 'Content-Type: application/json' \
   -d '{"status":"UP"}'
-# {"link":"UP","oper_status":"DOWN","admin_status":"DOWN","masked":true,"peer_down":false}
+# {"link":"UP","oper_status":"DOWN","admin_status":"DOWN","masked":true,"masked_by":"admin","peer_down":false}
 # Raising admin-status afterwards surfaces the link with no further request.
 
 # Bad ifIndex: 400 with valid list

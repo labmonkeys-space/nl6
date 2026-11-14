@@ -253,7 +253,7 @@ The far end's fault is a **separate cause**, not a copy of the near end's link:
 - **Faults compose.** A fault on each end keeps the link down until both clear. Each end's flap schedule, REST POST and auto-revert keep owning that end's own link.
 - **It is masked like the link.** On a far end that is itself shut, the cause is stored and fires nothing; `no shutdown` then leaves the port down while its partner is silent.
 - **It never comes back.** A port held down by its partner still transmits, so nothing propagates back to the end that caused it.
-- **The REST body says so.** Every `POST .../oper-status` or `admin-status` on a held port answers `"peer_down": true`. An `oper-status` POST that leaves the link `UP` also answers `"masked": true`: that link is not what collectors see until the partner transmits.
+- **The REST body says so.** Every `POST .../oper-status` or `admin-status` on a held port answers `"peer_down": true`. An `oper-status` POST that leaves the link `UP` also answers `"masked": true` and `"masked_by": "peer"`: that link is not what collectors see until the partner transmits. A port that is shut as well answers `"masked_by": "admin"`, because the engine applies admin before the peer (see [`masked_by`](interface-state.md#rest-control-plane)).
 
 The graph follows its lifecycle. Adding a link whose near end is already down holds the far end down at once, and so does creating a device a configured link was waiting for. Removing a link, or deleting the device on one end, releases the survivor.
 A link end that names a device that does not exist yet, or an `ifIndex` its device does not have, holds nothing and takes nothing; a device type with no interface-state engine counts as transmitting.
