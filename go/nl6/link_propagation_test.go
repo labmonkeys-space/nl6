@@ -44,16 +44,19 @@ func servedOper(d *DeviceSimulator, ifIndex int) string {
 // 202 body.
 func postStatus(t *testing.T, d *DeviceSimulator, ifIndex int, leaf, status string) stateChangeOutcome {
 	t.Helper()
+	return decodeOutcome(t, postStatusRaw(t, d, ifIndex, leaf, status))
+}
+
+// postStatusRaw is postStatus without the decode, for a test that pins the
+// presence or absence of a key on the wire.
+func postStatusRaw(t *testing.T, d *DeviceSimulator, ifIndex int, leaf, status string) string {
+	t.Helper()
 	path := fmt.Sprintf("/api/v1/devices/%s/interfaces/%d/%s", d.IP, ifIndex, leaf)
 	w := doReq(t, setupRoutes(), http.MethodPost, path, fmt.Sprintf(`{"status":%q}`, status))
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("POST %s %s = %d %s, want 202", path, status, w.Code, w.Body.String())
 	}
-	var out stateChangeOutcome
-	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode %s: %v", w.Body.String(), err)
-	}
-	return out
+	return w.Body.String()
 }
 
 // wantOper asserts the SNMP-served ifOperStatus of each (device, ifIndex).
@@ -703,6 +706,17 @@ func TestStateChange_MaskedByNamesTheFirstEngineCause(t *testing.T) {
 	if out := postStatus(t, a, 3, "oper-status", "UP"); !out.Masked || out.PeerDown || out.MaskedBy != "admin" {
 		t.Errorf("shut port POST UP = %+v, want masked by admin", out)
 	}
+	// Admin testing is the other admin != up state; it names admin too. The
+	// admin-status body itself never carries the field: masked describes the
+	// oper-status leaf only, so the raw body is read for the key.
+	if body := postStatusRaw(t, a, 3, "admin-status", "TESTING"); !strings.Contains(body, `"masked":false`) || strings.Contains(body, "masked_by") {
+		t.Errorf("admin POST TESTING = %s, want masked false and no masked_by key", body)
+	}
+	if out := postStatus(t, a, 3, "oper-status", "UP"); !out.Masked || out.PeerDown || out.MaskedBy != "admin" || out.OperStatus != "TESTING" {
+		t.Errorf("testing port POST UP = %+v, want oper TESTING masked by admin", out)
+	}
+	// Back to shut, which is the parent state the steps below were written for.
+	postStatus(t, a, 3, "admin-status", "DOWN")
 
 	// A subinterface under that shut parent: lowerLayerDown, named parent.
 	deviceInterfaceState(a).setParents(map[int]int{4: 3})
@@ -735,8 +749,9 @@ func TestStateChange_MaskedByNamesTheFirstEngineCause(t *testing.T) {
 	if !f.mgr.RemoveTopologyLink(ep(a.IP.String(), 2), ep(b.IP.String(), 4)) {
 		t.Fatal("remove the second link")
 	}
-	if out := postStatus(t, a, 2, "oper-status", "UP"); out.Masked || out.MaskedBy != "" {
-		t.Errorf("plain POST UP = %+v, want no masked_by", out)
+	// The raw body is read so a dropped omitempty shows as a present key.
+	if body := postStatusRaw(t, a, 2, "oper-status", "UP"); !strings.Contains(body, `"masked":false`) || strings.Contains(body, "masked_by") {
+		t.Errorf("plain POST UP = %s, want masked false and no masked_by key", body)
 	}
 }
 
