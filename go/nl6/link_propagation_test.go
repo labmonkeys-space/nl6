@@ -703,6 +703,11 @@ func TestStateChange_MaskedByNamesTheFirstEngineCause(t *testing.T) {
 	if out := postStatus(t, a, 3, "oper-status", "UP"); !out.Masked || out.PeerDown || out.MaskedBy != "admin" {
 		t.Errorf("shut port POST UP = %+v, want masked by admin", out)
 	}
+	// Admin testing is the other admin != up state; it names admin too.
+	postStatus(t, a, 3, "admin-status", "TESTING")
+	if out := postStatus(t, a, 3, "oper-status", "UP"); !out.Masked || out.PeerDown || out.MaskedBy != "admin" {
+		t.Errorf("testing port POST UP = %+v, want masked by admin", out)
+	}
 
 	// A subinterface under that shut parent: lowerLayerDown, named parent.
 	deviceInterfaceState(a).setParents(map[int]int{4: 3})
@@ -735,8 +740,18 @@ func TestStateChange_MaskedByNamesTheFirstEngineCause(t *testing.T) {
 	if !f.mgr.RemoveTopologyLink(ep(a.IP.String(), 2), ep(b.IP.String(), 4)) {
 		t.Fatal("remove the second link")
 	}
-	if out := postStatus(t, a, 2, "oper-status", "UP"); out.Masked || out.MaskedBy != "" {
-		t.Errorf("plain POST UP = %+v, want no masked_by", out)
+	// The raw body is read so a dropped omitempty shows as a present key.
+	path := fmt.Sprintf("/api/v1/devices/%s/interfaces/2/oper-status", a.IP)
+	w := doReq(t, setupRoutes(), http.MethodPost, path, `{"status":"UP"}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("plain POST UP = %d %s, want 202", w.Code, w.Body.String())
+	}
+	var out stateChangeOutcome
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Masked || out.MaskedBy != "" || strings.Contains(w.Body.String(), "masked_by") {
+		t.Errorf("plain POST UP = %s, want no masked_by key", w.Body.String())
 	}
 }
 
