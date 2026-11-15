@@ -417,14 +417,13 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	// truth; oidIndex retains the initial JSON values only as a
 	// boot-time seed, never read on the hot path.
 	//
-	// **RFC-2863 caveat:** `ifLastChange` is specified as "value of
-	// sysUpTime at the time the interface entered its current
-	// operational state". We measure from the state-engine
-	// construction time (`bootTimeUnixNs`), not the SNMP agent's
-	// `sysUpTime`. Today `InitIfCountersWithScenario` runs exactly once
-	// per device (guarded against re-init via panic) so the two
-	// epochs coincide. If a future "reload scenario" feature is added,
-	// the divergence must be re-examined.
+	// **RFC-2863:** `ifLastChange` is specified as "value of sysUpTime
+	// at the time the interface entered its current operational state".
+	// The engine's `bootTimeUnixNs` is the device's boot instant, the
+	// instant sysUpTime.0 counts from (nl6#1031), so the two epochs
+	// coincide by construction. They used to coincide only by claim: the
+	// engine counted from its own construction while sysUpTime.0 was a
+	// static resource value. A future device restart has to move both.
 	if !ifX && ic.state != nil {
 		switch col {
 		case colIfAdminStatus:
@@ -969,8 +968,16 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 	firstDynOID := firstCol.prefix + strconv.Itoa(firstCol.col) + "." + strconv.Itoa(sortedIndexList[0])
 	lastDynOID := lastCol.prefix + strconv.Itoa(lastCol.col) + "." + strconv.Itoa(sortedIndexList[len(sortedIndexList)-1])
 
+	// One boot instant for the counters and the state engine: the device's,
+	// which initDeviceCyclers copied onto the metric cycler (nl6#1031). A
+	// cycler built without one (hand-built test fixtures) boots now.
+	boot := c.startTime
+	if boot.IsZero() {
+		boot = time.Now()
+	}
+
 	ic := &IfCounterCycler{
-		startTime:       time.Now(),
+		startTime:       boot,
 		maxIfIndex:      maxIdx,
 		knownIfIndexes:  knownIdxs,
 		ifIndexList:     indexList,
@@ -1110,7 +1117,7 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 	//
 	// JSON values out of IF-MIB range fall back to UP and log a warning
 	// so a typo in the resource file doesn't silently corrupt the seed.
-	ic.state = NewInterfaceState(maxIdx, nil, nil)
+	ic.state = newInterfaceStateBootedAt(maxIdx, nil, nil, boot)
 	for idx := range knownIdxs {
 		oper := OperUp
 		admin := AdminUp

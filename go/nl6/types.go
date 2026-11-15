@@ -93,6 +93,11 @@ type DeviceResources struct {
 	oidIndex   *sync.Map `json:"-"` // Lock-free OID -> Response mapping for O(1) lookups
 	sortedOIDs []string  `json:"-"` // Pre-sorted OID list for GetNext operations
 	oidNextMap *sync.Map `json:"-"` // Pre-computed next OID mapping for walks
+	// systemGapPreds are the static OIDs whose precomputed successor steps
+	// over a live system object (sysUpTime.0, sysName.0, sysLocation.0),
+	// none of which is in sortedOIDs. The GETNEXT fast path must not take
+	// the precomputed successor of these (nl6#1031). At most three entries.
+	systemGapPreds []string `json:"-"`
 }
 
 // Device simulator represents a single simulated device
@@ -110,6 +115,17 @@ type DeviceSimulator struct {
 	resourceFile string // Track which resource file was used
 	sysLocation  string // Dynamic sysLocation for this device
 	sysName      string // Dynamic sysName for this device
+	// bootTime is the device's boot instant, stamped once by initDeviceCyclers
+	// (the helper both creation paths call) and immutable after publication.
+	// sysUpTime.0, the metric, counter and state engines, the trap, syslog and
+	// flow exporters and the USM engine clock all count from it (nl6#1031).
+	// Zero on hand-built test fixtures, which then answer sysUpTime.0 from
+	// their resources.
+	bootTime time.Time
+	// now is the clock sysUpTime.0 alone is read against; nil means time.Now.
+	// A test seam for that one object, set before the device is shared: the
+	// engines keep their own seams (MetricsCycler.now, InterfaceState.now).
+	now func() time.Time
 	// Cached frequently accessed values (lock-free)
 	cachedSysName     atomic.Value    // Stores string
 	cachedSysLocation atomic.Value    // Stores string

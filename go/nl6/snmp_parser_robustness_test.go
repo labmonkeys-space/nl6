@@ -2603,8 +2603,16 @@ func wellFormedMinimalCorpus() []wellFormedDatagram {
 // the easy case while claiming to pin essentially all real GETNEXT traffic
 // (nl6#542 review R9). Verified: the baseline produces the same digest over the
 // widened corpus, so those corners are byte-identical too.
+//
+// Re-pinned by nl6#1031, a deliberate wire change. The GETNEXT fast path had no
+// term for sysName.0 and sysLocation.0, which buildResourceIndexes leaves out of
+// sortedOIDs, so a walk from sysDescr.0 (this fixture's only name below them)
+// jumped to ifDescr.1. It now answers sysName.0, then sysLocation.0. That moves
+// 120 of the 360 hashed responses, all GETNEXT or GETBULK. Verified rather than
+// assumed: with the new fast-path term forced clear and everything else in the
+// change kept, the previous digest 8e0d79ac... comes back byte for byte.
 func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
-	const wantDigest = "8e0d79acfa981f5725be13d19be8540c8f4325f4c56147d95687a719677914e1"
+	const wantDigest = "b649e98f62786fde5cf87e5b6f1df06f692dba1d3ac6743d135492fa865d5082"
 
 	// Pinned so a corpus that silently shrank — or an exclusion filter that
 	// grew — fails here instead of passing over a smaller digest.
@@ -2677,8 +2685,13 @@ func digestCorpus(s *SNMPServer, corpus []wellFormedDatagram,
 // oracle — its job is to make any FURTHER movement of this shape deliberate.
 // The behavioural claims about these datagrams live in
 // snmp_getnext_multibind_test.go, where they are readable.
+//
+// Moved deliberately by nl6#1031, for the reason given on the digest above: a
+// binding on sysDescr.0 now answers sysName.0 instead of skipping it. 60 of the
+// 72 responses changed; forcing the new fast-path term clear brings the
+// previous digest f8e08e33... back byte for byte.
 func TestMultiBindingGetNextResponsesArePinned(t *testing.T) {
-	const wantDigest = "f8e08e330568b6f50fa2ec9951cdd4045d309393f4507efa8ac1255302298a2c"
+	const wantDigest = "05044c4f45056389d9dea61b9686beba37e208faeab4e43913dbbb02c8912f32"
 	const wantHashed = 72
 
 	s := newTestServer(fuzzFixtureOIDs(20))

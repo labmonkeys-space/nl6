@@ -712,7 +712,9 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 			// for. TestDefaultResourcesServeNoForeignVendorArc pins the
 			// sysObjectID; nothing pins sysDescr.
 			{OID: "1.3.6.1.2.1.1.2.0", Response: "1.3.6.1.4.1.32473.1.1"},
-			{OID: "1.3.6.1.2.1.1.3.0", Response: "123456789"},
+			// No sysUpTime.0 row: it is served live from the device's boot
+			// instant, which every device built off this set has, so a static
+			// row here would be dead data (nl6#1031).
 			{OID: "1.3.6.1.2.1.1.4.0", Response: "Network Administrator"},
 			{OID: "1.3.6.1.2.1.1.5.0", Response: "Router-Simulator"},
 			{OID: "1.3.6.1.2.1.1.6.0", Response: "Simulation Lab"},
@@ -1281,6 +1283,9 @@ func (sm *SimulatorManager) buildResourceIndexes(resources *DeviceResources) {
 	for i := 0; i < len(resources.sortedOIDs)-1; i++ {
 		resources.oidNextMap.Store(resources.sortedOIDs[i], resources.sortedOIDs[i+1])
 	}
+	// That map now steps OVER sysName.0 and sysLocation.0 (and the live
+	// sysUpTime.0), so the fast path needs to know where it does (nl6#1031).
+	resources.systemGapPreds = systemGapPredecessors(resources.sortedOIDs)
 }
 
 // ListAvailableResources lists all available resource directories in the resources directory

@@ -37,8 +37,16 @@ func (s *SNMPServer) metricsPoint() int {
 
 // findResponseAt is findResponse with the metric point supplied by the request.
 func (s *SNMPServer) findResponseAt(oid string, p int) string {
+	// sysUpTime.0 counts from the device's boot instant (nl6#1031). A device
+	// without one (hand-built test fixtures) falls through to its resources.
+	if oid == sysUpTimeOID {
+		if val, ok := s.device.liveSysUpTime(); ok {
+			return val
+		}
+	}
+
 	// Handle dynamic sysLocation OID - lock-free access
-	if oid == ".1.3.6.1.2.1.1.6.0" {
+	if oid == sysLocationOID {
 		if val := s.device.cachedSysLocation.Load(); val != nil {
 			return val.(string)
 		}
@@ -46,7 +54,7 @@ func (s *SNMPServer) findResponseAt(oid string, p int) string {
 	}
 
 	// Handle dynamic sysName OID - lock-free access
-	if oid == ".1.3.6.1.2.1.1.5.0" {
+	if oid == sysNameOID {
 		if val := s.device.cachedSysName.Load(); val != nil {
 			return val.(string)
 		}
@@ -239,6 +247,10 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	lldpNextLLDP, lldpNextVal := lldpNextFromServed(lldpServed, currentOID)
 	lldpHas := lldpNextLLDP != ""
 
+	// sysUpTime.0 is live on a device with a boot instant; its value is read
+	// only if the walk reaches it.
+	upLive := s.device != nil && !s.device.bootTime.IsZero()
+
 	// Fast path: precomputedNextOID is safe to return immediately iff no
 	// dynamic source can emit a candidate in (currentOID, precomputedNextOID].
 	// For each source that condition is: source is empty, OR its first
@@ -255,16 +267,21 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 		// Without this term the static next is returned and the 1.0.8802
 		// subtree (which sorts before all statics) is silently skipped.
 		lldpClear := !lldpHas || compareOIDs(lldpNextLLDP, precomputedNextOID) > 0
-		if metricsClear && ifCyclerClear && lldpClear {
+		// The live system objects are clear unless the precomputed successor
+		// steps over one. buildResourceIndexes leaves sysName.0 and
+		// sysLocation.0 out of sortedOIDs, so without this term the successor
+		// of sysContact.0 was sysServices.0 and a walk skipped both (nl6#1031);
+		// a live sysUpTime.0 is the third. The predecessors are precomputed, so
+		// this is a string comparison, not an OID comparison per walk step.
+		systemClear := !stepsOverLiveSystemOID(currentOID, s.device.resources.systemGapPreds)
+		if metricsClear && ifCyclerClear && lldpClear && systemClear {
 			val := s.overrideIfHC(ifCycler, precomputedNextOID, precomputedNextResp)
 			return precomputedNextOID, s.overrideLLDP(precomputedNextOID, val)
 		}
 	}
 
 	// Slow path: need to consider dynamic metric OIDs as candidates.
-	// Dynamic OIDs - check these with lock-free access
-	sysNameOID := ".1.3.6.1.2.1.1.5.0"
-	sysLocationOID := ".1.3.6.1.2.1.1.6.0"
+	// Dynamic OIDs (sysName.0, sysLocation.0) - check these with lock-free access
 
 	var nextOID string
 	var response string
@@ -291,6 +308,10 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 			if compareOIDs(o, currentOID) > 0 && (best == "" || compareOIDs(o, best) < 0) {
 				best, bestVal = o, v
 			}
+		}
+		if upLive {
+			upVal, _ := s.device.liveSysUpTime()
+			consider(sysUpTimeOID, upVal)
 		}
 		consider(sysNameOID, cachedSysName)
 		consider(sysLocationOID, cachedSysLocation)
@@ -338,6 +359,13 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	}
 
 	// Add dynamic OIDs if they're greater than currentOID
+	if upLive && compareOIDs(sysUpTimeOID, currentOID) > 0 {
+		upVal, _ := s.device.liveSysUpTime()
+		candidates = append(candidates, struct{ oid, resp string }{
+			oid:  sysUpTimeOID,
+			resp: upVal,
+		})
+	}
 	if compareOIDs(sysNameOID, currentOID) > 0 {
 		candidates = append(candidates, struct{ oid, resp string }{
 			oid:  sysNameOID,
@@ -403,6 +431,13 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 			nextOID = candidates[i].oid
 			response = candidates[i].resp
 		}
+	}
+
+	// A static sysUpTime.0 row (an operator resource file may still carry
+	// one) ties with the live candidate and is listed first; the live value
+	// wins, as it does on GET.
+	if upLive && nextOID == sysUpTimeOID {
+		response, _ = s.device.liveSysUpTime()
 	}
 
 	// overrideLLDP after overrideIfHC so the dynamic LLDP/ifAlias value wins

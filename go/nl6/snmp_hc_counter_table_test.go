@@ -209,7 +209,12 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // connected ipRouteTable row of fxp0.0, pre-change value
 // shippedTagDigestBeforeMx10004SystemInterfaces. Reversed by
 // snmp_shipped_juniper_mx10004_system_interfaces_ledger_test.go.
-const shippedTagDigest = "2af12a0da73bde2ed9228e45c0a23916d2d23904cd085a24fc1ae6fae5206238"
+// Re-pinned by nl6#1031: the static sysUpTime.0 row is deleted from all 26
+// profiles that shipped one, since it is served live from the boot instant,
+// pre-change value shippedTagDigestBeforeSysUpTimeDeletion. Reversed by
+// TestSysUpTimeDeletionReproducesTheParentCorpus in
+// snmp_shipped_sysuptime_ledger_test.go.
+const shippedTagDigest = "154e029d64874b240297039bceba4dc0e40ad4f4a52fcdeda3c16d906f3a71c9"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

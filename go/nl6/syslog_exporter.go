@@ -129,6 +129,9 @@ type SyslogExporterOptions struct {
 	Model     string
 	Serial    string
 	ChassisID string
+	// BootTime is the device's boot instant, which `{{.Uptime}}` counts from
+	// (nl6#1031). Zero means the exporter's construction.
+	BootTime  time.Time
 	IfIndexFn func() int
 	IfNameFn  func(ifIndex int) string
 	// IfAdminStatusFn returns the IF-MIB admin status of ifIndex (AdminUp
@@ -194,7 +197,7 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 		ifIndexFn:       opts.IfIndexFn,
 		ifNameFn:        opts.IfNameFn,
 		ifAdminStatusFn: opts.IfAdminStatusFn,
-		startTime:       time.Now(),
+		startTime:       bootOrNow(opts.BootTime),
 		stats:           &SyslogStats{},
 	}
 }
@@ -445,7 +448,7 @@ func (e *SyslogExporter) write(pdu []byte) error {
 // SNMP TimeTicks semantics so templates can share `{{.Uptime}}` with the
 // trap capability.
 func (e *SyslogExporter) uptimeHundredths() uint32 {
-	return uint32(time.Since(e.startTime) / (10 * time.Millisecond))
+	return uptimeTicks(e.startTime, time.Now()) // the polled sysUpTime.0 formula (nl6#1031)
 }
 
 // Close marks the exporter as closing and releases the per-device socket.

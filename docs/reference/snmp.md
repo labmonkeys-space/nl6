@@ -84,7 +84,7 @@ The CLI flags are **not** validated together, so `-snmpv3-priv aes128` with `-sn
 
 Neither affects a single-device poll, and both are worth knowing before pointing a manager at a large fleet.
 
-- **`snmpEngineID` is fleet-wide.** `-snmpv3-engine-id` gives every device the same value, while `msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime` are per device. RFC 3411 wants the engine ID unique per engine, so a manager that caches `(boots, time)` keyed on engine ID will see its estimate move as it polls devices started at different instants.
+- **`snmpEngineID` is fleet-wide.** `-snmpv3-engine-id` gives every device the same value, while `msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime` are per device. Engine time counts from the device's boot instant, the instant `sysUpTime.0` counts from, not from the device's first SNMPv3 message (see [Live system objects](#live-system-objects)). RFC 3411 wants the engine ID unique per engine, so a manager that caches `(boots, time)` keyed on engine ID will see its estimate move as it polls devices created at different instants.
 - **`msgAuthoritativeEngineBoots` is always 1 and is not persisted.** After a restart nl6 advertises `boots=1` again with the time back near zero, where RFC 3414 §2.2.3 would increment boots. A manager holding a cached estimate sees time move backwards under unchanged boots and has to rediscover. The `usmStatsNotInTimeWindows` Report nl6 sends is authenticated so that recovery is possible.
 
 Per-device SNMPv3 credentials can be supplied when creating devices via the REST API.
@@ -589,6 +589,29 @@ watch -n 5 "snmpget -v2c -c public 10.42.0.1 \
   1.3.6.1.2.1.2.2.1.14.1 1.3.6.1.2.1.2.2.1.13.1"
 ```
 
+## Live system objects
+
+`sysUpTime.0`, `sysName.0` and `sysLocation.0` are served live, never from the resource file.
+
+**`sysUpTime.0` counts from the device's boot instant**, in hundredths of a second, as SNMPv2-MIB defines it.
+The boot instant is stamped once, when the device is created.
+The same instant is the origin of `ifLastChange`, the metric curves, the interface counters, the optical values, the `sysUpTime.0` varbind of every trap, the syslog `{{.Uptime}}` field, the flow `SysUptime` and the engine time an SNMPv3 poll reads.
+A trap's `sysUpTime.0` and a syslog `{{.Uptime}}` are the value a poll of `sysUpTime.0` reads at the same instant.
+Every device type serves it, including `linux_server` and the four storage types, whose profiles never carried one.
+The value wraps every 2^32 ticks (about 497 days), as an agent's TimeTicks does.
+A `1.3.6.1.2.1.1.3.0` row in an operator's own profile is never served; the shipped profiles carry none.
+
+**A walk reaches all three.** They are not in the resource map, so a GETNEXT or GETBULK takes them as candidates beside the static rows.
+Earlier releases skipped `sysName.0` and `sysLocation.0` on a walk of the system group, although a GET answered them.
+
+**A wall-clock step on the host shifts `ifLastChange` against `sysUpTime.0`.** `sysUpTime.0` is measured on the monotonic clock, while the state engine stamps transitions from the wall clock.
+After the host clock is stepped, a transition's `ifLastChange` is off by the size of the step.
+
+**What does not move yet.** `snmpEngineBoots` stays 1, and a device cannot be restarted.
+The engine time of an SNMPv3 trap counts from the moment the device's trap exporter was attached, which is its creation, not from the boot instant itself.
+Deleting and re-creating a device makes a new device, with a new boot instant, a new `sysName` and no topology links.
+`hrSystemUptime.0` on the NVIDIA profiles and the SSH `show version` uptime are still static text from the profile.
+
 ## Dynamic CPU / memory / temperature metrics
 
 CPU, memory, and temperature OIDs cycle through a 100-point pre-generated sine-wave pattern per device.
@@ -618,7 +641,8 @@ SNMP `ifOperStatus.<N>` and gNMI `/interfaces/interface[name=*]/state/oper-statu
 An oper-status transition also fires the device's role-tagged link trap and syslog for that interface.
 
 **`ifLastChange` epoch.** RFC 2863 defines `ifLastChange` relative to `sysUpTime`.
-nl6 computes it relative to the device's state-engine construction time, which is the same instant as device boot.
+nl6 counts it from the device's boot instant, the instant `sysUpTime.0` counts from, so `sysUpTime - ifLastChange` is the time since the transition.
+See [Live system objects](#live-system-objects).
 
 **`ifLastChange` resolution.** SNMP encodes `ifLastChange` as `TimeTicks` (centiseconds), so two transitions less than 10 ms apart collide to the same wire value.
 The gNMI `state/last-change` leaf carries nanoseconds, so the same two transitions are distinguishable there.
