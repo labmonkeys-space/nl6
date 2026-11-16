@@ -84,7 +84,7 @@ The CLI flags are **not** validated together, so `-snmpv3-priv aes128` with `-sn
 
 Neither affects a single-device poll, and both are worth knowing before pointing a manager at a large fleet.
 
-- **`snmpEngineID` is fleet-wide.** `-snmpv3-engine-id` gives every device the same value, while `msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime` are per device. Engine time counts from the device's boot instant, the instant `sysUpTime.0` counts from, not from the device's first SNMPv3 message (see [Live system objects](#live-system-objects)). RFC 3411 wants the engine ID unique per engine, so a manager that caches `(boots, time)` keyed on engine ID will see its estimate move as it polls devices created at different instants.
+- **`snmpEngineID` is fleet-wide.** `-snmpv3-engine-id` gives every device the same value, while `msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime` are per device. Engine time counts from the device's boot instant, the instant `sysUpTime.0` counts from, not from the device's first SNMPv3 message (see [Live system objects](#live-system-objects)). RFC 3411 wants the engine ID unique per engine, so a manager that caches `(boots, time)` keyed on engine ID will see its estimate move as it polls devices created at different instants. A manager that keeps one engine-time table for all devices, such as an SNMP4J application sharing one USM across targets or a daemon built on libnetsnmp, then loses every device whose engine time is more than 150 seconds behind the oldest one it has seen, and polls to those devices time out. A manager that starts with an empty engine-time table for every poll, such as a new USM per session or one `snmpget` process per poll, is not affected. For a manager that shares the table, create the fleet in a single batch or within 150 seconds.
 - **`msgAuthoritativeEngineBoots` is always 1 and is not persisted.** After a restart nl6 advertises `boots=1` again with the time back near zero, where RFC 3414 §2.2.3 would increment boots. A manager holding a cached estimate sees time move backwards under unchanged boots and has to rediscover. The `usmStatsNotInTimeWindows` Report nl6 sends is authenticated so that recovery is possible.
 
 Per-device SNMPv3 credentials can be supplied when creating devices via the REST API.
@@ -598,14 +598,16 @@ The boot instant is stamped once, when the device is created.
 The same instant is the origin of `ifLastChange`, the metric curves, the interface counters, the optical values, the `sysUpTime.0` varbind of every trap, the syslog `{{.Uptime}}` field, the flow `SysUptime` and the engine time an SNMPv3 poll reads.
 A trap's `sysUpTime.0` and a syslog `{{.Uptime}}` are the value a poll of `sysUpTime.0` reads at the same instant.
 Every device type serves it, including `linux_server` and the four storage types, whose profiles never carried one.
-The value wraps every 2^32 ticks (about 497 days), as an agent's TimeTicks does.
+The value wraps every 2^32 ticks (about 497 days), as an agent's TimeTicks does, and `ifLastChange` wraps with it.
 A `1.3.6.1.2.1.1.3.0` row in an operator's own profile is never served; the shipped profiles carry none.
 
 **A walk reaches all three.** They are not in the resource map, so a GETNEXT or GETBULK takes them as candidates beside the static rows.
 Earlier releases skipped `sysName.0` and `sysLocation.0` on a walk of the system group, although a GET answered them.
 
-**A wall-clock step on the host shifts `ifLastChange` against `sysUpTime.0`.** `sysUpTime.0` is measured on the monotonic clock, while the state engine stamps transitions from the wall clock.
-After the host clock is stepped, a transition's `ifLastChange` is off by the size of the step.
+**A wall-clock jump on the host shifts `ifLastChange` against `sysUpTime.0`.** `sysUpTime.0` is measured on the monotonic clock, while the state engine stamps transitions from the wall clock.
+A jump is an NTP step, a host suspend, or a VM pause or snapshot.
+After a forward jump, every later transition's `ifLastChange` is ahead of `sysUpTime.0` by the size of the jump, so `sysUpTime - ifLastChange` goes negative.
+After a backward jump it is behind by the same amount.
 
 **What does not move yet.** `snmpEngineBoots` stays 1, and a device cannot be restarted.
 The engine time of an SNMPv3 trap counts from the moment the device's trap exporter was attached, which is its creation, not from the boot instant itself.

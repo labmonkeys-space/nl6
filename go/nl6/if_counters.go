@@ -435,12 +435,13 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 			// boot epoch). Pre-transition slots render as "0"; rewind-
 			// sentinel slots also render as "0" (rewind is observable
 			// elsewhere via the wallRelNs log + LastChangeRewindSentinel
-			// in StateChange.LastChangeNs).
+			// in StateChange.LastChangeNs). Wraps at 2^32 like sysUpTime.0,
+			// the value a real agent stores at the transition.
 			lastUnixNs := ic.state.LastChangeNs(ifIndex)
 			if lastUnixNs == LastChangeRewindSentinel || lastUnixNs <= ic.state.bootTimeUnixNs {
 				return "0"
 			}
-			return strconv.FormatUint((lastUnixNs-ic.state.bootTimeUnixNs)/10_000_000, 10)
+			return strconv.FormatUint(uint64(uint32((lastUnixNs-ic.state.bootTimeUnixNs)/10_000_000)), 10)
 		}
 	}
 

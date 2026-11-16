@@ -237,6 +237,33 @@ func TestIfLastChangeAgreesWithSysUpTime(t *testing.T) {
 	}
 }
 
+// TestIfLastChangeWrapsLikeSysUpTime: past 2^32 ticks (about 497 days)
+// ifLastChange wraps with sysUpTime.0, so it still encodes as TimeTicks and
+// the two stay comparable.
+func TestIfLastChangeWrapsLikeSysUpTime(t *testing.T) {
+	boot := time.Now().Add(-500 * 24 * time.Hour)
+	s := bootedShippedDevice(t, "asr9k.json", boot, nil)
+	ic := s.device.metricsCycler.ifCounters.Load()
+	if ic == nil || ic.State() == nil || len(ic.sortedIfIndexes) == 0 {
+		t.Fatal("asr9k has no interface state engine")
+	}
+	idx := ic.sortedIfIndexes[0]
+	ic.State().SetLinkState(idx, OperDown)
+
+	raw := s.findResponse(".1.3.6.1.2.1.2.2.1.9." + strconv.Itoa(idx))
+	lc, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil {
+		t.Fatalf("ifLastChange.%d = %q does not fit TimeTicks: %v", idx, raw, err)
+	}
+	up, err := strconv.ParseUint(s.findResponse(sysUpTimeOID), 10, 32)
+	if err != nil {
+		t.Fatalf("sysUpTime.0: %v", err)
+	}
+	if up < lc || up-lc > 100 {
+		t.Errorf("ifLastChange.%d = %d, sysUpTime.0 = %d: want ifLastChange at most a second below sysUpTime", idx, lc, up)
+	}
+}
+
 // TestDeviceEnginesShareTheBootInstant: the metric, counter, state and optical
 // engines all measure from the device's boot instant.
 func TestDeviceEnginesShareTheBootInstant(t *testing.T) {
