@@ -249,7 +249,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 
 	// sysUpTime.0 is live on a device with a boot instant; its value is read
 	// only if the walk reaches it.
-	upLive := s.device != nil && !s.device.bootTime.IsZero()
+	upLive := !s.device.bootTime.IsZero()
 
 	// Fast path: precomputedNextOID is safe to return immediately iff no
 	// dynamic source can emit a candidate in (currentOID, precomputedNextOID].
