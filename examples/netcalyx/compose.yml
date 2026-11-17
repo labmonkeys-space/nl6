@@ -22,7 +22,7 @@ name: nl6-yangpush
 
 services:
   redpanda:
-    image: redpandadata/redpanda:v26.2.6@sha256:8b1076e0d61bfceb66594dc01536427ce0b529f8ead35fdab9763ab6085891ce
+    image: redpandadata/redpanda:v26.2.7@sha256:43545ee03966431f5451e0b3c1e651b39fbe3eb383360220311021f50133b649
     container_name: nl6-yangpush-redpanda
     network_mode: host
     command:
