@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // lldpFixture builds a manager with a set of devices (each with a state
@@ -95,7 +96,7 @@ func (f *lldpFixture) buildDeviceAtWithBoot(t *testing.T, ipStr string, maxIf in
 		IP:            net.ParseIP(ipStr),
 		sysName:       name,
 		resources:     res,
-		metricsCycler: NewMetricsCycler(seed, GetDeviceProfile("")),
+		metricsCycler: NewMetricsCycler(seed, GetDeviceProfile(""), time.Now()),
 	}
 	d.cachedSysName.Store(name)
 	d.metricsCycler.InitIfCountersWithScenario(res, seed, IfErrorClean)

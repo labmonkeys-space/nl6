@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Benchmarks for the LLDP-walk CPU-amplification fix (perf/lldp-walk-cpu-
@@ -94,7 +95,7 @@ func benchDevice(ipStr string, maxIf int, name string, seed int64) *DeviceSimula
 		IP:            net.ParseIP(ipStr),
 		sysName:       name,
 		resources:     res,
-		metricsCycler: NewMetricsCycler(seed, GetDeviceProfile("")),
+		metricsCycler: NewMetricsCycler(seed, GetDeviceProfile(""), time.Now()),
 	}
 	d.cachedSysName.Store(name)
 	d.metricsCycler.InitIfCountersWithScenario(res, seed, IfErrorClean)

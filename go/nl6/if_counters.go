@@ -970,7 +970,7 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 	lastDynOID := lastCol.prefix + strconv.Itoa(lastCol.col) + "." + strconv.Itoa(sortedIndexList[len(sortedIndexList)-1])
 
 	// One boot instant for the counters and the state engine: the device's,
-	// which initDeviceCyclers copied onto the metric cycler (nl6#1031). A
+	// which initDeviceCyclers passed to NewMetricsCycler (nl6#1031). A
 	// cycler built without one (hand-built test fixtures) boots now.
 	boot := bootOrNow(c.startTime)
 

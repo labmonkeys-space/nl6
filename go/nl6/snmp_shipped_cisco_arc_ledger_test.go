@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // nl6#590 is the first VENDOR-ARC MIB AUDIT: nl6#587 and nl6#589 closed the
@@ -910,7 +911,7 @@ func deviceForProfileWithMetrics(t *testing.T, profile string) *SNMPServer {
 	if err != nil {
 		t.Fatalf("LoadSpecificResources(%s): %v", profile, err)
 	}
-	mc := NewMetricsCycler(1, GetDeviceProfile(profile))
+	mc := NewMetricsCycler(1, GetDeviceProfile(profile), time.Now())
 	mc.InitIfCounters(res, 1)
 	return &SNMPServer{device: &DeviceSimulator{
 		ID:            "cisco-arc-pin",

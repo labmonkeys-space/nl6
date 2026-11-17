@@ -975,8 +975,7 @@ func initDeviceCyclers(device *DeviceSimulator) {
 	}
 	profile := GetDeviceProfile(device.resourceFile)
 	devSeed := deviceSeed(device.IP)
-	device.metricsCycler = NewMetricsCycler(devSeed, profile)
-	device.metricsCycler.startTime = device.bootTime
+	device.metricsCycler = NewMetricsCycler(devSeed, profile, device.bootTime)
 	device.metricsCycler.InitGPUMetrics(devSeed, profile.GPU)
 
 	scenario, _ := ParseIfErrorScenario(device.IfErrorScenario)

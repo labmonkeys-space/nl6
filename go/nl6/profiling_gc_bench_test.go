@@ -63,7 +63,7 @@ func buildTUNFreeFleet(tb testing.TB, n int) []*DeviceSimulator {
 			sysName:      fmt.Sprintf("asr9k-%05d", i+1),
 			sysLocation:  "Bench, Nowhere",
 		}
-		d.metricsCycler = NewMetricsCycler(int64(i), dp)
+		d.metricsCycler = NewMetricsCycler(int64(i), dp, time.Now())
 		d.metricsCycler.InitGPUMetrics(int64(i), dp.GPU)
 		d.metricsCycler.InitIfCountersWithScenario(res, int64(i)^0x4843_0000, IfErrorClean)
 		d.metricsCycler.InitOpticalCycler(res, int64(i), opticalBandFor(OpticalClean))
