@@ -204,6 +204,9 @@ type TrapExporterOptions struct {
 	Model     string
 	Serial    string
 	ChassisID string
+	// BootTime is the device's boot instant, which the sysUpTime.0 varbind
+	// counts from (nl6#1031). Zero means the exporter's construction.
+	BootTime time.Time
 }
 
 // NewTrapExporter builds a TrapExporter. The per-device conn is not opened
@@ -247,7 +250,7 @@ func NewTrapExporter(opts TrapExporterOptions) *TrapExporter {
 		collectorStr:    opts.CollectorStr,
 		limiter:         opts.Limiter,
 		sharedConn:      opts.SharedConn,
-		startTime:       time.Now(),
+		startTime:       bootOrNow(opts.BootTime),
 		informTimeout:   opts.InformTimeout,
 		informRetries:   opts.InformRetries,
 		pendingCap:      opts.PendingCap,
@@ -654,7 +657,7 @@ func (e *TrapExporter) nextRequestID() uint32 {
 // uptimeHundredths returns device uptime in 1/100-second ticks, matching
 // SNMP TimeTicks semantics.
 func (e *TrapExporter) uptimeHundredths() uint32 {
-	return uint32(time.Since(e.startTime) / (10 * time.Millisecond))
+	return uptimeTicks(e.startTime, time.Now()) // the polled sysUpTime.0 formula (nl6#1031)
 }
 
 // readerLoop demuxes inbound ack datagrams on the per-device socket. Exits

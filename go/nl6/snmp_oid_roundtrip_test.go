@@ -433,7 +433,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // ipAddrTable names of 10.255.0.1 and six ifStackStatus names are new to the
 // corpus, pre-change value shippedOIDEncodingDigestBeforeMx10004SystemInterfaces.
 // Reversed by snmp_shipped_juniper_mx10004_system_interfaces_ledger_test.go.
-const shippedOIDEncodingDigest = "1d1e3b7b6da9cf037b87599cd8e7a86553ce4dd79a1019312e35e45bf3225005"
+// Re-pinned by nl6#1031: deleting the 26 static sysUpTime.0 rows took the name
+// 1.3.6.1.2.1.1.3.0 out of the corpus entirely, pre-change value
+// shippedOIDEncodingDigestBeforeSysUpTimeDeletion. Reversed by
+// TestSysUpTimeRePinIsOnlyTheDeletion in snmp_shipped_sysuptime_ledger_test.go.
+const shippedOIDEncodingDigest = "c21837407f314e5a08634384f65df4b3698286a6be97bd577b9e077c316f74ee"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

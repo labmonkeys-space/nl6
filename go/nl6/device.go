@@ -964,10 +964,19 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 // the device's index within its creation request, which restarts at 0 on
 // every request, so the first device of every request served identical curves
 // (nl6#989). Round-robin type assignment stays on the index.
+//
+// It also stamps the device's boot instant, once, before any engine or
+// exporter is built, so every clock of the device counts from one instant
+// (nl6#1031). Each engine used to take its own time.Now(), and the polled
+// sysUpTime.0 was a static resource value that never advanced.
 func initDeviceCyclers(device *DeviceSimulator) {
+	if device.bootTime.IsZero() {
+		device.bootTime = time.Now()
+	}
 	profile := GetDeviceProfile(device.resourceFile)
 	devSeed := deviceSeed(device.IP)
 	device.metricsCycler = NewMetricsCycler(devSeed, profile)
+	device.metricsCycler.startTime = device.bootTime
 	device.metricsCycler.InitGPUMetrics(devSeed, profile.GPU)
 
 	scenario, _ := ParseIfErrorScenario(device.IfErrorScenario)

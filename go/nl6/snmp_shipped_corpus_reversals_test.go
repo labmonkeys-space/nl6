@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "static sysUpTime.0 deletion",
+		file:         "snmp_shipped_sysuptime_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       sysUpTimeDeletionParentRevision,
+		values:       restoreSysUpTimeDeletion,
+		names:        sysUpTimeOIDNamesBeforeDeletion,
+	},
+	{
 		name:         "juniper_mx10004 system interfaces",
 		file:         "snmp_shipped_juniper_mx10004_system_interfaces_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: sysUpTimeDeletionParentRevision,
 		parent:       mx10004SystemInterfacesParentRevision,
 		values:       restoreMx10004SystemInterfaces,
 		names:        mx10004SystemInterfacesOIDNamesBefore,

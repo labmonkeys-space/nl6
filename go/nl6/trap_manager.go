@@ -794,6 +794,7 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 		Model:           modelLabel,
 		Serial:          synthSerial(device.IP),
 		ChassisID:       synthChassisID(device.IP),
+		BootTime:        device.bootTime,
 	}
 
 	exporter := NewTrapExporter(opts)

@@ -21,7 +21,7 @@
 ### Available via SNMP (when online)
 - System description (1.3.6.1.2.1.1.1.0)
 - System object ID (1.3.6.1.2.1.1.2.0) 
-- System uptime (1.3.6.1.2.1.1.3.0) - Returns 0 when offline
+- System uptime (1.3.6.1.2.1.1.3.0) - Live, counts from the device's creation like every other type
 - System contact (1.3.6.1.2.1.1.4.0)
 - System name (1.3.6.1.2.1.1.5.0)
 - System location (1.3.6.1.2.1.1.6.0)

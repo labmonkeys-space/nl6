@@ -804,9 +804,17 @@ func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64
 	copy(chans, resources.Optical)
 	sort.Slice(chans, func(i, j int) bool { return chans[i].Name < chans[j].Name })
 
+	// The device's boot instant, which initDeviceCyclers copied onto the
+	// metric cycler, as the counters do (nl6#1031). A cycler built without
+	// one (hand-built test fixtures) boots now.
+	boot := c.startTime
+	if boot.IsZero() {
+		boot = time.Now()
+	}
+
 	n := len(chans)
 	oc := &OpticalCycler{
-		startTime:    time.Now(),
+		startTime:    boot,
 		names:        make([]string, n),
 		slot:         make(map[string]int, n),
 		linePort:     make([]string, n),
