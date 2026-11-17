@@ -216,9 +216,12 @@ output rather than computing it by hand:
 
 #### Dependabot vendorHash automation: setup and caveats
 
-> **Status: not provisioned.** The two secrets below are unset, so the sweep
-> has never refreshed a hash. Every Dependabot Go-module PR therefore arrives
-> blocked and needs the manual path above. This is nl6#662.
+> **Status: provisioned on 2026-11-17, repair path not yet exercised.**
+> The app is `nl6-vendorhash`, owned by the `labmonkeys-space` organisation and installed on this repository only.
+> Both secrets below are set, and a dispatch mints the read and the write token.
+> No Dependabot Go-module PR was open at the time, so the repair itself has not run yet.
+> Both checks under "Verifying it works" are still open.
+> This is nl6#662.
 
 The sweep needs a **GitHub App**, not a PAT: an installation token is scoped to
 the repositories the app is installed on, lives about an hour, is minted fresh
