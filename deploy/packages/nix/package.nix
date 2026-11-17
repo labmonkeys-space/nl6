@@ -38,7 +38,7 @@ buildGo127Module {
   # main, so a stale hash blocks the merge. On a Dependabot go_modules PR the
   # Dependabot vendorHash workflow pushes the corrected value onto the branch
   # by itself.
-  vendorHash = "sha256-RImUDQtSWkgznM/KBbYHg7cBOTX0BLJjMVret9W+OK0=";
+  vendorHash = "sha256-HAHclql7rJiz+tL/g0Su6SVV5cEQOn9P2AK51Dk/eHU=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 
