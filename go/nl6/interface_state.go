@@ -98,7 +98,7 @@ type StateChange struct {
 type InterfaceState struct {
 	slots          []atomic.Uint64 // slot = ifIndex - 1; out-of-range ifIndexes return zero values
 	maxIfIndex     int             // upper bound; slots has length maxIfIndex
-	bootTimeUnixNs uint64          // captured at construction; used to derive wall-relative lastChange
+	bootTimeUnixNs uint64          // the device's boot instant (nl6#1031), or construction time for an engine built without one; origin of the wall-relative lastChange
 
 	// now is the engine's clock, normalised to time.Now at construction so the
 	// mutation path never branches on nil. Same shape as the four other clock
@@ -497,9 +497,10 @@ func (s *InterfaceState) AdminStatus(ifIndex int) uint8 {
 
 // LastChangeNs returns the absolute Unix nanosecond timestamp of the
 // most recent transition on ifIndex (oper or admin). Returns the
-// engine's boot time (`s.bootTimeUnixNs`, captured at
-// `NewInterfaceState` — *not* the device's real boot time per RFC
-// 2863) if no transition has occurred. Returns 0 if ifIndex is out
+// engine's boot time (`s.bootTimeUnixNs`: the device's boot instant
+// on an engine built by `newInterfaceStateBootedAt`, which is every
+// production device since nl6#1031, and the construction time
+// otherwise) if no transition has occurred. Returns 0 if ifIndex is out
 // of range. Returns LastChangeRewindSentinel if a transition
 // occurred while the wall clock was earlier than the engine boot
 // time (NTP step, container suspend/resume) — downstream consumers

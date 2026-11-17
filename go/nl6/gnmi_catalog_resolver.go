@@ -60,7 +60,8 @@ type catalogIfaces struct {
 // epoch is the device's time base: the interface counter cycler's
 // start, which SNMP, sFlow and the legacy gNMI resolver also use, so a
 // counter read at one instant agrees across surfaces and a gNMI server
-// restart does not reset counters or boot timestamps.
+// restart does not reset counters or boot timestamps. A device without a
+// counter cycler counts from its boot instant too (nl6#1031).
 func (r *catalogResolver) epoch() time.Time {
 	if r.dev != nil && r.dev.metricsCycler != nil {
 		if ic := r.dev.metricsCycler.ifCounters.Load(); ic != nil {
@@ -71,7 +72,7 @@ func (r *catalogResolver) epoch() time.Time {
 }
 
 func newCatalogResolver(d *DeviceSimulator, cat *gnmiCatalog) *catalogResolver {
-	return &catalogResolver{dev: d, cat: cat, start: time.Now()}
+	return &catalogResolver{dev: d, cat: cat, start: d.bootInstant()}
 }
 
 // originAccepted reports whether the request origin is one the

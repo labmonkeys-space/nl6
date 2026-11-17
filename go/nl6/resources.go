@@ -1260,7 +1260,7 @@ func (sm *SimulatorManager) buildResourceIndexes(resources *DeviceResources) {
 	// Normalize OIDs from JSON to always use a leading dot.
 	for _, resource := range resources.SNMP {
 		oid := normaliseResourceOID(resource.OID)
-		if oid == ".1.3.6.1.2.1.1.5.0" || oid == ".1.3.6.1.2.1.1.6.0" {
+		if oid == sysNameOID || oid == sysLocationOID {
 			continue
 		}
 		resources.oidIndex.Store(oid, resource.Response)

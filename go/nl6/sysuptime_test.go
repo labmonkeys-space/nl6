@@ -13,11 +13,6 @@ import (
 	"time"
 )
 
-const (
-	sysNameOIDForTest     = ".1.3.6.1.2.1.1.5.0"
-	sysLocationOIDForTest = ".1.3.6.1.2.1.1.6.0"
-)
-
 // fixedClock returns a clock that reads *at, so a test moves time by
 // assigning to it.
 func fixedClock(at *time.Time) func() time.Time {
@@ -200,10 +195,10 @@ func TestEveryShippedTypeServesALiveSysUpTime(t *testing.T) {
 		if got := seen[sysUpTimeOID]; got != "7700" {
 			t.Errorf("%s: walk sysUpTime.0 = %q, want %q", profile, got, "7700")
 		}
-		if got := seen[sysNameOIDForTest]; got != s.device.sysName {
+		if got := seen[sysNameOID]; got != s.device.sysName {
 			t.Errorf("%s: walk sysName.0 = %q, want %q", profile, got, s.device.sysName)
 		}
-		if got := seen[sysLocationOIDForTest]; got != s.device.sysLocation {
+		if got := seen[sysLocationOID]; got != s.device.sysLocation {
 			t.Errorf("%s: walk sysLocation.0 = %q, want %q", profile, got, s.device.sysLocation)
 		}
 	}
@@ -211,9 +206,10 @@ func TestEveryShippedTypeServesALiveSysUpTime(t *testing.T) {
 
 // TestIfLastChangeAgreesWithSysUpTime: IF-MIB defines ifLastChange as the
 // value of sysUpTime when the interface entered its state, so read right
-// after a transition the two agree to a tick or so. Before nl6#1031 the
-// state engine counted from its own construction while sysUpTime was a
-// static resource value.
+// after a transition the two agree to within a second. The bound is loose
+// because the two reads are separate real-clock reads, and a loaded runner can
+// pause between them. Before nl6#1031 the state engine counted from its own
+// construction while sysUpTime was a static resource value.
 func TestIfLastChangeAgreesWithSysUpTime(t *testing.T) {
 	boot := time.Now().Add(-90 * time.Second)
 	s := bootedShippedDevice(t, "asr9k.json", boot, nil)
@@ -232,8 +228,8 @@ func TestIfLastChangeAgreesWithSysUpTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sysUpTime.0: %v", err)
 	}
-	if lc < 9000 || up < lc || up-lc > 2 {
-		t.Errorf("ifLastChange.%d = %d, sysUpTime.0 = %d: want ifLastChange about 9000 and at most 2 ticks below sysUpTime", idx, lc, up)
+	if lc < 9000 || up < lc || up-lc > 100 {
+		t.Errorf("ifLastChange.%d = %d, sysUpTime.0 = %d: want ifLastChange about 9000 and at most a second below sysUpTime", idx, lc, up)
 	}
 }
 
@@ -261,6 +257,17 @@ func TestIfLastChangeWrapsLikeSysUpTime(t *testing.T) {
 	}
 	if up < lc || up-lc > 100 {
 		t.Errorf("ifLastChange.%d = %d, sysUpTime.0 = %d: want ifLastChange at most a second below sysUpTime", idx, lc, up)
+	}
+}
+
+// TestCatalogResolverEpochFallsBackToTheBootInstant: a device with no
+// interface counter cycler still gives the gNMI catalogue resolver the
+// device's boot instant as its time base, not the resolver's construction.
+func TestCatalogResolverEpochFallsBackToTheBootInstant(t *testing.T) {
+	boot := time.Now().Add(-time.Hour)
+	r := newCatalogResolver(&DeviceSimulator{bootTime: boot}, nil)
+	if got := r.epoch(); !got.Equal(boot) {
+		t.Errorf("epoch() = %v, want the boot instant %v", got, boot)
 	}
 }
 
@@ -434,8 +441,8 @@ func TestSysUpTimeWalkOnAnEmptyResourceMap(t *testing.T) {
 	if oid, val := s.findNextOID(".1.3.6.1.2.1.1"); oid != sysUpTimeOID || val != "300" {
 		t.Errorf("GETNEXT(system) = (%s, %q), want (%s, %q)", oid, val, sysUpTimeOID, "300")
 	}
-	if oid, val := s.findNextOID(sysUpTimeOID); oid != sysNameOIDForTest || val != "empty" {
-		t.Errorf("GETNEXT(sysUpTime.0) = (%s, %q), want (%s, %q)", oid, val, sysNameOIDForTest, "empty")
+	if oid, val := s.findNextOID(sysUpTimeOID); oid != sysNameOID || val != "empty" {
+		t.Errorf("GETNEXT(sysUpTime.0) = (%s, %q), want (%s, %q)", oid, val, sysNameOID, "empty")
 	}
 }
 
@@ -452,12 +459,12 @@ func TestWalkDoesNotSkipSysNameOrSysLocationAlone(t *testing.T) {
 	s.device.sysName = "name"
 	s.device.sysLocation = "location"
 
-	if oid, val := s.findNextOID(".1.3.6.1.2.1.1.4.0"); oid != sysNameOIDForTest || val != "name" {
+	if oid, val := s.findNextOID(".1.3.6.1.2.1.1.4.0"); oid != sysNameOID || val != "name" {
 		t.Errorf("GETNEXT(sysContact.0) = (%s, %q), want (%s, %q): the static successor skipped sysName.0",
-			oid, val, sysNameOIDForTest, "name")
+			oid, val, sysNameOID, "name")
 	}
-	if oid, val := s.findNextOID(".1.3.6.1.2.1.1.5.1"); oid != sysLocationOIDForTest || val != "location" {
+	if oid, val := s.findNextOID(".1.3.6.1.2.1.1.5.1"); oid != sysLocationOID || val != "location" {
 		t.Errorf("GETNEXT(1.3.6.1.2.1.1.5.1) = (%s, %q), want (%s, %q): the static successor skipped sysLocation.0",
-			oid, val, sysLocationOIDForTest, "location")
+			oid, val, sysLocationOID, "location")
 	}
 }
