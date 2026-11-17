@@ -164,7 +164,7 @@ Catalog authors supply only body varbinds; an entry listing any of the three res
 
 | Position | OID | Type | Source |
 |----------|-----|------|--------|
-| 1 | `1.3.6.1.2.1.1.3.0` (`sysUpTime.0`) | TimeTicks (`0x43`) | Device uptime in 1/100-second ticks |
+| 1 | `1.3.6.1.2.1.1.3.0` (`sysUpTime.0`) | TimeTicks (`0x43`) | Device uptime in 1/100-second ticks, from the boot instant a polled `sysUpTime.0` counts from |
 | 2 | `1.3.6.1.6.3.1.1.4.1.0` (`snmpTrapOID.0`) | OID (`0x06`) | Catalog entry's `snmpTrapOID` |
 | 3 (optional) | `1.3.6.1.6.3.1.1.4.3.0` (`snmpTrapEnterprise.0`) | OID (`0x06`) | Catalog entry's `snmpTrapEnterprise` field, when set |
 
@@ -276,7 +276,7 @@ The same twelve fields work on both sides:
 |-------|-----------|
 | `{{.IfIndex}}` | Random ifIndex drawn from the device's simulated interface set at fire time |
 | `{{.IfName}}` | `ifDescr.<IfIndex>` live lookup from the device's SNMP OID table; falls back to synthesised `GigabitEthernet0/<N>` on miss |
-| `{{.Uptime}}` | Device uptime in 1/100-second ticks |
+| `{{.Uptime}}` | Device uptime in 1/100-second ticks, the value a polled `sysUpTime.0` reads at that instant |
 | `{{.Now}}` | Unix epoch seconds |
 | `{{.DeviceIP}}` | Dotted-quad IPv4 of the device |
 | `{{.SysName}}` | Device's `sysName.0` value (captured at construction) |

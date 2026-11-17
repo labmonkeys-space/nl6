@@ -193,7 +193,7 @@ The same twelve fields work on both sides:
 |-------|-----------|
 | `{{.IfIndex}}` | Random ifIndex drawn from the device's simulated interface set at fire time |
 | `{{.IfName}}` | `ifDescr.<IfIndex>` live lookup from the device's SNMP OID table; falls back to synthesised `GigabitEthernet0/<N>` on miss |
-| `{{.Uptime}}` | Device uptime in 1/100-second ticks |
+| `{{.Uptime}}` | Device uptime in 1/100-second ticks, the value a polled `sysUpTime.0` reads at that instant |
 | `{{.Now}}` | Unix epoch seconds |
 | `{{.DeviceIP}}` | Dotted-quad IPv4 of the device |
 | `{{.SysName}}` | Device's `sysName.0` value (captured at construction) |

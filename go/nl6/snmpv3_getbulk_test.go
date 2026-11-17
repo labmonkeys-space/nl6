@@ -762,8 +762,10 @@ func TestV3GetBulkMultiBindingThroughDispatcher(t *testing.T) {
 	if r.requestID != 7777 {
 		t.Errorf("request-id = %d, want 7777", r.requestID)
 	}
-	if len(r.varbinds) != 6 {
-		t.Errorf("response carries %d bindings, want the 6 successors the fixture holds", len(r.varbinds))
+	// The 6 rows the fixture holds plus sysName.0 and sysLocation.0, which
+	// every device serves and the GETNEXT fast path used to skip (nl6#1031).
+	if len(r.varbinds) != 8 {
+		t.Errorf("response carries %d bindings, want the 6 successors the fixture holds plus sysName.0 and sysLocation.0", len(r.varbinds))
 	}
 }
 
@@ -774,7 +776,9 @@ func TestV3GetBulkEmitsOneBindingEvenIfOversized(t *testing.T) {
 		".1.3.6.1.2.1.31.1.1.1.18.1": huge,
 	})
 
-	resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil)
+	// Start past sysLocation.0, so the oversized row is the first successor
+	// rather than sysName.0, which every device serves (nl6#1031).
+	resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.6.0", v3BulkMsg(), nil)
 	// Premise first: the one binding really is over budget. Without this a
 	// shrunken fixture would pass the test while exercising nothing.
 	if len(resp) <= maxSNMPResponseSize {

@@ -43,7 +43,7 @@ See [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 | MAX-ACCESS (`write-only`, `not-accessible`) | no rule; one confirmed `write-only` object (`writeMem`) deleted |
 | Leaves the type table does not type | served as INTEGER or OCTET STRING, whatever the value parses as |
 | Vendor 64-bit counters | untyped, served as INTEGER, not diverted for SNMPv1 |
-| `sysName`, `sysLocation` | served outside the resource map; `sysLocation` is filtered once at load |
+| `sysUpTime`, `sysName`, `sysLocation` | served outside the resource map; `sysUpTime` counts from the device's boot instant and `sysLocation` is filtered once at load |
 | SSH, API, optical sections; trap and syslog catalogs | never reach `encodeTypedValue`; the catalogs have their own validation |
 | Version-0 GETBULK | answered as-is, `0x46` tags included |
 

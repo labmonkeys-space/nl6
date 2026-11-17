@@ -558,6 +558,7 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 		Model:           modelLabel,
 		Serial:          synthSerial(device.IP),
 		ChassisID:       synthChassisID(device.IP),
+		BootTime:        device.bootTime,
 		IfIndexFn:       deviceIfIndexFn(device),
 		IfNameFn:        deviceIfNameFn(device),
 		IfAdminStatusFn: deviceIfAdminStatusFn(device),

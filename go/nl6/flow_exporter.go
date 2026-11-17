@@ -419,7 +419,7 @@ func NewFlowExporter(device *DeviceSimulator, profile *FlowProfile,
 		domainID:         domainID,
 		phase:            flowTickPhase(domainID),
 		subAgentID:       subAgentID,
-		startTime:        time.Now(),
+		startTime:        device.bootInstant(), // SysUptime counts from the device's boot (nl6#1031)
 		templateInterval: templateInterval,
 		collectorStr:     collectorStr,
 		collectorAddr:    collectorAddr,

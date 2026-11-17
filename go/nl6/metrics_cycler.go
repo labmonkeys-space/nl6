@@ -40,7 +40,7 @@ type MetricsCycler struct {
 	memUsed    [numDataPoints]int64 // Memory used in KB
 	tempPoints [numDataPoints]int   // Temperature in Celsius
 	memTotal   int64                // Total memory in KB (constant)
-	startTime  time.Time            // origin of the served point, set by NewMetricsCycler
+	startTime  time.Time            // origin of the served point: the device boot instant (initDeviceCyclers), else NewMetricsCycler's now
 	now        func() time.Time     // clock of the point, nil reads time.Now; unsynchronised, set before sharing
 	gpuMetrics []*GPUMetrics        // Per-GPU cycling metrics (nil for non-GPU devices)
 	// ifCounters holds the per-interface HC counter cycler (nil if no HC OIDs).

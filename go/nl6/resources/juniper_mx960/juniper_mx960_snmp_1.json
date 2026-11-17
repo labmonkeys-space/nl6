@@ -329,10 +329,6 @@
       "response": "1.3.6.1.4.1.2636.1.1.1.2.21"
     },
     {
-      "oid": "1.3.6.1.2.1.1.3.0",
-      "response": "1348753300"
-    },
-    {
       "oid": "1.3.6.1.2.1.1.4.0",
       "response": "Network Operations <noc@company.com>"
     },

@@ -332,7 +332,11 @@ type usmServerState struct {
 // protocol's digest, so a manager configured md5/aes derives with MD5.
 func (s *SNMPServer) usmState() *usmServerState {
 	s.usm.once.Do(func() {
-		s.usm.bootedAt = time.Now()
+		// The engine boots with its device, so msgAuthoritativeEngineTime
+		// counts from the instant sysUpTime.0 counts from (nl6#1031), not from
+		// the device's first v3 message. A server without a device (the
+		// notification originator, test fixtures) boots on first use.
+		s.usm.bootedAt = s.device.bootInstant()
 		s.usm.engineBoots = 1
 		if s.v3Config == nil {
 			return

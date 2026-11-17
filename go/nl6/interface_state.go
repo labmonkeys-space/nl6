@@ -216,6 +216,18 @@ func newInterfaceStateWithClock(maxIfIndex int, emitted, dropped *uint64, clock 
 	return s
 }
 
+// newInterfaceStateBootedAt is NewInterfaceState with the boot origin set to
+// the device's boot instant instead of the engine's construction, so
+// ifLastChange and sysUpTime.0 count from the same instant (nl6#1031). The
+// engine reads the real clock, so boot must come from the real clock too, which
+// keeps the rule above; initDeviceCyclers stamps it with time.Now(). A test that
+// injects a clock builds its engine with newInterfaceStateWithClock instead.
+func newInterfaceStateBootedAt(maxIfIndex int, emitted, dropped *uint64, boot time.Time) *InterfaceState {
+	s := newInterfaceStateWithClock(maxIfIndex, emitted, dropped, nil)
+	s.bootTimeUnixNs = uint64(boot.UnixNano())
+	return s
+}
+
 // Seed initialises a slot with the given LINK state and admin-status and
 // lastChangeNs=0. The observable oper-status follows from deriveOper, so a
 // seed of (link=up, admin=down) reads as oper down while preserving that the

@@ -292,14 +292,16 @@ const trapUniversalCatalogLabel = "<universal, as carried by profiles with no ov
 // ENCODER prepends rather than the catalog declaring (nl6#593 P10):
 // sysUpTime.0, snmpTrapOID.0 and, when an entry sets it, snmpTrapEnterprise.0.
 //
-// IT FINDS NOTHING TODAY AND IT IS NOT EXPECTED TO. 24 profiles serve a static
-// sysUpTime.0; oidTypeTable types 1.3.6.1.2.1.1.3 TIMETICKS and the encoder
-// prepends TIMETICKS, so the two agree by construction. No profile serves
-// anything under 1.3.6.1.6.3.1.1.4, so the two OID-valued prepends never join.
-// This is coverage of a surface the catalog does not control, not a near-miss.
+// IT JOINS NOTHING TODAY AND IT IS NOT EXPECTED TO. Since nl6#1031 no profile
+// ships a static sysUpTime.0 (it is served live from the boot instant, and the
+// 26 static rows were deleted as dead data; snmp_shipped_sysuptime_ledger_test.go),
+// and no profile serves anything under 1.3.6.1.6.3.1.1.4, so none of the three
+// prepends joins. A static sysUpTime.0 row that came back would join and be
+// reported as shadowed (trapPollShadowedBy), not compared. This is coverage of
+// a surface the catalog does not control, not a near-miss.
 const (
-	trapPrependedJoinedPairs   = 26 // +1: cisco_asr9902's sysUpTime.0
-	trapPrependedUnservedPairs = 40 // 31x2 prepends + 4 profiles whose catalog sets snmpTrapEnterprise, less the 26
+	trapPrependedJoinedPairs   = 0  // nl6#1031 deleted the 26 static sysUpTime.0 rows
+	trapPrependedUnservedPairs = 66 // 31x2 prepends + 4 profiles whose catalog sets snmpTrapEnterprise
 )
 
 // ── the type vocabulary, driven off the PRODUCTION accept-set ───────────────
@@ -390,6 +392,11 @@ func pollTagFor(oid, value string) (byte, error) {
 // and it takes the profile because the metric-OID map is per resource file.
 func trapPollShadowedBy(profile, oid string) string {
 	switch oid {
+	case sysUpTimeOID:
+		// findResponseAt answers it first, live from the boot instant every
+		// production device has (nl6#1031).
+		return "sysUpTime.0 is served live from the device's boot instant (nl6#1031), so a static " +
+			"row is never read"
 	case ".1.3.6.1.2.1.1.6.0":
 		return "sysLocation.0 is served from the device (worldcities draw), and buildResourceIndexes " +
 			"does not even store it"
@@ -1331,6 +1338,12 @@ func assertTrapPollDetectionWorks(t *testing.T) {
 		t.Error("trapPollShadowedBy does not report sysName.0, which buildResourceIndexes never even " +
 			"stores. Every shadow assertion below is then vacuous")
 	}
+	// nl6#1031: no profile ships sysUpTime.0 any more, so the join never reaches
+	// this case and only this direct ask keeps it from going vacuous.
+	if trapPollShadowedBy("cisco_ios.json", sysUpTimeOID) == "" {
+		t.Error("trapPollShadowedBy does not report sysUpTime.0, which findResponseAt answers live " +
+			"from the boot instant ahead of the static index (nl6#1031)")
+	}
 	if trapPollShadowedBy("cisco_ios.json", ".1.3.6.1.2.1.31.1.1.1.6.1") == "" {
 		t.Error("trapPollShadowedBy does not report ifHCInOctets.1, which IfCounterCycler answers " +
 			"ahead of the static index")
@@ -1627,9 +1640,9 @@ func assertTrapPollCensus(t *testing.T, census trapPollCensus) {
 
 	if census.prependedJoined != trapPrependedJoinedPairs {
 		t.Errorf("%d profiles serve one of the three encoder-prepended OIDs, recorded as %d in "+
-			"trapPrependedJoinedPairs. All of them are sysUpTime.0, which oidTypeTable types "+
-			"TIMETICKS and the encoder prepends as TIMETICKS, so they agree by construction — this "+
-			"is coverage of a surface the catalog does not control, not a near-miss",
+			"trapPrependedJoinedPairs. No profile ships one since nl6#1031 deleted the static "+
+			"sysUpTime.0 rows (it is served live from the boot instant), so a join here is most "+
+			"likely a static sysUpTime.0 row that came back as dead data: delete it",
 			census.prependedJoined, trapPrependedJoinedPairs)
 	}
 	if census.prependedUnserved != trapPrependedUnservedPairs {

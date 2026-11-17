@@ -584,7 +584,9 @@ func TestV3MalformedOIDIsDiscarded(t *testing.T) {
 				good = v3PrivRequestFromScoped(t, s, goodScoped)
 			}
 			gr := decodeV3ResponsePossiblyEncrypted(t, s, s.handleSNMPv3Request(good), priv.proto != SNMPV3_PRIV_NONE)
-			if len(gr.varbinds) != 1 || gr.varbinds[0].oid != ".1.3.6.1.2.1.2.2.1.2.1" {
+			// sysName.0 is served on every device, so it is sysDescr.0's
+			// successor; the GETNEXT fast path used to skip it (nl6#1031).
+			if len(gr.varbinds) != 1 || gr.varbinds[0].oid != ".1.3.6.1.2.1.1.5.0" {
 				t.Errorf("a well-formed v3 GETNEXT was not answered with its successor: %+v", gr.varbinds)
 			}
 		})
