@@ -248,30 +248,39 @@ func (e *YangPushExporter) send(i int, eventTime time.Time, contents []byte) {
 	e.messagesSent.Add(1)
 }
 
+// row reads the ietf-interfaces source values of one interface at obs.
+func (e *YangPushExporter) row(idx int, obs time.Time) iosxeRow {
+	return buildIosxeRow(e.dev, e.cycler(), idx, obs)
+}
+
+// entry converts a row into the leaves nl6 serves for that interface.
+func (e *YangPushExporter) entry(row iosxeRow) ypIface {
+	unknown, _ := strconv.ParseUint(lookupIfColumn(e.dev, ifTablePrefix+"15.", row.IfIndex), 10, 32)
+	return ypIfaceFrom(row, lookupIfType(e.dev, row.IfIndex), uint32(unknown), devIfAlias(e.dev, row.IfIndex))
+}
+
 // interfaces reads every interface at obs.
 func (e *YangPushExporter) interfaces(obs time.Time) []ypIface {
-	ic := e.cycler()
-	idxs := ic.IfIndices()
+	idxs := e.cycler().IfIndices()
 	out := make([]ypIface, 0, len(idxs))
 	for _, idx := range idxs {
-		row := buildIosxeRow(e.dev, ic, idx, obs)
-		unknown, _ := strconv.ParseUint(lookupIfColumn(e.dev, ifTablePrefix+"15.", idx), 10, 32)
-		out = append(out, ypIfaceFrom(row, lookupIfType(e.dev, idx), uint32(unknown), devIfAlias(e.dev, idx)))
+		out = append(out, e.entry(e.row(idx, obs)))
 	}
 	return out
 }
 
-// changeUpdate renders the push-change-update for one transition, from the
-// values the event carries rather than the engine's current state, so a burst
-// reports each step.
+// changeUpdate renders the push-change-update for one transition. The entry
+// is the interface as read at the event time, with the status leaves and
+// last-change taken from the event rather than the engine's current state, so
+// a burst reports each step.
 func (e *YangPushExporter) changeUpdate(evt StateChange) []byte {
-	row := iosxeRow{
-		Name:    devIfDescr(e.dev, evt.IfIndex),
-		IfIndex: evt.IfIndex,
-		Admin:   iosxeAdminStatus(evt.Admin),
-		Oper:    iosxeOperStatus(evt.Admin, evt.Oper),
+	row := e.row(evt.IfIndex, evt.At)
+	row.Admin = iosxeAdminStatus(evt.Admin)
+	row.Oper = iosxeOperStatus(evt.Admin, evt.Oper)
+	if evt.LastChangeNs != LastChangeRewindSentinel {
+		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	}
-	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, "edit1", ypIfaceFrom(row, 0, 0, ""), evt.Changed)
+	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, 0, []ypIface{e.entry(row)})
 }
 
 // ypNextFire is the first instant strictly after t on subscription s's grid

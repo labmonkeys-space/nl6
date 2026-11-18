@@ -338,13 +338,27 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 		t.Fatalf("got %s id %d msg %d seq %d, want push-change-update 10 msg 2", m.Kind, m.SubID, m.MsgID, m.Seq)
 	}
 	// The change must agree with what a periodic subscription-9 read reports
-	// for the same interface now.
-	want := ypIfaceFrom(buildIosxeRow(dev, ic, target, time.Now()), 0, 0, "")
+	// for the same interface now, as a whole entry in the captured patch shape.
+	want := ypIfaceFrom(buildIosxeRow(dev, ic, target, time.Now()), lookupIfType(dev, target), 0, "")
 	if want.Oper != "down" {
 		t.Fatalf("engine reports %s oper %q, want down", want.Name, want.Oper)
 	}
-	if !strings.Contains(string(m.Raw), `"name":`+jsonString(want.Name)+`,"oper-status":`+jsonString(want.Oper)+`}`) {
-		t.Errorf("change does not carry %s oper-status %s: %s", want.Name, want.Oper, m.Raw)
+	id, edits := ypEdits(t, m.Raw)
+	if id != "0" || len(edits) != 1 || edits[0].EditID != "edit1" {
+		t.Fatalf("patch-id %q edits %+v, want patch 0 with edit1", id, edits)
+	}
+	if wantTarget := "/ietf-interfaces:interfaces/interface[name=" + want.Name + "]"; edits[0].Target != wantTarget {
+		t.Errorf("target = %q, want %q", edits[0].Target, wantTarget)
+	}
+	var value struct {
+		Interface []map[string]any `json:"interface"`
+	}
+	if err := json.Unmarshal(edits[0].Value, &value); err != nil || len(value.Interface) != 1 {
+		t.Fatalf("value is not one unprefixed interface entry: %s", edits[0].Value)
+	}
+	got := value.Interface[0]
+	if got["name"] != want.Name || got["oper-status"] != "down" || got["type"] != want.Type || got["last-change"] == nil {
+		t.Errorf("entry = %v, want name %s, oper-status down, type %s and a last-change", got, want.Name, want.Type)
 	}
 }
 
@@ -421,7 +435,7 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 			last = m
 		}
 	}
-	if !strings.Contains(string(last.Raw), `"oper-status":"up"}`) {
+	if !strings.Contains(string(last.Raw), `"oper-status":"up"`) {
 		t.Fatalf("last change is not the final link-up: %s", last.Raw)
 	}
 }

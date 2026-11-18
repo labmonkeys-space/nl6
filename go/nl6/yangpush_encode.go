@@ -250,24 +250,6 @@ func ypStatistics(b *bytes.Buffer, i ypIface) {
 	b.WriteByte('}')
 }
 
-// ypKeyEscape percent-encodes a list key value for a target path. Only the
-// RFC 3986 unreserved set stays literal (RFC 8040 section 3.5.3).
-func ypKeyEscape(v string) string {
-	const hex = "0123456789ABCDEF"
-	var b strings.Builder
-	for i := 0; i < len(v); i++ {
-		c := v[i]
-		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~' {
-			b.WriteByte(c)
-			continue
-		}
-		b.WriteByte('%')
-		b.WriteByte(hex[c>>4])
-		b.WriteByte(hex[c&15])
-	}
-	return b.String()
-}
-
 // ypEntryLeaves writes the leaves of one interface entry after its name, in the
 // order a VRP device sends them. The device writes phys-address in lower case
 // in a push-update and in upper case in a push-change-update.
@@ -333,26 +315,26 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 	return b.Bytes()
 }
 
-// encodePushChangeUpdate renders an on-change push-change-update carrying the
-// changed status leaves of ifc as one merge edit.
-func encodePushChangeUpdate(s ypSub, obs time.Time, publisherID uint32, editID string, ifc ypIface, changed StateLeafBits) []byte {
+// encodePushChangeUpdate renders an on-change push-change-update with one
+// merge edit per interface in ifcs. Target and value follow the captured VRP
+// device: the list key is written into the target as it is, and the value is
+// the whole entry under "interface" without a module prefix.
+func encodePushChangeUpdate(s ypSub, obs time.Time, publisherID uint32, patchID uint64, ifcs []ypIface) []byte {
 	var b bytes.Buffer
 	b.WriteString(`{"ietf-yang-push:push-change-update":{`)
 	ypObservation(&b, s, obs, publisherID, "state-changed")
-	b.WriteString(`,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":`)
-	ypStr(&b, editID)
-	b.WriteString(`,"operation":"merge","target":`)
-	ypStr(&b, "/ietf-interfaces:interfaces/interface="+ypKeyEscape(ifc.Name))
-	b.WriteString(`,"value":{"ietf-interfaces:interface":[{"name":`)
-	ypStr(&b, ifc.Name)
-	if changed&LeafAdminStatus != 0 {
-		b.WriteString(`,"admin-status":`)
-		ypStr(&b, ifc.Admin)
+	b.WriteString(`,"datastore-changes":{"yang-patch":{"patch-id":"` + strconv.FormatUint(patchID, 10) + `","edit":[`)
+	for n, ifc := range ifcs {
+		if n > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(`{"edit-id":"edit` + strconv.Itoa(n+1) + `","operation":"merge","target":`)
+		ypStr(&b, "/ietf-interfaces:interfaces/interface[name="+ifc.Name+"]")
+		b.WriteString(`,"value":{"interface":[{"name":`)
+		ypStr(&b, ifc.Name)
+		ypEntryLeaves(&b, ifc, true)
+		b.WriteString("}]}}")
 	}
-	if changed&LeafOperStatus != 0 {
-		b.WriteString(`,"oper-status":`)
-		ypStr(&b, ifc.Oper)
-	}
-	b.WriteString("}]}}]}}}}")
+	b.WriteString("]}}}}")
 	return b.Bytes()
 }
