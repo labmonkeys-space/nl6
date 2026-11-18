@@ -163,14 +163,23 @@ func (s *SNMPServer) localSysName() string {
 // on that port, or "" when the port has no resolvable link.
 func devIfAlias(dev *DeviceSimulator, ifIndex int) string {
 	mgr := lldpManager()
-	if mgr == nil || dev == nil {
+	if mgr == nil {
+		return ""
+	}
+	return devIfAliasVia(mgr, dev, ifIndex, mgr.FindDeviceByIP)
+}
+
+// devIfAliasVia is devIfAlias with the peer lookup supplied by the caller, for
+// a caller that must not block on the manager lock.
+func devIfAliasVia(mgr *SimulatorManager, dev *DeviceSimulator, ifIndex int, find func(ip string) *DeviceSimulator) string {
+	if dev == nil {
 		return ""
 	}
 	ll, found := findLink(mgr.topology.LinksFor(dev.IP.String()), ifIndex)
 	if !found {
 		return ""
 	}
-	peer := mgr.FindDeviceByIP(ll.PeerIP)
+	peer := find(ll.PeerIP)
 	if peer == nil || peer.sysName == "" {
 		return "" // unresolvable peer / no sysName → no label (never "to__")
 	}

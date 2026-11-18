@@ -339,11 +339,34 @@ func (e *YangPushExporter) entry(row iosxeRow) ypIface {
 	unknown, _ := strconv.ParseUint(lookupIfColumn(e.dev, ifTablePrefix+"15.", row.IfIndex), 10, 32)
 	// The ifAlias as SNMP serves it: the topology link label, else the value
 	// in the device profile.
-	alias := devIfAlias(e.dev, row.IfIndex)
+	alias := e.linkAlias(row.IfIndex)
 	if alias == "" {
 		alias = lookupIfColumn(e.dev, ifAliasPrefix, row.IfIndex)
 	}
 	return ypIfaceFrom(row, lookupIfType(e.dev, row.IfIndex), uint32(unknown), alias)
+}
+
+// linkAlias is devIfAlias for the run goroutine. DeleteDevice holds the
+// manager write lock while Close waits for this goroutine, so the peer lookup
+// must not block on that lock. It polls for the lock and gives up when the
+// exporter stops.
+func (e *YangPushExporter) linkAlias(ifIndex int) string {
+	mgr := lldpManager()
+	if mgr == nil {
+		return ""
+	}
+	return devIfAliasVia(mgr, e.dev, ifIndex, func(ip string) *DeviceSimulator {
+		for !mgr.mu.TryRLock() {
+			select {
+			case <-e.stop:
+				return nil
+			default:
+				time.Sleep(time.Millisecond)
+			}
+		}
+		defer mgr.mu.RUnlock()
+		return mgr.devicesByIP[ip]
+	})
 }
 
 // interfaces reads every interface at obs.
@@ -358,8 +381,8 @@ func (e *YangPushExporter) interfaces(obs time.Time) []ypIface {
 
 // changeUpdate renders the push-change-update for one transition. The entry
 // is the interface as read at the event time, with the status leaves and
-// last-change taken from the event rather than the engine's current state, so
-// a burst reports each step.
+// last-change taken from the event rather than the engine's current state.
+// Later events inside the dampening period go out through collectedUpdate.
 func (e *YangPushExporter) changeUpdate(evt StateChange) []byte {
 	row := e.row(evt.IfIndex, evt.At)
 	row.Admin = iosxeAdminStatus(evt.Admin)

@@ -394,6 +394,41 @@ func TestYangPushDescriptionIsServedIfAlias(t *testing.T) {
 	}
 }
 
+// DeleteDevice holds the manager write lock while it waits for the exporter's
+// run goroutine. A link label lookup in that goroutine must give up when the
+// exporter stops, or the delete never returns.
+func TestYangPushEntryDoesNotBlockCloseUnderManagerLock(t *testing.T) {
+	dev, _ := newYangPushTestDevice(t)
+	f := newLLDPFixture(t)
+	peer := f.addDevice(t, 2, 2, "spine1")
+	f.mgr.mu.Lock()
+	f.mgr.devices[dev.ID] = dev
+	f.mgr.deviceIPs[dev.IP.String()] = struct{}{}
+	f.mgr.indexDeviceByIP(dev)
+	f.mgr.mu.Unlock()
+	if err := f.mgr.topology.AddLink(ep(dev.IP.String(), 1), ep(peer.IP.String(), 2)); err != nil {
+		t.Fatal(err)
+	}
+	e := &YangPushExporter{dev: dev, stop: make(chan struct{})}
+	row := e.row(1, time.Now())
+
+	f.mgr.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		e.entry(row)
+		close(done)
+	}()
+	close(e.stop)
+	select {
+	case <-done:
+		f.mgr.mu.Unlock()
+	case <-time.After(2 * time.Second):
+		f.mgr.mu.Unlock()
+		<-done
+		t.Fatal("entry blocked on the manager lock after the exporter stopped")
+	}
+}
+
 // waitArmedN waits until n timers are armed: the two periodic ones plus the
 // dampening timer while a window is open.
 func waitArmedN(t *testing.T, fc *ypFakeClock, n int) {
