@@ -31,6 +31,9 @@ const (
 // captured device configures it.
 const ypDampeningCs = 500
 
+// ypDampening is the same period as a duration.
+const ypDampening = ypDampeningCs * 10 * time.Millisecond
+
 var ypAnchor = time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)
 
 // vrpSubs lists the subscriptions a NE8000 model exposes: ids 8, 9 and 10.

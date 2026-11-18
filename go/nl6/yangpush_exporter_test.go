@@ -362,6 +362,152 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 	}
 }
 
+// waitArmedN waits until n timers are armed: the two periodic ones plus the
+// dampening timer while a window is open.
+func waitArmedN(t *testing.T, fc *ypFakeClock, n int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for fc.armedCount() != n {
+		if time.Now().After(deadline) {
+			t.Fatalf("armed timers = %d, want %d", fc.armedCount(), n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// ypOnChangeSetup starts an exporter, reads the start messages and returns two
+// interfaces that are up, in ifIndex order.
+func ypOnChangeSetup(t *testing.T) (*YangPushExporter, *ypFakeClock, *ypCollector, *InterfaceState, *DeviceSimulator, [2]int) {
+	t.Helper()
+	dev, st := newYangPushTestDevice(t)
+	c := newYPCollector(t)
+	e, fc := startYangPushTest(t, dev, c.addr())
+	readStart(t, c)
+	waitArmed(t, fc)
+	var up [2]int
+	n := 0
+	for _, idx := range dev.metricsCycler.ifCounters.Load().IfIndices() {
+		if st.OperStatus(idx) == OperUp && n < 2 {
+			up[n] = idx
+			n++
+		}
+	}
+	if n < 2 {
+		t.Fatal("fewer than two interfaces are up")
+	}
+	// IfIndices is not sorted, and a collected update orders its edits by
+	// ifIndex.
+	if up[0] > up[1] {
+		up[0], up[1] = up[1], up[0]
+	}
+	return e, fc, c, st, dev, up
+}
+
+func ypSetLink(st *InterfaceState, idx int, oper uint8) {
+	_, evts := st.SetLinkState(idx, oper)
+	for _, ev := range evts {
+		st.Broadcast(ev)
+	}
+}
+
+// ypEditEntries returns the patch id and, per edit, the interface entry.
+func ypEditEntries(t *testing.T, raw []byte) (string, []map[string]any) {
+	t.Helper()
+	id, edits := ypEdits(t, raw)
+	var out []map[string]any
+	for _, ed := range edits {
+		var v struct {
+			Interface []map[string]any `json:"interface"`
+		}
+		if err := json.Unmarshal(ed.Value, &v); err != nil || len(v.Interface) != 1 {
+			t.Fatalf("edit %s value is not one interface entry: %s", ed.EditID, ed.Value)
+		}
+		out = append(out, v.Interface[0])
+	}
+	return id, out
+}
+
+// The first change goes out at once. Changes in the following dampening
+// period are collected into one update with an edit per interface.
+func TestYangPushOnChangeDampeningCollects(t *testing.T) {
+	_, fc, c, st, dev, up := ypOnChangeSetup(t)
+	ypSetLink(st, up[0], OperDown)
+	id, entries := ypEditEntries(t, c.mustNext(t).Raw)
+	if id != "0" || len(entries) != 1 || entries[0]["oper-status"] != "down" {
+		t.Fatalf("first change: patch %q entries %v, want patch 0 with one entry down", id, entries)
+	}
+	waitArmedN(t, fc, 3)
+	ypSetLink(st, up[0], OperUp)
+	ypSetLink(st, up[1], OperDown)
+	if m, ok := c.next(t, 300*time.Millisecond); ok {
+		t.Fatalf("a change went out inside the dampening period: %s", m.Raw)
+	}
+	fc.Advance(ypDampening)
+	id, entries = ypEditEntries(t, c.mustNext(t).Raw)
+	if id != "1" || len(entries) != 2 {
+		t.Fatalf("collected change: patch %q with %d entries, want patch 1 with 2", id, len(entries))
+	}
+	if entries[0]["name"] != devIfDescr(dev, up[0]) || entries[0]["oper-status"] != "up" ||
+		entries[1]["name"] != devIfDescr(dev, up[1]) || entries[1]["oper-status"] != "down" {
+		t.Errorf("entries = %v, want %s up then %s down", entries, devIfDescr(dev, up[0]), devIfDescr(dev, up[1]))
+	}
+}
+
+// A link that goes down and up inside one period is reported once, with the
+// state it has when the period ends.
+func TestYangPushOnChangeFlapInsideWindow(t *testing.T) {
+	_, fc, c, st, dev, up := ypOnChangeSetup(t)
+	ypSetLink(st, up[0], OperDown)
+	c.mustNext(t)
+	waitArmedN(t, fc, 3)
+	ypSetLink(st, up[1], OperDown)
+	ypSetLink(st, up[1], OperUp)
+	fc.Advance(ypDampening)
+	_, entries := ypEditEntries(t, c.mustNext(t).Raw)
+	if len(entries) != 1 || entries[0]["name"] != devIfDescr(dev, up[1]) || entries[0]["oper-status"] != "up" {
+		t.Fatalf("entries = %v, want one entry for %s with oper-status up", entries, devIfDescr(dev, up[1]))
+	}
+}
+
+// A period that ends with nothing collected sends nothing, and the next
+// change goes out without waiting.
+func TestYangPushOnChangeQuietWindow(t *testing.T) {
+	_, fc, c, st, _, up := ypOnChangeSetup(t)
+	ypSetLink(st, up[0], OperDown)
+	c.mustNext(t)
+	waitArmedN(t, fc, 3)
+	fc.Advance(ypDampening)
+	if m, ok := c.next(t, 300*time.Millisecond); ok {
+		t.Fatalf("a quiet period sent %s", m.Raw)
+	}
+	fc.Advance(time.Second)
+	ypSetLink(st, up[1], OperDown)
+	_, entries := ypEditEntries(t, c.mustNext(t).Raw)
+	if len(entries) != 1 || entries[0]["oper-status"] != "down" {
+		t.Fatalf("entries = %v, want one entry down", entries)
+	}
+}
+
+// A device that fidelity mutes during a period drops what it collected,
+// counts it and closes the period.
+func TestYangPushOnChangeMutedWindow(t *testing.T) {
+	e, fc, c, st, _, up := ypOnChangeSetup(t)
+	ypSetLink(st, up[0], OperDown)
+	c.mustNext(t)
+	waitArmedN(t, fc, 3)
+	withFidelity(t, true)
+	ypSetLink(st, up[1], OperDown)
+	before := e.fidelitySuppressed.Load()
+	fc.Advance(ypDampening)
+	if m, ok := c.next(t, 300*time.Millisecond); ok {
+		t.Fatalf("muted, yet received %s", m.Raw)
+	}
+	if e.fidelitySuppressed.Load() == before {
+		t.Error("fidelity_suppressed did not grow for the dropped period")
+	}
+	waitArmedN(t, fc, 2)
+}
+
 func TestYangPushCollectorUnreachable(t *testing.T) {
 	dev, _ := newYangPushTestDevice(t)
 	dead, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
@@ -424,7 +570,11 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 	if want := uint64(1000 - onChangeBufferDepth - 1); dropped < want {
 		t.Fatalf("state_events_dropped = %d after 1000 flaps against a stalled exporter, want >= %d", dropped, want)
 	}
-	// Drop-oldest: the last transition (flap 999, link up) still goes out.
+	// Drop-oldest: the last transition (flap 999, link up) still goes out. The
+	// first event the exporter takes is sent at once, the rest is collected and
+	// sent when the dampening period ends.
+	waitArmedN(t, fc, 3)
+	fc.Advance(ypDampening)
 	var last ypRecv
 	for {
 		m, ok := c.next(t, 500*time.Millisecond)

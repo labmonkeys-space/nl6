@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -49,6 +50,7 @@ type YangPushExporter struct {
 
 	// Run-loop state, touched only by the run goroutine.
 	msgID   [3]uint32
+	patchID uint64 // change-updates sent so far; run goroutine only
 	started bool
 
 	stop      chan struct{}
@@ -190,6 +192,17 @@ func (e *YangPushExporter) run() {
 		timers[i].ResetAt(next[i])
 	}
 
+	// On-change dampening (RFC 8641): after a change-update, further changes
+	// are collected for ypDampening and go out as one update when it ends.
+	damp := e.newTimer()
+	defer damp.Stop()
+	inWindow := false
+	pending := map[int]struct{}{}
+	openWindow := func() {
+		inWindow = true
+		damp.ResetAt(e.clock().Add(ypDampening))
+	}
+
 	for {
 		select {
 		case <-e.stop:
@@ -200,7 +213,37 @@ func (e *YangPushExporter) run() {
 			periodic(1)
 		case evt := <-sc:
 			e.ensureStarted()
-			e.emit(2, func() []byte { return e.changeUpdate(evt) })
+			if inWindow {
+				pending[evt.IfIndex] = struct{}{}
+				continue
+			}
+			if e.emit(2, func() []byte { return e.changeUpdate(evt) }) {
+				openWindow()
+			}
+		case <-damp.C():
+			// Take what is already queued, so a change that raced the timer
+			// belongs to this period and not to the next.
+			for queued := true; queued; {
+				select {
+				case evt := <-sc:
+					pending[evt.IfIndex] = struct{}{}
+				default:
+					queued = false
+				}
+			}
+			inWindow = false
+			if len(pending) == 0 {
+				continue
+			}
+			idxs := make([]int, 0, len(pending))
+			for idx := range pending {
+				idxs = append(idxs, idx)
+			}
+			sort.Ints(idxs)
+			clear(pending)
+			if e.emit(2, func() []byte { return e.collectedUpdate(idxs, e.clock()) }) {
+				openWindow()
+			}
 		}
 	}
 }
@@ -222,13 +265,15 @@ func (e *YangPushExporter) ensureStarted() {
 	e.send(2, now, encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now)))
 }
 
-// emit sends one push for subscription i unless fidelity mutes it.
-func (e *YangPushExporter) emit(i int, contents func() []byte) {
+// emit sends one push for subscription i unless fidelity mutes it, and
+// reports whether it sent.
+func (e *YangPushExporter) emit(i int, contents func() []byte) bool {
 	if fidelityMutesBackground(sourceBackground) {
 		e.fidelitySuppressed.Add(1)
-		return
+		return false
 	}
 	e.send(i, e.clock(), contents())
+	return true
 }
 
 // send frames one message for subscription i. Message id and envelope
@@ -280,7 +325,25 @@ func (e *YangPushExporter) changeUpdate(evt StateChange) []byte {
 	if evt.LastChangeNs != LastChangeRewindSentinel {
 		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	}
-	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, 0, []ypIface{e.entry(row)})
+	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, e.nextPatchID(), []ypIface{e.entry(row)})
+}
+
+// collectedUpdate renders the push-change-update that ends a dampening
+// period: one edit per interface in idxs, each as it is at now.
+func (e *YangPushExporter) collectedUpdate(idxs []int, now time.Time) []byte {
+	ifcs := make([]ypIface, 0, len(idxs))
+	for _, idx := range idxs {
+		ifcs = append(ifcs, e.entry(e.row(idx, now)))
+	}
+	return encodePushChangeUpdate(e.subs[2], now, e.pubID, e.nextPatchID(), ifcs)
+}
+
+// nextPatchID numbers the change-updates of this device from 0. Only the run
+// goroutine calls it.
+func (e *YangPushExporter) nextPatchID() uint64 {
+	id := e.patchID
+	e.patchID++
+	return id
 }
 
 // ypNextFire is the first instant strictly after t on subscription s's grid
