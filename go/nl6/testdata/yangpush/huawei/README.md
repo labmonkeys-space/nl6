@@ -16,6 +16,7 @@ Source: the same repository, `127/Hackathon/mb-alive-test-result/netcalyx/netcal
 The same anonymisation applies, and the subscription ID is 10 instead of the captured 11.
 `push-update-10` is the sync update with two whole interface entries.
 `push-change-update-10` is one merge edit for one interface. Its `higher-layer-if` leaf-list is dropped, and its `phys-address` is upper case as captured.
+The second entry of `push-update-10` has an empty `description`, as 82 of the 86 captured entries do.
 
 `segments-8.hex` holds the segment headers and lengths of `8-yp-subscripton.pcap`.
 The captured publisher id is replaced with the documentation address 192.0.2.13 (0xC000020D).

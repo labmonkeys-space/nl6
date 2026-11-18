@@ -49,7 +49,9 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   The value is the whole entry under `interface`, without a module prefix.
   `point-in-time` is `state-changed`.
 - An interface entry has the leaves `name`, `description`, `type`, `enabled`, `link-up-down-trap-enable`, `admin-status`, `oper-status`, `last-change`, `if-index`, `phys-address` and `speed`, in that order, for subscriptions 9 and 10.
-  `description` is the `ifAlias` link label and is left out on a port without a link.
+  `description` is the `ifAlias` that SNMP serves: the topology link label, else the value in the device profile.
+  Subscription 10 writes it on every entry, empty or not, as the IETF 127 capture does.
+  Subscription 9 leaves an empty `description` out, as the IETF 125 capture does.
   `phys-address` is lower case in a `push-update` and upper case in a `push-change-update`, as captured.
 - The YANG library carries `augmented-by` entries (draft-ietf-netmod-yang-library-augmentedby).
   They let NetCalyx load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
@@ -61,8 +63,8 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 
 - Subscription 10 keeps the ID 10 and the filter reference `ONCHANGEINTERFACE`.
   The captured router uses ID 11, and its filter reference is not in the capture.
-- `higher-layer-if` is not sent.
-  The captured router lists it on an interface that carries a subinterface.
+- `higher-layer-if` and `lower-layer-if` are not sent.
+  The captured router lists each on one interface, between `phys-address` and `speed`.
 - The sync `push-update` goes out right after `subscription-started`.
   The captured router sends it 5 seconds later.
 - `patch-id` counts the change-updates of a device from 0.

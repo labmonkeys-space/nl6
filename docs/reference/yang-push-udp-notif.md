@@ -165,7 +165,7 @@ That participation is not implemented.
 nl6 follows a real NE8000 on VRP R025C00.
 These differences are deliberate.
 
-- Subscription 10 follows a captured VRP router, with four differences: `higher-layer-if` is not sent, the first `push-update` is not delayed by 5 seconds, `patch-id` is a counter, and changes inside a dampening period are collected into one update. The capture holds one change-update and cannot confirm the last two.
+- Subscription 10 follows a captured VRP router, with four differences: `higher-layer-if` and `lower-layer-if` are not sent, the first `push-update` is not delayed by 5 seconds, `patch-id` is a counter, and changes inside a dampening period are collected into one update. The capture holds one change-update and cannot confirm the last two. The ID 10 and the filter reference `ONCHANGEINTERFACE` are nl6's own.
 - Every interface appears in subscription 8. The real device sent statistics for a subset.
 - The `ietf-udp-client` module revision `2025-05-14` is a guess. The device library lists none.
 - `ietf-yang-push-revision` is served at revision `2025-08-29`, the revision NetGauze v0.13.0 bundled when the fixtures were written. NetCalyx v0.4.0 bundles 2025-12-07, not yet checked against nl6. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).

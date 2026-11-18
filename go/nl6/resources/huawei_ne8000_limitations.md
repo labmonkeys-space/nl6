@@ -11,7 +11,7 @@ See the [YANG-Push reference](../../../docs/reference/yang-push-udp-notif.md) fo
 Subscription 10 is the on-change subscription of a captured VRP router: the whole interface entry, dampening 5 seconds.
 Four things differ from the capture.
 
-- `higher-layer-if` is not sent.
+- `higher-layer-if` and `lower-layer-if` are not sent.
 - The sync `push-update` goes out right after `subscription-started`, not 5 seconds later.
 - `patch-id` counts the change-updates of a device from 0. The capture has one change-update and cannot confirm the counter.
 - Changes inside a dampening period are collected into one update with one edit per interface. The capture cannot confirm this either.

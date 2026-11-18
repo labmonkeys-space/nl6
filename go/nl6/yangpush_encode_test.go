@@ -148,6 +148,11 @@ func TestEncodePushChangeUpdateTwoEdits(t *testing.T) {
 	if want := "/ietf-interfaces:interfaces/interface[name=GigabitEthernet0/1/1]"; edits[1].Target != want {
 		t.Errorf("second target = %q, want %q", edits[1].Target, want)
 	}
+	// The captured on-change subscription writes description on every entry,
+	// empty or not.
+	if !bytes.Contains(edits[1].Value, []byte(`"name":"GigabitEthernet0/1/1","description":"","type":`)) {
+		t.Errorf("second value lacks an empty description: %s", edits[1].Value)
+	}
 }
 
 // The device writes the list key into the target as it is. Only JSON string

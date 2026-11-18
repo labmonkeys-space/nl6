@@ -301,7 +301,13 @@ func (e *YangPushExporter) row(idx int, obs time.Time) iosxeRow {
 // entry converts a row into the leaves nl6 serves for that interface.
 func (e *YangPushExporter) entry(row iosxeRow) ypIface {
 	unknown, _ := strconv.ParseUint(lookupIfColumn(e.dev, ifTablePrefix+"15.", row.IfIndex), 10, 32)
-	return ypIfaceFrom(row, lookupIfType(e.dev, row.IfIndex), uint32(unknown), devIfAlias(e.dev, row.IfIndex))
+	// The ifAlias as SNMP serves it: the topology link label, else the value
+	// in the device profile.
+	alias := devIfAlias(e.dev, row.IfIndex)
+	if alias == "" {
+		alias = lookupIfColumn(e.dev, ifAliasPrefix, row.IfIndex)
+	}
+	return ypIfaceFrom(row, lookupIfType(e.dev, row.IfIndex), uint32(unknown), alias)
 }
 
 // interfaces reads every interface at obs.

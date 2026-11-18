@@ -362,6 +362,27 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 	}
 }
 
+// description is the ifAlias SNMP serves: the topology link label, else the
+// value the device profile holds.
+func TestYangPushDescriptionIsServedIfAlias(t *testing.T) {
+	dev, _ := newYangPushTestDevice(t)
+	c := newYPCollector(t)
+	e, _ := startYangPushTest(t, dev, c.addr())
+	static := lookupIfColumn(dev, ifAliasPrefix, 1)
+	if static == "" {
+		t.Fatal("the huawei_ne8000 profile has no ifAlias for ifIndex 1")
+	}
+	for _, ifc := range e.interfaces(time.Now()) {
+		if ifc.IfIndex == 1 {
+			if ifc.Description != static {
+				t.Errorf("description = %q, want the served ifAlias %q", ifc.Description, static)
+			}
+			return
+		}
+	}
+	t.Fatal("ifIndex 1 not among the interfaces")
+}
+
 // waitArmedN waits until n timers are armed: the two periodic ones plus the
 // dampening timer while a window is open.
 func waitArmedN(t *testing.T, fc *ypFakeClock, n int) {

@@ -254,10 +254,13 @@ func ypStatistics(b *bytes.Buffer, i ypIface) {
 }
 
 // ypEntryLeaves writes the leaves of one interface entry after its name, in the
-// order a VRP device sends them. The device writes phys-address in lower case
-// in a push-update and in upper case in a push-change-update.
-func ypEntryLeaves(b *bytes.Buffer, i ypIface, upperPhys bool) {
-	if i.Description != "" {
+// order a VRP device sends them. onChange selects what the two captures
+// differ in: the on-change subscription (IETF 127) writes description on
+// every entry, empty or not, and the periodic one (IETF 125) leaves an empty
+// description out. upperPhys writes phys-address in upper case, as the device
+// does in a push-change-update.
+func ypEntryLeaves(b *bytes.Buffer, i ypIface, onChange, upperPhys bool) {
+	if i.Description != "" || onChange {
 		b.WriteString(`,"description":`)
 		ypStr(b, i.Description)
 	}
@@ -310,7 +313,7 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 			b.WriteByte(',')
 			ypStatistics(&b, i)
 		default:
-			ypEntryLeaves(&b, i, false)
+			ypEntryLeaves(&b, i, !s.Periodic, false)
 		}
 		b.WriteByte('}')
 	}
@@ -335,7 +338,7 @@ func encodePushChangeUpdate(s ypSub, obs time.Time, publisherID uint32, patchID 
 		ypStr(&b, "/ietf-interfaces:interfaces/interface[name="+ifc.Name+"]")
 		b.WriteString(`,"value":{"interface":[{"name":`)
 		ypStr(&b, ifc.Name)
-		ypEntryLeaves(&b, ifc, true)
+		ypEntryLeaves(&b, ifc, true, true)
 		b.WriteString("}]}}")
 	}
 	b.WriteString("]}}}}")
