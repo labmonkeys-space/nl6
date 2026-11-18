@@ -753,21 +753,24 @@ func TestYangPushFidelityMutes(t *testing.T) {
 func TestYangPushStatusEndpoint(t *testing.T) {
 	dev, _ := newYangPushTestDevice(t)
 	c := newYPCollector(t)
+	// The exporter's run goroutine reads the global manager for ifAlias, so
+	// swap it before the exporter starts. Its cleanup then runs after the
+	// exporter's Close, which waits for that goroutine.
+	sm := &SimulatorManager{devices: map[string]*DeviceSimulator{"d": dev}}
+	sm.yangPushSubsystemActive.Store(true)
+	prev := manager
+	manager = sm
+	t.Cleanup(func() { manager = prev })
 	e, _ := startYangPushTest(t, dev, c.addr())
 	readStart(t, c)
 	dev.yangPushExporter = e
 
-	sm := &SimulatorManager{devices: map[string]*DeviceSimulator{"d": dev}}
-	sm.yangPushSubsystemActive.Store(true)
 	gone := &YangPushExporter{collector: c.addr()}
 	gone.messagesSent.Store(5)
 	gone.sendFailures.Store(2)
 	sm.persistYangPushCounters(gone)
 	sm.persistYangPushCounters(gone) // single-shot
 
-	prev := manager
-	manager = sm
-	t.Cleanup(func() { manager = prev })
 	w := httptest.NewRecorder()
 	yangPushStatusHandler(w, httptest.NewRequest(http.MethodGet, "/api/v1/yangpush/status", nil))
 	if w.Code != http.StatusOK {
