@@ -274,14 +274,16 @@ func TestYangPushInterop(t *testing.T) {
 		t.Errorf("send_failures=%d", fails)
 	}
 
-	// 4. An interface going down arrives on subscription 10 within 5 s.
+	// 4. An interface going down arrives on subscription 10 within 10 s. The
+	// subscription dampens for 5 s, so a change that follows another one
+	// waits for the period to end.
 	// Bring ifIndex 3 up first so the DOWN is a real transition.
 	oper := api + "/api/v1/devices/" + yangPushInteropDevices[0] + "/interfaces/3/oper-status"
 	yangPushInteropPost(t, oper, `{"status":"UP"}`)
 	time.Sleep(2 * time.Second)
 	t0 := time.Now().UTC().Add(-time.Second)
 	yangPushInteropPost(t, oper, `{"status":"DOWN"}`)
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 	hit := false
 	for _, m := range yangPushInteropMessages(t) {
 		if m.Message.Meta.Sub.ID != yangPushInteropOnChangeID || m.Message.Meta.Export != yangPushInteropDevices[0] {
@@ -297,6 +299,6 @@ func TestYangPushInterop(t *testing.T) {
 		}
 	}
 	if !hit {
-		t.Errorf("no subscription 10 message with oper-status down within 5 s of the POST for %s ifIndex 3", yangPushInteropDevices[0])
+		t.Errorf("no subscription 10 message with oper-status down within 10 s of the POST for %s ifIndex 3", yangPushInteropDevices[0])
 	}
 }
