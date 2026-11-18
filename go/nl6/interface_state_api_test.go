@@ -47,7 +47,7 @@ func newStateAPIFixture(t *testing.T) *stateAPIFixture {
 	device := &DeviceSimulator{
 		ID:            "test-device",
 		IP:            net.IPv4(10, 42, 0, 1),
-		metricsCycler: NewMetricsCycler(0, GetDeviceProfile("")),
+		metricsCycler: NewMetricsCycler(0, GetDeviceProfile(""), time.Now()),
 	}
 	device.metricsCycler.InitIfCountersWithScenario(res, 1, IfErrorClean)
 

@@ -139,7 +139,7 @@ func newSetTestServer(t *testing.T, nIf int) (*SNMPServer, *InterfaceState) {
 		res.oidIndex.Store(fmt.Sprintf("%s.%d", oidIfAdminStatus, i), "1")
 		res.oidIndex.Store(fmt.Sprintf("%s.%d", oidIfOperStatus, i), "1")
 	}
-	mc := NewMetricsCycler(0, GetDeviceProfile(""))
+	mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	s.device.metricsCycler = mc
 	s.device.ID = "set-test"

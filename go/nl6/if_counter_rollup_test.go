@@ -35,7 +35,7 @@ func newRollupCycler(t *testing.T) *IfCounterCycler {
 		SNMPResource{OID: "1.3.6.1.2.1.31.1.2.1.3.5.1", Response: "1"},
 		SNMPResource{OID: "1.3.6.1.2.1.31.1.2.1.3.5.2", Response: "1"},
 	)
-	mc := NewMetricsCycler(0, GetDeviceProfile(""))
+	mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	mc.InitIfCountersWithScenario(res, 1, IfErrorTypical)
 	ic := mc.ifCounters.Load()
 	if ic == nil {
@@ -218,7 +218,7 @@ func TestRollup_MemberThatIsAChildIsNotSummed(t *testing.T) {
 		SNMPResource{OID: "1.3.6.1.2.1.31.1.2.1.3.4.2", Response: "1"},
 		SNMPResource{OID: "1.3.6.1.2.1.31.1.2.1.3.4.3", Response: "1"},
 	)
-	mc := NewMetricsCycler(0, GetDeviceProfile(""))
+	mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := mc.ifCounters.Load()
 	if ic.members[3] != nil {
@@ -301,7 +301,7 @@ func TestShippedHierarchyCountersRollUp(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		mc := NewMetricsCycler(0, GetDeviceProfile(""))
+		mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 		mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 		ic := mc.ifCounters.Load()
 		if ic == nil {
@@ -393,7 +393,7 @@ func TestRollup_StackTableEdges(t *testing.T) {
 	for _, r := range []string{"4.1", "4.2", "5.1", "5.3", "7.1", "7.2"} {
 		res.SNMP = append(res.SNMP, SNMPResource{OID: "1.3.6.1.2.1.31.1.2.1.3." + r, Response: "1"})
 	}
-	mc := NewMetricsCycler(0, GetDeviceProfile(""))
+	mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := mc.ifCounters.Load()
 	if !reflect.DeepEqual(ic.members[3], []int{1, 2}) {

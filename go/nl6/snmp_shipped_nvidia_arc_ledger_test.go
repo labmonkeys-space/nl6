@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // nl6#576 re-homed the NVIDIA GPU telemetry arc from 1.3.6.1.4.1.53246 to
@@ -1141,7 +1142,7 @@ func gpuDeviceForProfile(t *testing.T, profile string) *SNMPServer {
 	if dp.GPU == nil {
 		t.Fatalf("%s has no GPU profile, so this fixture cannot exercise the dynamic OIDs", profile)
 	}
-	mc := NewMetricsCycler(1, dp)
+	mc := NewMetricsCycler(1, dp, time.Now())
 	mc.InitGPUMetrics(1, dp.GPU)
 	mc.InitIfCounters(res, 1)
 	return &SNMPServer{device: &DeviceSimulator{
