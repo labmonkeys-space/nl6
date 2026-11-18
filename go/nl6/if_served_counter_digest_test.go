@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The served-counter digest over the shipped corpus.
@@ -179,7 +180,7 @@ func shippedServedCounterRows(t *testing.T) []servedCounterRow {
 		if err != nil {
 			t.Fatalf("load %s: %v", profile, err)
 		}
-		mc := NewMetricsCycler(0, GetDeviceProfile(""))
+		mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 		mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 		ic := mc.ifCounters.Load()
 		if ic == nil {

@@ -44,7 +44,7 @@ func newHoldCycler(t *testing.T, nIf int) *IfCounterCycler {
 		res.oidIndex.Store(fmt.Sprintf("%s.%d", oidIfAdminStatus, i), "1")
 		res.oidIndex.Store(fmt.Sprintf("%s.%d", oidIfOperStatus, i), "1")
 	}
-	mc := NewMetricsCycler(0, GetDeviceProfile(""))
+	mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := mc.ifCounters.Load()
 	if ic == nil || ic.State() == nil {
@@ -241,7 +241,7 @@ func TestCounterHold_SeededDownInterfaceHoldsAtBase(t *testing.T) {
 	res.oidIndex.Store(oidIfOperStatus+".2", "1")
 	res.oidIndex.Store(oidIfAdminStatus+".3", "1")
 	res.oidIndex.Store(oidIfOperStatus+".3", "1")
-	mc := NewMetricsCycler(0, GetDeviceProfile(""))
+	mc := NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := mc.ifCounters.Load()
 	for _, i := range []int{1, 2} {

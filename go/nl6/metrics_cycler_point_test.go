@@ -155,3 +155,22 @@ func TestGPUMetricsOfOneGPUAnswerFromOnePoint(t *testing.T) {
 		}
 	}
 }
+
+// TestNewMetricsCyclerBootsNowForAZeroInstant: a zero boot instant falls back to
+// now, the rule the counter and optical engines follow through bootOrNow. With
+// the zero kept, the served point would be computed from year 1 and every read
+// would land on the same frozen point. A given instant is kept as is.
+func TestNewMetricsCyclerBootsNowForAZeroInstant(t *testing.T) {
+	profile := GetDeviceProfile("")
+	before := time.Now()
+	mc := NewMetricsCycler(0, profile, time.Time{})
+	after := time.Now()
+	if mc.startTime.Before(before) || mc.startTime.After(after) {
+		t.Errorf("startTime = %v for a zero boot instant, want now, within [%v, %v]", mc.startTime, before, after)
+	}
+
+	boot := time.Now().Add(-time.Hour)
+	if got := NewMetricsCycler(0, profile, boot).startTime; !got.Equal(boot) {
+		t.Errorf("startTime = %v, want the given boot instant %v", got, boot)
+	}
+}

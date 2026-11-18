@@ -319,7 +319,7 @@ func TestSNMPSetInteropFiresLinkTrap(t *testing.T) {
 		res.oidIndex.Store(fmt.Sprintf("%s.%d", oidIfAdminStatus, i), "1")
 		res.oidIndex.Store(fmt.Sprintf("%s.%d", oidIfOperStatus, i), "1")
 	}
-	device.metricsCycler = NewMetricsCycler(0, GetDeviceProfile(""))
+	device.metricsCycler = NewMetricsCycler(0, GetDeviceProfile(""), time.Now())
 	device.metricsCycler.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	device.trapConfig = &DeviceTrapConfig{
 		Collector:     "127.0.0.1:" + strconv.Itoa(trapPort),

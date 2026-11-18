@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 )
 
 // seededDevice builds a device through initDeviceCyclers, the code both
@@ -185,7 +186,7 @@ func TestGPUsOfTwoDevicesNeverShareACurve(t *testing.T) {
 		return fmt.Sprint(g.gpuUtil, g.gpuMemUsed, g.gpuTemp, g.gpuPower)
 	}
 	for _, base := range []int64{0, 1, deviceSeed(net.ParseIP("10.42.0.3"))} {
-		a, b := NewMetricsCycler(base, dp), NewMetricsCycler(base+17, dp)
+		a, b := NewMetricsCycler(base, dp, time.Now()), NewMetricsCycler(base+17, dp, time.Now())
 		a.InitGPUMetrics(base, dp.GPU)
 		b.InitGPUMetrics(base+17, dp.GPU)
 		seen := map[string]string{}
@@ -208,7 +209,7 @@ func TestSeedsEqualModuloMathRandPrimeDrawDifferentCurves(t *testing.T) {
 	const mathRandPrime = 1<<31 - 1
 	profile := GetDeviceProfile("cisco_ios.json")
 	for _, s := range []int64{1, deviceSeed(net.ParseIP("10.42.0.3"))} {
-		a, b := NewMetricsCycler(s, profile), NewMetricsCycler(s+mathRandPrime, profile)
+		a, b := NewMetricsCycler(s, profile, time.Now()), NewMetricsCycler(s+mathRandPrime, profile, time.Now())
 		if a.cpuPoints == b.cpuPoints && a.memUsed == b.memUsed && a.tempPoints == b.tempPoints {
 			t.Errorf("seeds %d and %d draw identical CPU, memory and temperature curves", s, s+mathRandPrime)
 		}
