@@ -10,6 +10,7 @@ Anonymisation:
 - Subscription 9 uses synthetic `description`, `last-change`, `phys-address`, if-index and speed values. The addresses come from the documentation range 00:00:5E:00:53:00/24.
 - The event time and observation time are fixed test values.
 - `yang-library-content-id` holds the id of the module set nl6 serves.
+- The `sequence-number` values are fixed test inputs of the encoder. A running device counts all its messages with one counter from 1, as the IETF 127 capture does.
 
 `subscription-started-10`, `push-update-10` and `push-change-update-10` derive from the IETF 127 capture of a Huawei VRP router.
 Source: the same repository, `127/Hackathon/mb-alive-test-result/netcalyx/netcalyx-yangpush-receiver/`, files `yp-s11-subscription-started.json`, `yp-s11-push-update.json` and `yp-s11-push-change-update.json`.

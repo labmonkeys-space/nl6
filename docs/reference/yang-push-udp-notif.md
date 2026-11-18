@@ -94,7 +94,8 @@ Take an interface down with [the interface state API](interface-state.md) when n
 Further changes in the next 5 seconds arrive together when those 5 seconds end.
 
 The start of each subscription sends a `subscription-started` notification first.
-Message IDs and the envelope `sequence-number` count per subscription and start at 0 on `subscription-started`.
+The message ID and the envelope `sequence-number` are the same number.
+It is one counter per device over all its subscriptions and starts at 1, so the three `subscription-started` notifications are 1, 2 and 3.
 
 Every message is JSON in the VRP envelope `ietf-yp-notification:envelope`.
 It carries `event-time`, `hostname` (the device sysName), `sequence-number` and `contents`.

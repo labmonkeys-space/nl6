@@ -252,8 +252,9 @@ func TestYangPushStartSendsSubscriptionStarted(t *testing.T) {
 		if m.Kind != "ietf-subscribed-notifications:subscription-started" || m.SubID != want {
 			t.Fatalf("message %d = %s id %d, want subscription-started id %d", i, m.Kind, m.SubID, want)
 		}
-		if m.MsgID != 0 || m.Seq != 0 {
-			t.Errorf("sub %d: message id %d seq %d, want 0/0", want, m.MsgID, m.Seq)
+		// One counter per device over all subscriptions, from 1 (IETF 127).
+		if m.MsgID != uint32(i+1) || m.Seq != uint64(i+1) {
+			t.Errorf("sub %d: message id %d seq %d, want %d", want, m.MsgID, m.Seq, i+1)
 		}
 		if m.PubID != 0x7F000001 {
 			t.Errorf("publisher id %#x, want 127.0.0.1 as uint32", m.PubID)
@@ -281,8 +282,9 @@ func TestYangPushPeriodicAlignment(t *testing.T) {
 		if m.Kind != "ietf-yang-push:push-update" || m.SubID != 8 {
 			t.Fatalf("tick %d: got %s id %d, want push-update 8", k, m.Kind, m.SubID)
 		}
-		if m.MsgID != uint32(k+1) || m.Seq != uint64(k+1) {
-			t.Errorf("sub 8 tick %d: message id %d seq %d, want %d", k, m.MsgID, m.Seq, k+1)
+		// Messages 1 to 4 are the three subscription-started and the sync.
+		if want := 5 + 2*k; m.MsgID != uint32(want) || m.Seq != uint64(want) {
+			t.Errorf("sub 8 tick %d: message id %d seq %d, want %d", k, m.MsgID, m.Seq, want)
 		}
 		if m.Obs != ypMillis(at8) {
 			t.Errorf("sub 8 observation %s, want %s", m.Obs, ypMillis(at8))
@@ -295,8 +297,8 @@ func TestYangPushPeriodicAlignment(t *testing.T) {
 		if m.Kind != "ietf-yang-push:push-update" || m.SubID != 9 {
 			t.Fatalf("tick %d: got %s id %d, want push-update 9", k, m.Kind, m.SubID)
 		}
-		if m.MsgID != uint32(k+1) || m.Seq != uint64(k+1) {
-			t.Errorf("sub 9 tick %d: message id %d seq %d, want %d", k, m.MsgID, m.Seq, k+1)
+		if want := 6 + 2*k; m.MsgID != uint32(want) || m.Seq != uint64(want) {
+			t.Errorf("sub 9 tick %d: message id %d seq %d, want %d", k, m.MsgID, m.Seq, want)
 		}
 		if want := ypMillis(at8.Add(3 * time.Second)); m.Obs != want {
 			t.Errorf("sub 9 observation %s, want %s", m.Obs, want)
@@ -311,8 +313,8 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 	startYangPushTest(t, dev, c.addr())
 	msgs := readStart(t, c)
 	sync := msgs[3]
-	if sync.Kind != "ietf-yang-push:push-update" || sync.SubID != 10 || sync.MsgID != 1 || sync.Seq != 1 {
-		t.Fatalf("sync = %s id %d msg %d seq %d, want push-update 10 msg 1 seq 1", sync.Kind, sync.SubID, sync.MsgID, sync.Seq)
+	if sync.Kind != "ietf-yang-push:push-update" || sync.SubID != 10 || sync.MsgID != 4 || sync.Seq != 4 {
+		t.Fatalf("sync = %s id %d msg %d seq %d, want push-update 10 msg 4 seq 4", sync.Kind, sync.SubID, sync.MsgID, sync.Seq)
 	}
 	ic := dev.metricsCycler.ifCounters.Load()
 	ifs := sync.Contents["datastore-contents"].(map[string]any)["ietf-interfaces:interfaces"].(map[string]any)["interface"].([]any)
@@ -334,8 +336,8 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 		st.Broadcast(ev)
 	}
 	m := c.mustNext(t)
-	if m.Kind != "ietf-yang-push:push-change-update" || m.SubID != 10 || m.MsgID != 2 || m.Seq != 2 {
-		t.Fatalf("got %s id %d msg %d seq %d, want push-change-update 10 msg 2", m.Kind, m.SubID, m.MsgID, m.Seq)
+	if m.Kind != "ietf-yang-push:push-change-update" || m.SubID != 10 || m.MsgID != 5 || m.Seq != 5 {
+		t.Fatalf("got %s id %d msg %d seq %d, want push-change-update 10 msg 5", m.Kind, m.SubID, m.MsgID, m.Seq)
 	}
 	// The change must agree with what a periodic subscription-9 read reports
 	// for the same interface now, as a whole entry in the captured patch shape.

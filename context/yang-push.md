@@ -34,8 +34,9 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 - The publisher ID is the device IPv4 address as a big-endian uint32.
   It is the header observation domain and the payload `message-publisher-id`.
   The capture value `16843789` is `0x0101040D`, which is `1.1.4.13`.
-- The message ID and the envelope `sequence-number` count per subscription.
-  They are 0 on `subscription-started`.
+- The message ID and the envelope `sequence-number` are one counter per publisher over all its subscriptions.
+  It starts at 1 and steps by 1, as in all 2446 messages of the IETF 127 capture.
+  The IETF 125 capture counted per subscription from 0. nl6 follows the newer capture.
 - Subscriptions 8 (statistics) and 9 (interface) are periodic at 60 s with anchor `2025-01-01T00:00:30Z`.
   Subscription 9 runs three seconds after subscription 8.
   Their filters are by reference (`STATEINTERFACE2`, `STATSINTERFACE2`), answered through `get` on `filters`.

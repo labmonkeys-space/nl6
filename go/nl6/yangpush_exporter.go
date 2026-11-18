@@ -37,7 +37,7 @@ func (r *ypRealTimer) Stop()                { r.t.Stop() }
 // YangPushExporter streams the three VRP subscriptions (vrpSubs) of one
 // huawei_ne8000 device to a collector over UDP-notif. One goroutine per device
 // owns the socket, both periodic timers and the state listener, so the
-// per-subscription message ids need no locking.
+// message id needs no locking.
 type YangPushExporter struct {
 	dev       *DeviceSimulator
 	collector string
@@ -49,7 +49,7 @@ type YangPushExporter struct {
 	conn      net.Conn
 
 	// Run-loop state, touched only by the run goroutine.
-	msgID   [3]uint32
+	msgID   uint32 // messages sent so far, over all subscriptions
 	patchID uint64 // change-updates sent so far; run goroutine only
 	started bool
 	skip    struct {
@@ -311,11 +311,13 @@ func (e *YangPushExporter) emit(i int, eventTime time.Time, contents func() []by
 }
 
 // send frames one message for subscription i. Message id and envelope
-// sequence-number are the same per-subscription counter. A failed segment
+// sequence-number are the same counter. It is one counter per device over all
+// its subscriptions and starts at 1, as in the IETF 127 capture. The IETF 125
+// capture counted per subscription from 0. A failed segment
 // aborts the rest of the message; the id stays consumed.
 func (e *YangPushExporter) send(i int, eventTime time.Time, contents []byte) {
-	id := e.msgID[i]
-	e.msgID[i]++
+	e.msgID++
+	id := e.msgID
 	payload := encodeEnvelope(eventTime, gnmiDeviceSysName(e.dev), uint64(id), contents)
 	for _, seg := range udpNotifFrame(e.pubID, id, payload, e.segSize) {
 		if _, err := e.conn.Write(seg); err != nil {
