@@ -558,22 +558,22 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 	ic := c.ifCounters.Load()
 
 	// A strictly-increasing injected clock, so the lastChange assertion below
-	// holds BY CONSTRUCTION (nl6#575). It used to read the wall clock, which
-	// the engine explicitly does not promise is monotonic: UnixNano strips the
-	// monotonic reading and wallRelNs carries a rewind sentinel for the
-	// backwards step that follows, so the assertion could fail on any NTP step.
+	// holds BY CONSTRUCTION (nl6#575). It used to read the wall clock, and the
+	// engine then stamped transitions from UnixNano, so the assertion could
+	// fail on any NTP step. Since nl6#1042 the engine measures offsets on the
+	// monotonic clock, but the injected clock keeps the property independent
+	// of the host.
 	//
 	// The goroutines and the real 100ms window below are UNCHANGED and must
 	// stay that way: the torn-read assertions are the half that needs genuine
 	// parallelism, and a synctest bubble would serialise exactly what they
 	// exist to exercise.
 	state := ic.State()
-	// ANCHORED TO THE ENGINE'S OWN BOOT TIME, not to zero. bootTimeUnixNs is
-	// the origin every relative lastChange is measured from, so a clock that
-	// started at zero would read earlier than boot on every transition and
-	// wallRelNs would return the rewind sentinel every time, turning the
-	// assertion below into a permanent failure.
-	base := int64(state.bootTimeUnixNs)
+	// ANCHORED TO THE ENGINE'S OWN BOOT TIME, not to zero. The boot instant is
+	// the origin every stored offset is measured from, so a clock that started
+	// at zero would read earlier than boot on every transition, every offset
+	// would clamp to 0, and the assertion below could not see a regression.
+	base := int64(state.bootTimeNs())
 	var tick atomic.Int64
 	state.now = func() time.Time { return time.Unix(0, base+tick.Add(1000)) }
 
@@ -623,16 +623,6 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 				// equal — same write seen twice). With the injected clock
 				// this is a property of the engine's packing alone;
 				// nothing here depends on the wall clock (nl6#575).
-				//
-				// The sentinel branch below is UNREACHABLE with this clock
-				// (strictly increasing, anchored at boot) and is kept only
-				// as a tripwire for a future edit to the clock, not as an
-				// assertion this test earns. The reachable coverage of the
-				// rewind path is TestInterfaceStateInjectedClockCanStepBackwards.
-				if lc == LastChangeRewindSentinel {
-					failure("unexpected clock-rewind sentinel with a strictly-increasing clock")
-					return
-				}
 				if lc < prevLast {
 					failure("non-monotonic lastChange: prev=%d now=%d", prevLast, lc)
 					return

@@ -6,6 +6,10 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,15 +28,16 @@ const (
 
 // nl6#575. THE ENGINE'S CLOCK IS INJECTABLE, AND ALL THREE READS MOVE TOGETHER.
 //
-// lastChange is derived from the WALL clock: time.Now()'s monotonic reading is
-// stripped by UnixNano, and wallRelNs carries a rewind sentinel for the
-// backwards step that follows. A test asserting lastChange is non-decreasing was
-// therefore asserting something the engine does not promise, and could fail on
-// any NTP step. The seam lets such a test drive a strictly-increasing clock so
-// the property holds by construction.
+// lastChange used to be derived from the WALL clock (UnixNano), with a rewind
+// sentinel for a backwards step, so a test asserting lastChange is
+// non-decreasing could fail on any NTP step. The seam lets such a test drive a
+// strictly-increasing clock so the property holds by construction. Since
+// nl6#1042 production measures the offsets on the monotonic clock
+// (sinceBootNs), and a clock built with time.Unix, which has no monotonic
+// reading, makes Sub fall back to the wall values the test chose.
 //
 // The constructor's read is part of the seam and that is the load-bearing part:
-// bootTimeUnixNs is the origin every relative lastChange is measured from, so an
+// the boot instant is the origin every stored offset is measured from, so an
 // engine whose boot time came from the real clock and whose transitions come
 // from an injected one subtracts a real timestamp from a fake one.
 
@@ -50,9 +55,9 @@ func TestInterfaceStateClockDefaultsToWallClock(t *testing.T) {
 	// detail and make converging on that shape a test failure rather than a
 	// refactor. What matters is the BEHAVIOUR asserted below: an un-injected
 	// engine reads the real wall clock.
-	if s.bootTimeUnixNs < before || s.bootTimeUnixNs > after {
+	if s.bootTimeNs() < before || s.bootTimeNs() > after {
 		t.Errorf("boot time %d is outside [%d, %d]: the default clock is not the wall clock",
-			s.bootTimeUnixNs, before, after)
+			s.bootTimeNs(), before, after)
 	}
 	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
 		t.Fatal("SetOperStatus did not apply")
@@ -73,10 +78,10 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 
 	// The boot time came from the injected clock, so it is tiny rather than a
 	// real Unix nanosecond count.
-	if s.bootTimeUnixNs > wallClockFloorNs {
+	if s.bootTimeNs() > wallClockFloorNs {
 		t.Fatalf("boot time is %d, which is a real wall-clock reading: the constructor did not use "+
 			"the injected clock, so every relative lastChange is measured against the wrong origin",
-			s.bootTimeUnixNs)
+			s.bootTimeNs())
 	}
 
 	// BOTH setters, because each reads the clock independently. An earlier cut
@@ -88,10 +93,10 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 			t.Fatalf("transition %d did not apply", i)
 		}
 		lc := s.LastChangeNs(1)
-		if lc == LastChangeRewindSentinel {
-			t.Fatalf("transition %d produced the rewind sentinel under a strictly-increasing clock. "+
-				"That is the signature of a boot time and a transition time coming from different "+
-				"clocks", i)
+		if lc <= s.bootTimeNs() {
+			t.Fatalf("transition %d stored an offset of 0 under a strictly-increasing clock. That is "+
+				"the signature of a boot time and a transition time coming from different clocks: "+
+				"the transition read earlier than boot and clamped", i)
 		}
 		if i > 0 && lc <= prev {
 			t.Errorf("transition %d: lastChange %d did not advance past %d under a strictly-increasing "+
@@ -115,8 +120,8 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 		t.Fatal("admin transition did not apply")
 	}
 	adminLC := s.LastChangeNs(2)
-	if adminLC == LastChangeRewindSentinel {
-		t.Fatal("SetAdminStatus produced the rewind sentinel under a strictly-increasing clock, which " +
+	if adminLC <= s.bootTimeNs() {
+		t.Fatal("SetAdminStatus stored an offset of 0 under a strictly-increasing clock, which " +
 			"is the signature of it reading a different clock from the constructor")
 	}
 	if adminLC > wallClockFloorNs {
@@ -125,9 +130,15 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 	}
 }
 
-// TestInterfaceStateInjectedClockCanStepBackwards keeps the rewind sentinel
-// reachable. It is shipped production behaviour, so a seam that made it
-// untestable would have traded one blind spot for another.
+// TestInterfaceStateInjectedClockCanStepBackwards pins what a clock reading
+// before boot does now that the rewind sentinel is gone (nl6#1042). In
+// production both operands carry a monotonic reading and the case cannot
+// happen; a test clock stepping backwards is the only way to reach it. The
+// offset must clamp to 0, as uptimeTicks does, so the transition reads as
+// "in this state since boot" on every surface. Without the clamp the negative
+// duration wraps to an offset of about nine years, and LastChangeNs, which gNMI
+// serves unchecked, goes out nine years in the future; with the sentinel it went
+// out as 18446744073709551615.
 func TestInterfaceStateInjectedClockCanStepBackwards(t *testing.T) {
 	var reading atomic.Int64
 	reading.Store(5_000_000_000)
@@ -135,20 +146,154 @@ func TestInterfaceStateInjectedClockCanStepBackwards(t *testing.T) {
 		return time.Unix(0, reading.Load())
 	})
 
-	// Step the clock behind the engine's boot time, as an NTP step would.
+	// Step the clock behind the engine's boot time, as an NTP step used to.
 	reading.Store(1_000_000_000)
-	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
+	ok, ev := setLinkVisible(s, 1, OperDown)
+	if !ok {
 		t.Fatal("SetOperStatus did not apply")
 	}
-	if lc := s.LastChangeNs(1); lc != LastChangeRewindSentinel {
-		t.Errorf("lastChange = %d, want the rewind sentinel %d. A transition timed before the engine's "+
-			"boot time is exactly what the sentinel exists for, and it is what the flap test's "+
-			"monotonicity assertion used to be exposed to", lc, LastChangeRewindSentinel)
+	if got := s.lastChangeSinceBootNs(1); got != 0 {
+		t.Errorf("stored offset = %d, want 0: a transition timed before boot must clamp, not wrap", got)
+	}
+	if lc, boot := s.LastChangeNs(1), s.bootTimeNs(); lc != boot {
+		t.Errorf("lastChange = %d, want the boot instant %d", lc, boot)
+	}
+	if ev.LastChangeNs != s.bootTimeNs() {
+		t.Errorf("the returned event carries lastChange %d, want the boot instant %d", ev.LastChangeNs, s.bootTimeNs())
+	}
+}
+
+// TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock is the guard
+// nl6#1042 needs, because no behavioural test can catch the regression it
+// fixes. Public time APIs cannot build a time.Time whose wall clock jumped
+// while its monotonic reading did not, so a mutator reverted to subtracting
+// UnixNano values passes every test that reads lastChange on a Linux clock.
+// It checks the source with go/ast, like the other AST guards in this package,
+// and the two clocks of a production-booted engine:
+//
+//   - sinceBootNs computes now.Sub(boot) and calls nothing that drops the
+//     monotonic reading or bypasses Sub;
+//   - every mutator that stamps an offset calls sinceBootNs(s.bootTime, <the
+//     sampled reading>) and calls none of those itself;
+//   - a production engine's boot instant AND its transition clock carry a
+//     monotonic reading, without which Sub falls back to wall values.
+func TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock(t *testing.T) {
+	// Each of these returns a wall-only value (Unix*, Round, Truncate, and the
+	// location setters strip the monotonic reading) or a number the offset could
+	// be computed from without Sub.
+	stripping := map[string]bool{
+		"UnixNano": true, "UnixMicro": true, "UnixMilli": true, "Unix": true,
+		"Round": true, "Truncate": true, "UTC": true, "Local": true, "In": true,
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "interface_state.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse interface_state.go: %v", err)
+	}
+	forbidStripping := func(fn *ast.FuncDecl) {
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && stripping[sel.Sel.Name] {
+					t.Errorf("%s calls %s at %s: that drops the monotonic reading or bypasses Sub, and a "+
+						"host clock jump then shifts ifLastChange against sysUpTime.0",
+						fn.Name.Name, sel.Sel.Name, fset.Position(call.Pos()))
+				}
+			}
+			return true
+		})
+	}
+
+	mutators := map[string]bool{"SetLinkState": false, "setAdminLeaf": false, "SetPeerDown": false}
+	helperSeen := false
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		switch {
+		case fn.Name.Name == "sinceBootNs" && fn.Recv == nil:
+			helperSeen = true
+			forbidStripping(fn)
+			subOfBoot := false
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) != 1 {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "Sub" {
+					return true
+				}
+				recv, rok := sel.X.(*ast.Ident)
+				arg, aok := call.Args[0].(*ast.Ident)
+				if rok && aok && recv.Name == "now" && arg.Name == "boot" {
+					subOfBoot = true
+				}
+				return true
+			})
+			if !subOfBoot {
+				t.Error("sinceBootNs does not compute now.Sub(boot): the offset is no longer the " +
+					"monotonic difference uptimeTicks uses")
+			}
+		case fn.Recv != nil:
+			if _, isMutator := mutators[fn.Name.Name]; !isMutator {
+				continue
+			}
+			mutators[fn.Name.Name] = true
+			forbidStripping(fn)
+			calls := 0
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if id, ok := call.Fun.(*ast.Ident); !ok || id.Name != "sinceBootNs" {
+					return true
+				}
+				calls++
+				first, fok := call.Args[0].(*ast.SelectorExpr)
+				if !fok || first.Sel.Name != "bootTime" {
+					t.Errorf("%s passes %s as sinceBootNs' boot: it must be s.bootTime itself",
+						fn.Name.Name, fset.Position(call.Args[0].Pos()))
+				}
+				if _, sok := call.Args[1].(*ast.Ident); !sok {
+					t.Errorf("%s passes an expression as sinceBootNs' now at %s: it must be the reading "+
+						"sampled from s.now(), unmodified", fn.Name.Name, fset.Position(call.Args[1].Pos()))
+				}
+				return true
+			})
+			if calls == 0 {
+				t.Errorf("%s does not call sinceBootNs: it stamps lastChange without the one offset helper", fn.Name.Name)
+			}
+		}
+	}
+	if !helperSeen {
+		t.Error("sinceBootNs not found in interface_state.go: this guard no longer covers it")
+	}
+	for name, seen := range mutators {
+		if !seen {
+			t.Errorf("mutator %s not found in interface_state.go: this guard no longer covers it", name)
+		}
+	}
+
+	s := bootedShippedDevice(t, "asr9k.json", time.Time{}, nil)
+	ic := s.device.metricsCycler.ifCounters.Load()
+	if ic == nil || ic.State() == nil {
+		t.Fatal("asr9k has no interface state engine")
+	}
+	state := ic.State()
+	if boot := state.bootTime.String(); !strings.Contains(boot, " m=") {
+		t.Errorf("a production-booted engine's boot instant %q has no monotonic reading: sinceBootNs "+
+			"then subtracts wall values, and a host clock jump moves every offset", boot)
+	}
+	if reading := state.now().String(); !strings.Contains(reading, " m=") {
+		t.Errorf("a production engine's transition clock reads %q, with no monotonic reading: sinceBootNs "+
+			"then subtracts wall values, and a host clock jump moves every offset", reading)
 	}
 }
 
 // TestInterfaceStateEqualClockReadingsAreNotADecrease covers the coarse-clock
-// case named in wallRelNs: two transitions in the same tick carry equal
+// case named in sinceBootNs: two transitions in the same tick carry equal
 // lastChange, and equality is not a violation of a non-decreasing assertion.
 func TestInterfaceStateEqualClockReadingsAreNotADecrease(t *testing.T) {
 	// The frozen reading is OFFSET from the boot reading, deliberately. An
@@ -237,9 +382,6 @@ func TestInterfaceStateClockSampleStaysInsideTheCASLoop(t *testing.T) {
 				return
 			default:
 				lc := s.LastChangeNs(1)
-				if lc == LastChangeRewindSentinel {
-					continue // not what this test is about
-				}
 				if lc < prev {
 					regressions.Add(1)
 				}
@@ -261,10 +403,11 @@ func TestInterfaceStateClockSampleStaysInsideTheCASLoop(t *testing.T) {
 	}
 }
 
-// TestInterfaceStateSnapshotAgreesWithLastChangeNs covers the third copy of the
-// sentinel-and-absolute reconstruction. LastChangeNs, Snapshot and lastChangeAbs
-// each rebuild it, and Snapshot is the accessor callers are told to use for a
-// consistent multi-leaf view, yet every other test here reads only LastChangeNs.
+// TestInterfaceStateSnapshotAgreesWithLastChangeNs covers the third reader of
+// the absolute reconstruction. LastChangeNs, Snapshot and the mutators' events
+// all go through lastChangeAbs, and Snapshot is the accessor callers are told
+// to use for a consistent multi-leaf view, yet every other test here reads only
+// LastChangeNs.
 func TestInterfaceStateSnapshotAgreesWithLastChangeNs(t *testing.T) {
 	var tick atomic.Int64
 	s := newInterfaceStateWithClock(2, nil, nil, func() time.Time {
@@ -278,9 +421,9 @@ func TestInterfaceStateSnapshotAgreesWithLastChangeNs(t *testing.T) {
 			"have diverged", snap.LastChangeNs, s.LastChangeNs(1))
 	}
 
-	// And under rewind, where the two copies are most likely to drift. The clock
-	// must read LATER at construction and earlier at the transition; a constant
-	// clock gives boot == now, which is rel 0 and not a rewind at all.
+	// And under a clock that steps behind boot, which clamps the offset to 0.
+	// The clock must read LATER at construction and earlier at the transition;
+	// a constant clock gives boot == now, which is offset 0 without a clamp.
 	var reading atomic.Int64
 	reading.Store(5_000_000_000)
 	back := newInterfaceStateWithClock(2, nil, nil, func() time.Time {
@@ -290,9 +433,9 @@ func TestInterfaceStateSnapshotAgreesWithLastChangeNs(t *testing.T) {
 	if ok, _ := setLinkVisible(back, 1, OperDown); !ok {
 		t.Fatal("rewind transition did not apply")
 	}
-	if snap := back.Snapshot(1); snap.LastChangeNs != LastChangeRewindSentinel {
-		t.Errorf("Snapshot reports %d under a rewound clock, want the sentinel %d",
-			snap.LastChangeNs, LastChangeRewindSentinel)
+	if snap := back.Snapshot(1); snap.LastChangeNs != back.LastChangeNs(1) || snap.LastChangeNs != back.bootTimeNs() {
+		t.Errorf("Snapshot reports %d under a clock behind boot, LastChangeNs %d, want both the boot instant %d",
+			snap.LastChangeNs, back.LastChangeNs(1), back.bootTimeNs())
 	}
 }
 

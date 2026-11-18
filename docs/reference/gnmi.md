@@ -59,7 +59,7 @@ Every device serves these OpenConfig `interfaces` paths, read-only:
 | `/interfaces/interface[name=*]/state/ifindex` | uint32 | `<N>` (the ifIndex) |
 | `/interfaces/interface[name=*]/state/oper-status` | enum | interface state engine (UP / DOWN / TESTING / DORMANT / NOT_PRESENT / LOWER_LAYER_DOWN) |
 | `/interfaces/interface[name=*]/state/admin-status` | enum | interface state engine (UP / DOWN / TESTING) |
-| `/interfaces/interface[name=*]/state/last-change` | uint64 | absolute Unix nanoseconds of the most recent state transition |
+| `/interfaces/interface[name=*]/state/last-change` | uint64 | absolute Unix nanoseconds of the most recent state transition: the device's boot instant plus the time since boot on the monotonic clock |
 | `/interfaces/interface[name=*]/state/counters/in-octets` | uint64 | `ifHCInOctets.<N>` |
 | `/interfaces/interface[name=*]/state/counters/out-octets` | uint64 | `ifHCOutOctets.<N>` |
 | `/interfaces/interface[name=*]/state/counters/in-unicast-pkts` | uint64 | `ifHCInUcastPkts.<N>` |

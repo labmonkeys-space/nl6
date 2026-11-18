@@ -465,10 +465,7 @@ func (s *netconfSession) iosxeStateEvent(e *netconfStateEvent) {
 		row = e.fullRow()
 	}
 	row.Admin = iosxeAdminStatus(evt.Admin)
-	row.LastChange = "" // unknown after a clock rewind: the leaf is omitted
-	if evt.LastChangeNs != LastChangeRewindSentinel {
-		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
-	}
+	row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	// Newest subscription first, as both captured devices do. A multi-step
 	// sequence goes out like the c8000v sent it: every step but the last,
 	// subscription by subscription, then the last step across all of them.
@@ -618,9 +615,7 @@ func buildIosxeRow(dev *DeviceSimulator, ic *IfCounterCycler, ifIndex int, now t
 		if snap := state.Snapshot(ifIndex); snap.Found {
 			row.Admin = iosxeAdminStatus(snap.Admin)
 			row.Oper = iosxeOperStatus(snap.Admin, snap.Oper)
-			if snap.LastChangeNs != LastChangeRewindSentinel {
-				row.LastChange = iosxeTimestamp(time.Unix(0, int64(snap.LastChangeNs)))
-			}
+			row.LastChange = iosxeTimestamp(time.Unix(0, int64(snap.LastChangeNs)))
 		}
 	}
 	t := now.Sub(ic.startTime).Seconds()

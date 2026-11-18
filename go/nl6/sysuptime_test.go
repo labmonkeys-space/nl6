@@ -287,8 +287,8 @@ func TestDeviceEnginesShareTheBootInstant(t *testing.T) {
 	if !ic.startTime.Equal(boot) {
 		t.Errorf("IfCounterCycler.startTime = %v, want %v", ic.startTime, boot)
 	}
-	if got, want := ic.State().bootTimeUnixNs, uint64(boot.UnixNano()); got != want {
-		t.Errorf("InterfaceState.bootTimeUnixNs = %d, want %d", got, want)
+	if got, want := ic.State().bootTimeNs(), uint64(boot.UnixNano()); got != want {
+		t.Errorf("InterfaceState.bootTimeNs() = %d, want %d", got, want)
 	}
 
 	optical := bootedShippedDevice(t, "ciena_waveserver5.json", boot, nil)

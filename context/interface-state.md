@@ -37,7 +37,7 @@ Each ifIndex has a packed `atomic.Uint64` slot.
 | 3 | link | The bits that held oper before nl6#694 |
 | 2 | admin | IF-MIB uses values 1..3, so 2 bits suffice |
 | 1 | `peerDown` | Split off the admin field by nl6#1023 |
-| 58 | `lastChange` | Wall-relative ns, untouched by both splits |
+| 58 | `lastChange` | Monotonic ns since the boot instant (`sinceBootNs`, nl6#1042), untouched by both splits |
 
 **Served columns:** `ifAdminStatus.<N>` (`.7`), `ifOperStatus.<N>` (`.8`) and `ifLastChange.<N>` (`.9`) are claimed by the cycler.
 `GetDynamicAt` reads them from the engine, so SNMP and gNMI agree byte for byte at the same instant.

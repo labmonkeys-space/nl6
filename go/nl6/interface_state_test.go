@@ -69,19 +69,33 @@ func TestInterfaceState_LastChangeNsAbsolute(t *testing.T) {
 	s := NewInterfaceState(2, nil, nil)
 	s.Seed(1, OperUp, AdminUp)
 	// Before any mutation, last-change == boot time exactly.
-	if got := s.LastChangeNs(1); got != s.bootTimeUnixNs {
-		t.Errorf("pre-transition: got %d, want bootTimeUnixNs=%d", got, s.bootTimeUnixNs)
+	if got := s.LastChangeNs(1); got != s.bootTimeNs() {
+		t.Errorf("pre-transition: got %d, want the boot instant %d", got, s.bootTimeNs())
 	}
-	// After SetOperStatus, last-change is bootTimeUnixNs + (some small relative ns).
-	beforeNs := uint64(time.Now().UnixNano())
+	// After SetOperStatus, last-change is the boot instant + the offset, and the
+	// offset is measured on the monotonic clock (nl6#1042). So the bracket is
+	// on the offset, read with Sub like the engine reads it, not on wall
+	// readings: on a clock whose wall reading is coarser than its monotonic one
+	// (macOS: microseconds against nanoseconds), boot plus a monotonic offset
+	// can land past a wall reading taken right after the transition.
+	before := time.Now()
 	changed, _ := setLinkVisible(s, 1, OperDown)
-	afterNs := uint64(time.Now().UnixNano())
+	after := time.Now()
 	if !changed {
 		t.Fatal("expected changed=true")
 	}
-	got := s.LastChangeNs(1)
-	if got < beforeNs || got > afterNs {
-		t.Errorf("post-transition LastChangeNs %d outside [%d, %d]", got, beforeNs, afterNs)
+	got := s.LastChangeNs(1) - s.bootTimeNs()
+	lo, hi := uint64(before.Sub(s.bootTime)), uint64(after.Sub(s.bootTime))
+	if got < lo || got > hi {
+		t.Errorf("post-transition offset %d ns outside [%d, %d]", got, lo, hi)
+	}
+	// The absolute value still tracks the wall clock, within the wall clock's
+	// grain on each side: the boot reading can be up to one grain below the true
+	// instant, and the monotonic offset is finer than the wall reading.
+	const grain = uint64(time.Microsecond)
+	abs := s.LastChangeNs(1)
+	if wlo, whi := uint64(before.UnixNano())-grain, uint64(after.UnixNano())+grain; abs < wlo || abs > whi {
+		t.Errorf("post-transition LastChangeNs %d outside the wall bracket [%d, %d]", abs, wlo, whi)
 	}
 }
 

@@ -35,14 +35,6 @@ const (
 	AdminTesting uint8 = 3
 )
 
-// LastChangeRewindSentinel is the value LastChangeNs returns when the
-// wall clock has stepped backwards between engine construction and a
-// mutation (NTP step, container suspend/resume). The sentinel is
-// distinguishable from a legitimate "never transitioned" reading
-// (which equals bootTimeUnixNs) and from any realistic future
-// timestamp, so downstream consumers can flag clock-rewind events.
-const LastChangeRewindSentinel uint64 = ^uint64(0)
-
 // StateLeafBits is a bitset naming the leaves that changed in one
 // mutation. last-change is implied whenever any other leaf changes —
 // no dedicated bit. ON_CHANGE subscribers on `state/last-change`
@@ -93,33 +85,36 @@ type StateChange struct {
 //	      58 bits      1 b  2 b   3 b
 //
 // 58 bits of nanoseconds-since-boot covers ~9.13 years; sufficient for
-// any realistic simulator session. Single atomic word guarantees a
-// reader never sees a torn (link, admin, peerDown, lastChange) tuple.
+// any realistic simulator session. The offset is measured with
+// sinceBootNs, on the clock sysUpTime.0 uses (nl6#1042). Single atomic
+// word guarantees a reader never sees a torn (link, admin, peerDown,
+// lastChange) tuple.
 type InterfaceState struct {
-	slots          []atomic.Uint64 // slot = ifIndex - 1; out-of-range ifIndexes return zero values
-	maxIfIndex     int             // upper bound; slots has length maxIfIndex
-	bootTimeUnixNs uint64          // the device's boot instant (nl6#1031), or construction time for an engine built without one; origin of the wall-relative lastChange
+	slots      []atomic.Uint64 // slot = ifIndex - 1; out-of-range ifIndexes return zero values
+	maxIfIndex int             // upper bound; slots has length maxIfIndex
+	bootTime   time.Time       // the device's boot instant (nl6#1031), or construction time for an engine built without one; origin of every stored lastChange offset
 
 	// now is the engine's clock, normalised to time.Now at construction so the
 	// mutation path never branches on nil. Same shape as the four other clock
 	// seams in this package (flap_scheduler, syslog_scheduler, trap_scheduler,
 	// optical_alarm), deliberately: a fifth shape is one more thing to learn.
 	//
-	// It exists because lastChange is derived from the WALL clock: time.Now()'s
-	// monotonic reading is stripped by UnixNano, and wallRelNs has a whole
-	// rewind sentinel for the backwards step that follows. A test asserting
-	// lastChange is non-decreasing was therefore asserting something the engine
-	// does not promise, and could fail on any NTP step (nl6#575).
+	// It exists so a test can drive a strictly-increasing clock (nl6#575). In
+	// production the offsets are measured with sinceBootNs, which subtracts two
+	// time.Time values carrying Go's monotonic reading, so a wall-clock jump on
+	// the host moves no stored offset (nl6#1042). A test clock built with
+	// time.Unix has no monotonic reading, and Sub then falls back to the wall
+	// values, which is what such a clock is for.
 	//
 	// It carries no synchronisation, so assign it only while no other goroutine
 	// can reach the engine. Prefer newInterfaceStateWithClock; a test that
 	// assigns the field afterwards must do so before starting any goroutine
 	// that touches the engine, which is what gives the happens-before edge.
 	//
-	// THE CLOCK MUST RETURN A POSITIVE UnixNano. time.Now() always does; an
-	// injected clock returning the zero Time or any pre-epoch instant yields a
-	// negative count that wraps to an enormous bootTimeUnixNs, after which every
-	// transition reads earlier than boot and reports a rewind forever.
+	// Boot and transitions must come from the same clock. A zero or pre-epoch
+	// reading no longer breaks the offsets, which are computed on time.Time, but
+	// LastChangeNs still wraps as a uint64 for a caller reading it as a Unix
+	// timestamp.
 	now func() time.Time
 
 	// Listener channels for ON_CHANGE fan-out. Keys are `chan StateChange`,
@@ -189,11 +184,11 @@ func NewInterfaceState(maxIfIndex int, emitted, dropped *uint64) *InterfaceState
 // nil means time.Now and is what every production caller gets (nl6#575).
 //
 // The clock is taken HERE as well as at the setters, and that is the whole
-// point rather than an incidental extra. bootTimeUnixNs is the origin every
-// relative lastChange is measured from, so an engine whose boot time came from
+// point rather than an incidental extra. bootTime is the origin every stored
+// lastChange offset is measured from, so an engine whose boot time came from
 // the real clock and whose transitions come from an injected one subtracts a
-// real timestamp from a fake one: the result is a garbage 58-bit value, or a
-// spurious rewind sentinel when the fake clock reads earlier.
+// real timestamp from a fake one: the result is a garbage offset, or 0 when the
+// fake clock reads earlier.
 func newInterfaceStateWithClock(maxIfIndex int, emitted, dropped *uint64, clock func() time.Time) *InterfaceState {
 	if maxIfIndex < 1 {
 		panic("newInterfaceStateWithClock: maxIfIndex must be ≥ 1")
@@ -206,7 +201,7 @@ func newInterfaceStateWithClock(maxIfIndex int, emitted, dropped *uint64, clock 
 		maxIfIndex: maxIfIndex,
 		now:        clock,
 	}
-	s.bootTimeUnixNs = uint64(s.now().UnixNano())
+	s.bootTime = s.now()
 	if emitted != nil {
 		s.eventsEmitted.Store(emitted)
 	}
@@ -224,7 +219,7 @@ func newInterfaceStateWithClock(maxIfIndex int, emitted, dropped *uint64, clock 
 // injects a clock builds its engine with newInterfaceStateWithClock instead.
 func newInterfaceStateBootedAt(maxIfIndex int, emitted, dropped *uint64, boot time.Time) *InterfaceState {
 	s := newInterfaceStateWithClock(maxIfIndex, emitted, dropped, nil)
-	s.bootTimeUnixNs = uint64(boot.UnixNano())
+	s.bootTime = boot
 	return s
 }
 
@@ -412,7 +407,7 @@ func (snap StateSnapshot) Transmits() bool {
 // ifIndex from a single `slots[slot].Load()`. Returns
 // `(StateSnapshot{}, false)` for out-of-range ifIndex. For an
 // in-range but unseeded slot, returns `(StateSnapshot{Oper:
-// OperUnknown, Admin: AdminUp, LastChangeNs: bootTimeUnixNs, Found:
+// OperUnknown, Admin: AdminUp, LastChangeNs: the boot instant, Found:
 // true})` — same defaults as the individual accessors. Callers that
 // need a consistent point-in-time view (e.g. auto-revert pre-state
 // capture, gNMI ON_CHANGE initial snapshot, cross-leaf consistency
@@ -428,18 +423,12 @@ func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
 	}
 	link, admin, peerDown, rel := unpackState(s.slots[slot].Load())
 	link, admin = normaliseSlot(link, admin)
-	var lc uint64
-	if rel == lastChangeMask {
-		lc = LastChangeRewindSentinel
-	} else {
-		lc = s.bootTimeUnixNs + rel
-	}
 	return StateSnapshot{
 		Oper:         deriveChildOper(admin, link, peerDown, s.parentOper(slot)),
 		Link:         link,
 		Admin:        admin,
 		PeerDown:     peerDown,
-		LastChangeNs: lc,
+		LastChangeNs: lastChangeAbs(s.bootTimeNs(), rel),
 		Found:        true,
 	}
 }
@@ -496,31 +485,39 @@ func (s *InterfaceState) AdminStatus(ifIndex int) uint8 {
 }
 
 // LastChangeNs returns the absolute Unix nanosecond timestamp of the
-// most recent transition on ifIndex (oper or admin). Returns the
-// engine's boot time (`s.bootTimeUnixNs`: the device's boot instant
-// on an engine built by `newInterfaceStateBootedAt`, which is every
-// production device since nl6#1031, and the construction time
+// most recent transition on ifIndex (oper or admin): the boot instant's
+// wall reading plus the stored offset. Returns the boot instant (the
+// device's on an engine built by `newInterfaceStateBootedAt`, which is
+// every production device since nl6#1031, and the construction time
 // otherwise) if no transition has occurred. Returns 0 if ifIndex is out
-// of range. Returns LastChangeRewindSentinel if a transition
-// occurred while the wall clock was earlier than the engine boot
-// time (NTP step, container suspend/resume) — downstream consumers
-// should treat the sentinel as "transition happened but timestamp
-// is unreliable". The SNMP layer (`if_counters.go`) collapses both
-// `bootTimeUnixNs` (no-transition) and the rewind sentinel to
-// `"0"` on the wire; gNMI subscribers see the engine values
-// directly.
+// of range. gNMI and NETCONF read this value; the SNMP layer reads the
+// offset itself (lastChangeSinceBootNs).
+//
+// The offset is monotonic, the boot reading is wall time. After a host
+// clock jump of J the value is therefore off by J against a timestamp
+// read from the wall clock at the same moment, such as a gNMI
+// Notification.Timestamp or a NETCONF eventTime (nl6#1042).
 func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
 		return 0
 	}
 	_, _, _, rel := unpackState(s.slots[slot].Load())
-	if rel == lastChangeMask {
-		// In-band sentinel: the mutator stored the max 58-bit value to
-		// flag a clock-rewind event. Surface as the public sentinel.
-		return LastChangeRewindSentinel
+	return lastChangeAbs(s.bootTimeNs(), rel)
+}
+
+// lastChangeSinceBootNs returns the stored offset of the most recent
+// transition on ifIndex, in nanoseconds since the boot instant, or 0 for an
+// interface that never transitioned or is out of range. This is what
+// ifLastChange serves, so it agrees with sysUpTime.0 by construction: both
+// are measured on the monotonic clock from the same instant (nl6#1042).
+func (s *InterfaceState) lastChangeSinceBootNs(ifIndex int) uint64 {
+	slot := ifIndex - 1
+	if slot < 0 || slot >= s.maxIfIndex {
+		return 0
 	}
-	return s.bootTimeUnixNs + rel
+	_, _, _, rel := unpackState(s.slots[slot].Load())
+	return rel
 }
 
 // LinkMutation is the outcome of a SetLinkState call. Three outcomes, because
@@ -560,7 +557,7 @@ const (
 // returned event, in order. The first is ifIndex's own; any after it belong to
 // subinterfaces whose derived oper-status moved with it (cascadeChildren).
 //
-// `s.now()` and `wallRelNs` are sampled INSIDE the CAS loop so that
+// `s.now()` and `sinceBootNs` are sampled INSIDE the CAS loop so that
 // retries on contention record the timestamp of the winning CAS, not
 // the timestamp at function entry — this preserves the monotonic
 // ordering of LastChangeNs across concurrent transitions on the same
@@ -605,7 +602,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 		}
 
 		nowAbs := s.now()
-		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
+		relNs := sinceBootNs(s.bootTime, nowAbs)
 		if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, curPeerDown, relNs)) {
 			// An oper transition changes which lldpRemTable rows are live on
 			// both ends of the link, so invalidate cached LLDP served-OID
@@ -620,7 +617,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 				Admin:        curAdmin,
 				Link:         newLink,
 				PeerDown:     curPeerDown,
-				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+				LastChangeNs: lastChangeAbs(s.bootTimeNs(), relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
 			}}
@@ -669,7 +666,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 		// already-down link) does not stamp it.
 		relNs, nowAbs := curRel, s.now()
 		if operMoved {
-			relNs = wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
+			relNs = sinceBootNs(s.bootTime, nowAbs)
 		}
 		if !s.slots[slot].CompareAndSwap(cur, packState(curLink, newVal, curPeerDown, relNs)) {
 			continue
@@ -682,7 +679,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 			Admin:        newVal,
 			Link:         curLink,
 			PeerDown:     curPeerDown,
-			LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+			LastChangeNs: lastChangeAbs(s.bootTimeNs(), relNs),
 			Changed:      LeafAdminStatus,
 			At:           nowAbs,
 		}}
@@ -695,7 +692,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 				Admin:        newVal,
 				Link:         curLink,
 				PeerDown:     curPeerDown,
-				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+				LastChangeNs: lastChangeAbs(s.bootTimeNs(), relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
 			})
@@ -741,7 +738,7 @@ func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) []StateChange {
 		}
 
 		nowAbs := s.now()
-		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
+		relNs := sinceBootNs(s.bootTime, nowAbs)
 		if s.slots[slot].CompareAndSwap(cur, packState(curLink, curAdmin, down, relNs)) {
 			invalidateLLDPServedCache()
 			evts := []StateChange{{
@@ -751,7 +748,7 @@ func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) []StateChange {
 				Admin:        curAdmin,
 				Link:         curLink,
 				PeerDown:     down,
-				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+				LastChangeNs: lastChangeAbs(s.bootTimeNs(), relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
 			}}
@@ -863,7 +860,7 @@ func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, a
 					Admin:        admin,
 					Link:         link,
 					PeerDown:     peerDown,
-					LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+					LastChangeNs: lastChangeAbs(s.bootTimeNs(), relNs),
 					Changed:      LeafOperStatus,
 					At:           at,
 				})
@@ -1188,33 +1185,37 @@ var _ = [adminStatusMask - uint64(AdminTesting)]struct{}{}
 
 var _ = [1]struct{}{}[_layoutGuard] // compile error if layout invariant breaks
 
-// wallRelNs returns (nowWallNs - bootWallNs) masked to 58 bits, or the
-// in-band rewind sentinel (`lastChangeMask` — all 58 low bits set) if
-// the wall clock has stepped backwards between bootWallNs and nowWallNs.
-// The sentinel is unpacked by LastChangeNs as LastChangeRewindSentinel
-// so observers can detect clock-rewind events. A log line fires once
-// per rewind so operators are aware (clock-rewinds usually indicate
-// container suspend/resume, NTP step, or host clock skew).
-func wallRelNs(nowWallNs, bootWallNs uint64) uint64 {
-	if nowWallNs < bootWallNs {
-		log.Printf("interface_state: wall clock stepped backwards (now=%d boot=%d); ifLastChange marked with rewind sentinel for this transition", nowWallNs, bootWallNs)
-		return lastChangeMask
+// sinceBootNs is the offset every mutator stores: the time from boot to now,
+// in nanoseconds, masked to the slot's 58 bits. It is THE expression the
+// polled sysUpTime.0 uses (uptimeTicks), now.Sub(boot), so ifLastChange agrees
+// with sysUpTime.0 by construction. Both operands carry Go's monotonic reading
+// in production, so a host clock jump (an NTP step, a suspend, a VM pause or
+// snapshot) moves no offset (nl6#1042). The mutators must call this and never
+// read UnixNano themselves; TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock
+// pins that.
+//
+// A negative delta is only possible with a test clock stepping backwards. It
+// clamps to 0, as uptimeTicks does, which reads as "in this state since boot".
+// Equal readings (a coarse clock) give 0 too, which means the same.
+func sinceBootNs(boot, now time.Time) uint64 {
+	d := now.Sub(boot)
+	if d < 0 {
+		return 0
 	}
-	// Equal is fine — happens on coarse-clock platforms (macOS µs grain)
-	// when bootTimeUnixNs and the mutation timestamp fall in the same
-	// tick. relNs = 0 then renders as "interface has been in current
-	// state since boot" which is semantically correct.
-	return (nowWallNs - bootWallNs) & lastChangeMask
+	return uint64(d) & lastChangeMask
 }
 
-// lastChangeAbs reconstructs the absolute Unix-nanosecond timestamp
-// from a stored relNs, with the rewind sentinel pass-through. Used by
-// SetLinkState/setAdminLeaf to populate StateChange.LastChangeNs.
-func lastChangeAbs(bootTimeUnixNs, relNs uint64) uint64 {
-	if relNs == lastChangeMask {
-		return LastChangeRewindSentinel
-	}
-	return bootTimeUnixNs + relNs
+// bootTimeNs is the boot instant as Unix nanoseconds, the origin LastChangeNs
+// adds a stored offset to.
+func (s *InterfaceState) bootTimeNs() uint64 {
+	return uint64(s.bootTime.UnixNano())
+}
+
+// lastChangeAbs reconstructs the absolute Unix-nanosecond timestamp from a
+// stored offset. Used by every mutator for StateChange.LastChangeNs and by
+// LastChangeNs and Snapshot, so the three reconstructions cannot drift.
+func lastChangeAbs(bootNs, relNs uint64) uint64 {
+	return bootNs + relNs
 }
 
 func packState(link, admin uint8, peerDown bool, lastChangeNs uint64) uint64 {
