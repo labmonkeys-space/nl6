@@ -13,10 +13,15 @@ Four things differ from the capture.
 
 - `higher-layer-if` and `lower-layer-if` are not sent.
 - The sync `push-update` goes out right after `subscription-started`, not 5 seconds later.
-- `patch-id` counts the change-updates of a device from 0. The capture has one change-update and cannot confirm the counter.
-- Changes inside a dampening period are collected into one update with one edit per interface. The capture cannot confirm this either.
+- `patch-id` counts the change-updates of a device from 0.
+  The capture has one change-update and cannot confirm the counter.
+- Changes inside a dampening period are collected into one update with one edit per interface.
+  The capture cannot confirm this either.
 
 The ID 10 and the filter reference `ONCHANGEINTERFACE` are nl6's own.
+
+Only a change of `admin-status` or `oper-status` triggers a change-update.
+A new `description`, for example after a topology link is added, appears in subscription 9 and not in subscription 10 until that interface changes state.
 
 ## Statistics cover every interface
 

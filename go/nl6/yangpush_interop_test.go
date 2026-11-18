@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -62,6 +63,12 @@ type yangPushInteropMsg struct {
 	} `json:"ietf-telemetry-message:message"`
 	raw string
 }
+
+// One interface entry of a payload, and the mark of ifIndex 3 in it.
+var (
+	yangPushInteropEntry    = regexp.MustCompile(`\{[^{}]*\}`)
+	yangPushInteropIfIndex3 = regexp.MustCompile(`"if-index":3\b`)
+)
 
 func yangPushInteropRun(t *testing.T, name string, args ...string) string {
 	t.Helper()
@@ -293,12 +300,18 @@ func TestYangPushInterop(t *testing.T) {
 		if err != nil || ts.Before(t0) {
 			continue
 		}
-		if strings.Contains(string(m.Message.Payload), `"oper-status":"down"`) {
-			hit = true
+		// An update can hold several interfaces, so look at each entry on
+		// its own. An entry has no nested object.
+		for _, entry := range yangPushInteropEntry.FindAllString(string(m.Message.Payload), -1) {
+			if strings.Contains(entry, `"oper-status":"down"`) && yangPushInteropIfIndex3.MatchString(entry) {
+				hit = true
+			}
+		}
+		if hit {
 			break
 		}
 	}
 	if !hit {
-		t.Errorf("no subscription 10 message with oper-status down within 10 s of the POST for %s ifIndex 3", yangPushInteropDevices[0])
+		t.Errorf("no subscription 10 message with oper-status down for ifIndex 3 within 10 s of the POST for %s", yangPushInteropDevices[0])
 	}
 }

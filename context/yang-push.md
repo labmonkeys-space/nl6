@@ -154,8 +154,11 @@ nl6 reported `messages_sent=27 segments_sent=372 send_failures=0`.
 
 The same day, three runs with `anydata_strict_validation: true` failed and produced two findings. Both apply to the captured NE8000 as much as to nl6:
 
-- NetCalyx seeds the library load from subscription-started's `module-version` (only `ietf-interfaces`, as the NE sends it) plus transitive imports. `iana-if-type` is imported by nothing, so libyang never sees it and rejects `iana-if-type:ethernetCsmacd` in every subscription 9 and subscription 10 update. nl6 now serves `iana-if-type@2017-01-19` as import-only, which the NE library lists and nl6 had missed; serving it, and even listing it as implemented, does not make NetCalyx load it.
-- NetCalyx parses the whole payload with libyang `ANYDATA_STRICT`. Before the IETF 127 capture landed, subscription 10's RFC 8072 patch value `{"ietf-interfaces:interface":[...]}` failed with `Node "interface" not found in the "ietf-interfaces" module`. With the captured unprefixed value `{"interface":[...]}`, it fails with `Node "interface" not found in the "ietf-yang-push" module` (nl6#1062).
+- NetCalyx seeds the library load from subscription-started's `module-version` (only `ietf-interfaces`, as the NE sends it) plus transitive imports.
+  `iana-if-type` is imported by nothing, so libyang never sees it and rejects `iana-if-type:ethernetCsmacd` in every subscription 9 and subscription 10 update. nl6 now serves `iana-if-type@2017-01-19` as import-only, which the NE library lists and nl6 had missed; serving it, and even listing it as implemented, does not make NetCalyx load it.
+- NetCalyx parses the whole payload with libyang `ANYDATA_STRICT`.
+  Before the IETF 127 capture landed, subscription 10's RFC 8072 patch value `{"ietf-interfaces:interface":[...]}` failed with `Node "interface" not found in the "ietf-interfaces" module`.
+  With the captured unprefixed value `{"interface":[...]}`, it fails with `Node "interface" not found in the "ietf-yang-push" module` (nl6#1062).
 
 The gate therefore runs with strict anydata validation off, which is what NetGauze v0.13.0 checked. Follow-up and the options are in nl6#1017.
 

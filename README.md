@@ -36,7 +36,7 @@ Each gets its own IP address via Linux TUN interfaces and network namespaces.
 | SNMP traps, syslog | Stable | |
 | gNMI dial-in and dial-out | Stable | Read-only |
 | NETCONF, call home | Stable | Three dialects, opt-in |
-| YANG-Push over UDP-notif | New in v0.40.0 | `huawei_ne8000`, opt-in; the on-change subscription is not verified against a real device |
+| YANG-Push over UDP-notif | New in v0.40.0 | `huawei_ne8000`, opt-in; follows public captures of a real router, not verified against a live device |
 | TUN per device, `nl6sim` namespace, web UI, REST control plane | Stable | |
 
 **Tested scale:** up to 30,000 concurrent simulated devices on a single host.
