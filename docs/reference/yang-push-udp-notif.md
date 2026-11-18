@@ -13,6 +13,7 @@ Opt in per device.
 Devices of other types never stream.
 
 NetCalyx v0.4.0 is the collector nl6 is checked against.
+[nl6 in the NMOP YANG-Push test chain](../explanation/nmop-test-chain.md) shows the chain behind the collector and what a run through it shows.
 The collector learns the schema by logging in to the device over NETCONF, so NETCONF must be on too.
 
 ```

@@ -105,7 +105,7 @@ The docs site has four top-level sections:
 - [Getting Started](https://nl6.eu/getting-started/quick-start): build, first run, package install, Ansible, Docker.
 - [Operations](https://nl6.eu/ops/scaling): scaling, network namespace, flow export, load-test scenarios, troubleshooting.
 - [Reference](https://nl6.eu/reference/cli-flags): CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
-- [Explanation](https://nl6.eu/explanation/architecture): architecture, why Kubernetes is out of scope, SNMP data fidelity, measuring a collector's ceiling.
+- [Explanation](https://nl6.eu/explanation/architecture): architecture, why Kubernetes is out of scope, SNMP data fidelity, measuring a collector's ceiling, nl6 in the NMOP YANG-Push test chain.
 
 ## Contributing
 
