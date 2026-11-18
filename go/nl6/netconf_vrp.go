@@ -234,15 +234,11 @@ func (s *netconfSession) vrpExporter() *YangPushExporter {
 // (/ietf-interfaces:interfaces/interface) with the if: prefix on every step,
 // as the device's XML filter carries it.
 func vrpXPathXML(p string) string {
-	parts := strings.Split(p, " | ")
-	for i, part := range parts {
-		steps := strings.Split(strings.TrimPrefix(part, "/"), "/")
-		for j, st := range steps {
-			steps[j] = "if:" + strings.TrimPrefix(st, "ietf-interfaces:")
-		}
-		parts[i] = "/" + strings.Join(steps, "/")
+	steps := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	for i, st := range steps {
+		steps[i] = "if:" + strings.TrimPrefix(st, "ietf-interfaces:")
 	}
-	return strings.Join(parts, " | ")
+	return "/" + strings.Join(steps, "/")
 }
 
 // vrpFiltersXML renders the selection filters of e's subscriptions. The if:

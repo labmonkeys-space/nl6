@@ -52,6 +52,11 @@ type YangPushExporter struct {
 	msgID   [3]uint32
 	patchID uint64 // change-updates sent so far; run goroutine only
 	started bool
+	skip    struct {
+		ifIndex int
+		at      time.Time
+		set     bool
+	}
 
 	stop      chan struct{}
 	stopOnce  sync.Once
@@ -187,7 +192,7 @@ func (e *YangPushExporter) run() {
 	periodic := func(i int) {
 		obs := next[i]
 		e.ensureStarted()
-		e.emit(i, func() []byte { return encodePushUpdate(e.subs[i], obs, e.pubID, e.interfaces(obs)) })
+		e.emit(i, e.clock(), func() []byte { return encodePushUpdate(e.subs[i], obs, e.pubID, e.interfaces(obs)) })
 		next[i] = ypNextFire(e.subs[i], offsets[i], later(obs, e.clock()))
 		timers[i].ResetAt(next[i])
 	}
@@ -212,23 +217,36 @@ func (e *YangPushExporter) run() {
 		case <-timers[1].C():
 			periodic(1)
 		case evt := <-sc:
+			if e.twinOperEvent(evt) {
+				continue
+			}
 			e.ensureStarted()
 			if inWindow {
+				if fidelityMutesBackground(sourceBackground) {
+					e.fidelitySuppressed.Add(1)
+					continue
+				}
 				pending[evt.IfIndex] = struct{}{}
 				continue
 			}
-			if e.emit(2, func() []byte { return e.changeUpdate(evt) }) {
+			if e.emit(2, e.clock(), func() []byte { return e.changeUpdate(evt) }) {
 				openWindow()
 			}
 		case <-damp.C():
 			// Take what is already queued, so a change that raced the timer
 			// belongs to this period and not to the next.
-			for queued := true; queued; {
+			for n := len(sc); n > 0; n-- {
 				select {
 				case evt := <-sc:
+					if e.twinOperEvent(evt) {
+						continue
+					}
+					if fidelityMutesBackground(sourceBackground) {
+						e.fidelitySuppressed.Add(1)
+						continue
+					}
 					pending[evt.IfIndex] = struct{}{}
 				default:
-					queued = false
 				}
 			}
 			inWindow = false
@@ -241,11 +259,27 @@ func (e *YangPushExporter) run() {
 			}
 			sort.Ints(idxs)
 			clear(pending)
-			if e.emit(2, func() []byte { return e.collectedUpdate(idxs, e.clock()) }) {
+			obs := e.clock()
+			if e.emit(2, obs, func() []byte { return e.collectedUpdate(idxs, obs) }) {
 				openWindow()
 			}
 		}
 	}
+}
+
+// twinOperEvent reports whether evt is the oper event that follows an admin
+// event which already moved oper. An admin change broadcasts both, with the
+// same ifIndex and instant, and the first already sent or queued the whole
+// entry. Only the run goroutine calls it.
+func (e *YangPushExporter) twinOperEvent(evt StateChange) bool {
+	if evt.Changed == LeafOperStatus && e.skip.set && e.skip.ifIndex == evt.IfIndex && e.skip.at.Equal(evt.At) {
+		e.skip.set = false
+		return true
+	}
+	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
+		e.skip.ifIndex, e.skip.at, e.skip.set = evt.IfIndex, evt.At, true
+	}
+	return false
 }
 
 // ensureStarted sends the three subscription-started notifications and the
@@ -267,12 +301,12 @@ func (e *YangPushExporter) ensureStarted() {
 
 // emit sends one push for subscription i unless fidelity mutes it, and
 // reports whether it sent.
-func (e *YangPushExporter) emit(i int, contents func() []byte) bool {
+func (e *YangPushExporter) emit(i int, eventTime time.Time, contents func() []byte) bool {
 	if fidelityMutesBackground(sourceBackground) {
 		e.fidelitySuppressed.Add(1)
 		return false
 	}
-	e.send(i, e.clock(), contents())
+	e.send(i, eventTime, contents())
 	return true
 }
 
@@ -328,6 +362,7 @@ func (e *YangPushExporter) changeUpdate(evt StateChange) []byte {
 	row := e.row(evt.IfIndex, evt.At)
 	row.Admin = iosxeAdminStatus(evt.Admin)
 	row.Oper = iosxeOperStatus(evt.Admin, evt.Oper)
+	row.LastChange = "" // unknown after a clock rewind: the leaf is omitted
 	if evt.LastChangeNs != LastChangeRewindSentinel {
 		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	}

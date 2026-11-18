@@ -366,21 +366,30 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 // value the device profile holds.
 func TestYangPushDescriptionIsServedIfAlias(t *testing.T) {
 	dev, _ := newYangPushTestDevice(t)
-	c := newYPCollector(t)
-	e, _ := startYangPushTest(t, dev, c.addr())
+	e := &YangPushExporter{dev: dev}
 	static := lookupIfColumn(dev, ifAliasPrefix, 1)
 	if static == "" {
 		t.Fatal("the huawei_ne8000 profile has no ifAlias for ifIndex 1")
 	}
-	for _, ifc := range e.interfaces(time.Now()) {
-		if ifc.IfIndex == 1 {
-			if ifc.Description != static {
-				t.Errorf("description = %q, want the served ifAlias %q", ifc.Description, static)
-			}
-			return
-		}
+	if got := e.entry(e.row(1, time.Now())).Description; got != static {
+		t.Fatalf("description = %q, want the static ifAlias %q", got, static)
 	}
-	t.Fatal("ifIndex 1 not among the interfaces")
+	// A topology link on the port overrides the static profile value with
+	// to_<peer.sysName>_<peerIfDescr>, matching SNMP.
+	f := newLLDPFixture(t)
+	peer := f.addDevice(t, 2, 2, "spine1")
+	f.mgr.mu.Lock()
+	f.mgr.devices[dev.ID] = dev
+	f.mgr.deviceIPs[dev.IP.String()] = struct{}{}
+	f.mgr.indexDeviceByIP(dev)
+	f.mgr.mu.Unlock()
+	if err := f.mgr.topology.AddLink(ep(dev.IP.String(), 1), ep(peer.IP.String(), 2)); err != nil {
+		t.Fatal(err)
+	}
+	want := "to_spine1_" + devIfDescr(peer, 2)
+	if got := e.entry(e.row(1, time.Now())).Description; got != want {
+		t.Errorf("description with topology link = %q, want %q", got, want)
+	}
 }
 
 // waitArmedN waits until n timers are armed: the two periodic ones plus the
@@ -510,23 +519,75 @@ func TestYangPushOnChangeQuietWindow(t *testing.T) {
 }
 
 // A device that fidelity mutes during a period drops what it collected,
-// counts it and closes the period.
+// counts it and closes the period. Transitions that arrive while muted do not
+// enter pending either, even if fidelity is lifted before the period ends.
 func TestYangPushOnChangeMutedWindow(t *testing.T) {
 	e, fc, c, st, _, up := ypOnChangeSetup(t)
 	ypSetLink(st, up[0], OperDown)
 	c.mustNext(t)
 	waitArmedN(t, fc, 3)
 	withFidelity(t, true)
-	ypSetLink(st, up[1], OperDown)
 	before := e.fidelitySuppressed.Load()
+	ypSetLink(st, up[1], OperDown)
+	deadline := time.Now().Add(3 * time.Second)
+	for e.fidelitySuppressed.Load() == before {
+		if time.Now().After(deadline) {
+			t.Fatal("fidelity_suppressed did not grow for the muted transition")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Lifting fidelity before the period ends must not send the transition
+	// that happened while muted.
+	withFidelity(t, false)
 	fc.Advance(ypDampening)
 	if m, ok := c.next(t, 300*time.Millisecond); ok {
-		t.Fatalf("muted, yet received %s", m.Raw)
-	}
-	if e.fidelitySuppressed.Load() == before {
-		t.Error("fidelity_suppressed did not grow for the dropped period")
+		t.Fatalf("transition while muted was sent after unmuting: %s", m.Raw)
 	}
 	waitArmedN(t, fc, 2)
+}
+
+// An admin-status transition that also moves oper-status broadcasts both
+// LeafAdminStatus and LeafOperStatus at the same instant. Subscription 10
+// sends the whole entry on the first and must not send a duplicate 5 seconds
+// later for the twin oper event.
+func TestYangPushOnChangeAdminSkipsTwinOper(t *testing.T) {
+	_, fc, c, st, dev, up := ypOnChangeSetup(t)
+	for _, ev := range st.setAdminLeaf(up[0], AdminDown) {
+		st.Broadcast(ev)
+	}
+	id, entries := ypEditEntries(t, c.mustNext(t).Raw)
+	if id != "0" || len(entries) != 1 || entries[0]["name"] != devIfDescr(dev, up[0]) ||
+		entries[0]["admin-status"] != "down" || entries[0]["oper-status"] != "down" {
+		t.Fatalf("admin down: patch %q entries %v, want patch 0 with admin and oper down", id, entries)
+	}
+	waitArmedN(t, fc, 3)
+	fc.Advance(ypDampening)
+	if m, ok := c.next(t, 300*time.Millisecond); ok {
+		t.Fatalf("twin oper event caused a second update after the dampening period: %s", m.Raw)
+	}
+}
+
+// A transition stamped with LastChangeRewindSentinel omits last-change even
+// when a later transition has already written a valid timestamp into the live
+// engine slot.
+func TestYangPushChangeUpdateRewindOmitsLastChange(t *testing.T) {
+	dev, st := newYangPushTestDevice(t)
+	e := &YangPushExporter{dev: dev, subs: vrpSubs, pubID: 0x7F000001}
+	idx := dev.metricsCycler.ifCounters.Load().IfIndices()[0]
+	// Stamp a valid transition into the live engine slot first.
+	st.SetLinkState(idx, OperDown)
+	raw := encodeEnvelope(ypTestStart(), "ne8000-sim", 1, e.changeUpdate(StateChange{
+		IfIndex:      idx,
+		Admin:        AdminUp,
+		Oper:         OperDown,
+		LastChangeNs: LastChangeRewindSentinel,
+		Changed:      LeafOperStatus,
+		At:           ypTestStart(),
+	}))
+	_, entries := ypEditEntries(t, raw)
+	if len(entries) != 1 || entries[0]["last-change"] != nil {
+		t.Fatalf("entry after clock rewind still carries last-change: %v", entries)
+	}
 }
 
 func TestYangPushCollectorUnreachable(t *testing.T) {
@@ -565,19 +626,27 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 	e, fc := startYangPushTest(t, dev, c.addr())
 	readStart(t, c) // the listener is registered before the sync goes out
 	waitArmed(t, fc)
-	idx := dev.metricsCycler.ifCounters.Load().IfIndices()[0]
+	idxs := dev.metricsCycler.ifCounters.Load().IfIndices()
+	idx := idxs[0]
+	lastIdx := idxs[1]
 	// Stall the exporter: its next send blocks on the clock. It takes at most
 	// one event, the listener holds onChangeBufferDepth, and the rest must be
-	// dropped and counted without blocking InterfaceState.
+	// dropped and counted without blocking InterfaceState. The 1000th event
+	// transitions a second interface (lastIdx) so only a drop-oldest queue
+	// retains lastIdx in the collected update.
 	fc.mu.Lock()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for n := range 1000 {
+		for n := range 999 {
 			_, evts := st.SetLinkState(idx, ypFlap(n))
 			for _, ev := range evts {
 				st.Broadcast(ev)
 			}
+		}
+		_, evts := st.SetLinkState(lastIdx, OperDown)
+		for _, ev := range evts {
+			st.Broadcast(ev)
 		}
 	}()
 	select {
@@ -591,9 +660,8 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 	if want := uint64(1000 - onChangeBufferDepth - 1); dropped < want {
 		t.Fatalf("state_events_dropped = %d after 1000 flaps against a stalled exporter, want >= %d", dropped, want)
 	}
-	// Drop-oldest: the last transition (flap 999, link up) still goes out. The
-	// first event the exporter takes is sent at once, the rest is collected and
-	// sent when the dampening period ends.
+	// Drop-oldest: the final transition on lastIdx is retained in the tail of
+	// the queue and goes out when the dampening period ends.
 	waitArmedN(t, fc, 3)
 	fc.Advance(ypDampening)
 	var last ypRecv
@@ -606,8 +674,9 @@ func TestYangPushStateBurstDoesNotBlock(t *testing.T) {
 			last = m
 		}
 	}
-	if !strings.Contains(string(last.Raw), `"oper-status":"up"`) {
-		t.Fatalf("last change is not the final link-up: %s", last.Raw)
+	wantLast := `"name":` + jsonString(devIfDescr(dev, lastIdx))
+	if !strings.Contains(string(last.Raw), wantLast) || !strings.Contains(string(last.Raw), `"oper-status":"down"`) {
+		t.Fatalf("last change does not carry the final transition on %s: %s", devIfDescr(dev, lastIdx), last.Raw)
 	}
 }
 

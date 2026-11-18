@@ -90,7 +90,7 @@ Its `point-in-time` is `initial-state`.
 After that it sends a `push-change-update` when `oper-status` or `admin-status` of an interface changes, with `point-in-time` `state-changed`.
 The update holds one YANG Patch edit per interface, and the value of an edit is the whole interface entry.
 Subscriptions 8 and 9 use `current-accounting`.
-Take an interface down with [the interface state API](interface-state.md) and the change arrives within a second.
+Take an interface down with [the interface state API](interface-state.md) when no dampening period is open and the change arrives within a second.
 Further changes in the next 5 seconds arrive together when those 5 seconds end.
 
 The start of each subscription sends a `subscription-started` notification first.
