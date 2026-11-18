@@ -40,11 +40,35 @@ var vrpSubs = [3]ypSub{
 // ypIface holds the ietf-interfaces leaves nl6 serves for one interface.
 type ypIface struct {
 	Name, Type, Admin, Oper string
-	Enabled                 bool
-	IfIndex                 int
-	Speed                   uint64
-	Stats                   iosxeStats
-	InUnknownProtos         uint32
+	// Description is the ifAlias, LastChange a date-and-time in seconds and
+	// PhysAddress six lower-case hex bytes. Each is empty when nl6 has no value.
+	Description, LastChange, PhysAddress string
+	Enabled                              bool
+	IfIndex                              int
+	Speed                                uint64
+	Stats                                iosxeStats
+	InUnknownProtos                      uint32
+}
+
+// ypPhysAddress returns v as six lower-case hex bytes joined by colons, or ""
+// when v is not a MAC address in that form.
+func ypPhysAddress(v string) string {
+	if len(v) != 17 {
+		return ""
+	}
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if i%3 == 2 {
+			if c != ':' {
+				return ""
+			}
+			continue
+		}
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return ""
+		}
+	}
+	return strings.ToLower(v)
 }
 
 // ypIfTypes maps IANA ifType numbers to iana-if-type identities.
@@ -87,7 +111,7 @@ var ypOperStatus = map[string]string{
 }
 
 // ypIfaceFrom converts an IOS XE row into ietf-interfaces values.
-func ypIfaceFrom(row iosxeRow, ifType int, inUnknownProtos uint32) ypIface {
+func ypIfaceFrom(row iosxeRow, ifType int, inUnknownProtos uint32, description string) ypIface {
 	admin, ok := ypAdminStatus[row.Admin]
 	if !ok {
 		admin = "unknown"
@@ -100,8 +124,15 @@ func ypIfaceFrom(row iosxeRow, ifType int, inUnknownProtos uint32) ypIface {
 	if t, err := time.Parse("2006-01-02T15:04:05.000000+00:00", stats.DiscontinuityTime); err == nil {
 		stats.DiscontinuityTime = t.UTC().Format("2006-01-02T15:04:05Z")
 	}
+	lastChange := ""
+	if t, err := time.Parse("2006-01-02T15:04:05.000000+00:00", row.LastChange); err == nil {
+		lastChange = ypSeconds(t)
+	}
 	return ypIface{
 		Name:            row.Name,
+		Description:     description,
+		LastChange:      lastChange,
+		PhysAddress:     ypPhysAddress(row.PhysAddress),
 		Type:            ypTypeIdentity(ifType),
 		Admin:           admin,
 		Oper:            oper,
@@ -234,6 +265,40 @@ func ypKeyEscape(v string) string {
 	return b.String()
 }
 
+// ypEntryLeaves writes the leaves of one interface entry after its name, in the
+// order a VRP device sends them. The device writes phys-address in lower case
+// in a push-update and in upper case in a push-change-update.
+func ypEntryLeaves(b *bytes.Buffer, i ypIface, upperPhys bool) {
+	if i.Description != "" {
+		b.WriteString(`,"description":`)
+		ypStr(b, i.Description)
+	}
+	b.WriteString(`,"type":`)
+	ypStr(b, i.Type)
+	b.WriteString(`,"enabled":` + strconv.FormatBool(i.Enabled))
+	b.WriteString(`,"link-up-down-trap-enable":"enabled","admin-status":`)
+	ypStr(b, i.Admin)
+	b.WriteString(`,"oper-status":`)
+	ypStr(b, i.Oper)
+	if i.LastChange != "" {
+		b.WriteString(`,"last-change":`)
+		ypStr(b, i.LastChange)
+	}
+	b.WriteString(`,"if-index":` + strconv.Itoa(i.IfIndex))
+	if i.PhysAddress != "" {
+		phys := i.PhysAddress
+		if upperPhys {
+			phys = strings.ToUpper(phys)
+		}
+		b.WriteString(`,"phys-address":`)
+		ypStr(b, phys)
+	}
+	if i.Speed > 0 {
+		b.WriteString(`,"speed":`)
+		ypU64Str(b, i.Speed)
+	}
+}
+
 // encodePushUpdate renders a push-update for subscription s. A periodic
 // subscription reports current-accounting; the on-change subscription's sync
 // snapshot reports initial-state.
@@ -263,18 +328,7 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 			b.WriteString(`,"oper-status":`)
 			ypStr(&b, i.Oper)
 		default:
-			b.WriteString(`,"type":`)
-			ypStr(&b, i.Type)
-			b.WriteString(`,"enabled":` + strconv.FormatBool(i.Enabled))
-			b.WriteString(`,"link-up-down-trap-enable":"enabled","admin-status":`)
-			ypStr(&b, i.Admin)
-			b.WriteString(`,"oper-status":`)
-			ypStr(&b, i.Oper)
-			b.WriteString(`,"if-index":` + strconv.Itoa(i.IfIndex))
-			if i.Speed > 0 {
-				b.WriteString(`,"speed":`)
-				ypU64Str(&b, i.Speed)
-			}
+			ypEntryLeaves(&b, i, false)
 		}
 		b.WriteByte('}')
 	}

@@ -339,7 +339,7 @@ func TestYangPushOnChangeSyncThenChange(t *testing.T) {
 	}
 	// The change must agree with what a periodic subscription-9 read reports
 	// for the same interface now.
-	want := ypIfaceFrom(buildIosxeRow(dev, ic, target, time.Now()), 0, 0)
+	want := ypIfaceFrom(buildIosxeRow(dev, ic, target, time.Now()), 0, 0, "")
 	if want.Oper != "down" {
 		t.Fatalf("engine reports %s oper %q, want down", want.Name, want.Oper)
 	}

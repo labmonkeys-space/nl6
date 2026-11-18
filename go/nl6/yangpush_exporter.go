@@ -256,7 +256,7 @@ func (e *YangPushExporter) interfaces(obs time.Time) []ypIface {
 	for _, idx := range idxs {
 		row := buildIosxeRow(e.dev, ic, idx, obs)
 		unknown, _ := strconv.ParseUint(lookupIfColumn(e.dev, ifTablePrefix+"15.", idx), 10, 32)
-		out = append(out, ypIfaceFrom(row, lookupIfType(e.dev, idx), uint32(unknown)))
+		out = append(out, ypIfaceFrom(row, lookupIfType(e.dev, idx), uint32(unknown), devIfAlias(e.dev, idx)))
 	}
 	return out
 }
@@ -271,7 +271,7 @@ func (e *YangPushExporter) changeUpdate(evt StateChange) []byte {
 		Admin:   iosxeAdminStatus(evt.Admin),
 		Oper:    iosxeOperStatus(evt.Admin, evt.Oper),
 	}
-	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, "edit1", ypIfaceFrom(row, 0, 0), evt.Changed)
+	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, "edit1", ypIfaceFrom(row, 0, 0, ""), evt.Changed)
 }
 
 // ypNextFire is the first instant strictly after t on subscription s's grid

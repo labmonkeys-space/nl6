@@ -52,9 +52,11 @@ func ypCompare(t *testing.T, got []byte, fixture string) {
 func ypTestIfaces(stats bool) []ypIface {
 	st := iosxeStats{DiscontinuityTime: "2026-01-07T06:46:41Z"}
 	first := ypIface{Name: "GigabitEthernet0/1/0", Type: "iana-if-type:ethernetCsmacd", Admin: "up", Oper: "up",
-		Enabled: true, IfIndex: 1, Speed: 1000000000, Stats: st}
+		Enabled: true, IfIndex: 1, Speed: 1000000000, Stats: st,
+		Description: "uplink-a", LastChange: "2026-01-07T06:46:41Z", PhysAddress: "00:00:5e:00:53:01"}
 	second := ypIface{Name: "GigabitEthernet0/1/1", Type: "iana-if-type:ethernetCsmacd", Admin: "up", Oper: "down",
-		Enabled: true, IfIndex: 2, Speed: 1000000000, Stats: st}
+		Enabled: true, IfIndex: 2, Speed: 1000000000, Stats: st,
+		LastChange: "2026-01-07T06:46:41Z", PhysAddress: "00:00:5e:00:53:02"}
 	if stats {
 		first.Stats = iosxeStats{DiscontinuityTime: st.DiscontinuityTime,
 			InOctets: 138303671, InUnicastPkts: 166138, InBroadcastPkts: 24780, InMulticastPkts: 1184847,
@@ -139,8 +141,32 @@ func TestYpIfaceTypeIdentity(t *testing.T) {
 		6: "iana-if-type:ethernetCsmacd", 24: "iana-if-type:softwareLoopback",
 		23: "iana-if-type:ppp", 9999: "iana-if-type:other", 0: "iana-if-type:other",
 	} {
-		if got := ypIfaceFrom(iosxeRow{}, ifType, 0).Type; got != want {
+		if got := ypIfaceFrom(iosxeRow{}, ifType, 0, "").Type; got != want {
 			t.Errorf("ifType %d = %q, want %q", ifType, got, want)
+		}
+	}
+}
+
+// The entry leaves beyond status come from the row and the caller: last-change
+// in seconds, phys-address as six lower-case bytes, description as given.
+func TestYpIfaceFromEntryLeaves(t *testing.T) {
+	row := iosxeRow{Name: "x", Admin: "if-state-up", Oper: "if-oper-state-ready",
+		LastChange: "2026-01-07T06:46:41.123456+00:00", PhysAddress: "00:00:5E:00:53:01"}
+	got := ypIfaceFrom(row, 6, 0, "uplink-a")
+	if got.LastChange != "2026-01-07T06:46:41Z" {
+		t.Errorf("LastChange = %q, want 2026-01-07T06:46:41Z", got.LastChange)
+	}
+	if got.PhysAddress != "00:00:5e:00:53:01" {
+		t.Errorf("PhysAddress = %q, want 00:00:5e:00:53:01", got.PhysAddress)
+	}
+	if got.Description != "uplink-a" {
+		t.Errorf("Description = %q, want uplink-a", got.Description)
+	}
+	for _, bad := range []string{"", "00:00:5E:00:53", "00:00:5E:00:53:0G", "not a mac"} {
+		row.PhysAddress, row.LastChange = bad, ""
+		got := ypIfaceFrom(row, 6, 0, "")
+		if got.PhysAddress != "" || got.LastChange != "" {
+			t.Errorf("phys %q: PhysAddress = %q, LastChange = %q, want both empty", bad, got.PhysAddress, got.LastChange)
 		}
 	}
 }
@@ -160,7 +186,7 @@ func TestYpIfaceFromStatus(t *testing.T) {
 		{iosxeAdminStatus(AdminUp), iosxeOperInvalid, "up", "unknown", true},
 	}
 	for _, c := range cases {
-		got := ypIfaceFrom(iosxeRow{Admin: c.admin, Oper: c.oper, Stats: iosxeStats{DiscontinuityTime: "2026-01-07T06:46:41.000000+00:00"}}, 6, 7)
+		got := ypIfaceFrom(iosxeRow{Admin: c.admin, Oper: c.oper, Stats: iosxeStats{DiscontinuityTime: "2026-01-07T06:46:41.000000+00:00"}}, 6, 7, "")
 		if got.Admin != c.wantAdmin || got.Oper != c.wantOper || got.Enabled != c.enabled {
 			t.Errorf("%s/%s = %s/%s enabled=%v", c.admin, c.oper, got.Admin, got.Oper, got.Enabled)
 		}
