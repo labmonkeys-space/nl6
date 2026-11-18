@@ -25,8 +25,11 @@ type ypSub struct {
 const (
 	ypXPathStatistics = "/ietf-interfaces:interfaces/interface/statistics"
 	ypXPathInterface  = "/ietf-interfaces:interfaces/interface"
-	ypXPathOnChange   = "/ietf-interfaces:interfaces/interface/oper-status | /ietf-interfaces:interfaces/interface/admin-status"
 )
+
+// ypDampeningCs is the on-change dampening period in centiseconds, as the
+// captured device configures it.
+const ypDampeningCs = 500
 
 var ypAnchor = time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)
 
@@ -34,7 +37,7 @@ var ypAnchor = time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)
 var vrpSubs = [3]ypSub{
 	{ID: 8, XPath: ypXPathStatistics, FilterRef: "STATEINTERFACE2", Periodic: true, PeriodCs: 6000, Anchor: ypAnchor},
 	{ID: 9, XPath: ypXPathInterface, FilterRef: "STATSINTERFACE2", Periodic: true, PeriodCs: 6000, Anchor: ypAnchor},
-	{ID: 10, XPath: ypXPathOnChange, FilterRef: "ONCHANGEINTERFACE"},
+	{ID: 10, XPath: ypXPathInterface, FilterRef: "ONCHANGEINTERFACE"},
 }
 
 // ypIface holds the ietf-interfaces leaves nl6 serves for one interface.
@@ -201,7 +204,7 @@ func encodeSubscriptionStarted(s ypSub, publisherID uint32) []byte {
 		b.WriteString(ypSeconds(s.Anchor))
 		b.WriteString(`"}`)
 	} else {
-		b.WriteString(`,"ietf-yang-push:on-change":{"dampening-period":0,"sync-on-start":true}`)
+		b.WriteString(`,"ietf-yang-push:on-change":{"dampening-period":` + strconv.Itoa(ypDampeningCs) + `}`)
 	}
 	b.WriteString("}}")
 	return b.Bytes()
@@ -321,12 +324,6 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 		case s.XPath == ypXPathStatistics:
 			b.WriteByte(',')
 			ypStatistics(&b, i)
-		case s.XPath == ypXPathOnChange:
-			// Subscription 10's filter selects only the two status leaves.
-			b.WriteString(`,"admin-status":`)
-			ypStr(&b, i.Admin)
-			b.WriteString(`,"oper-status":`)
-			ypStr(&b, i.Oper)
 		default:
 			ypEntryLeaves(&b, i, false)
 		}

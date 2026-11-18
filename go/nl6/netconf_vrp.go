@@ -294,7 +294,7 @@ func vrpSubscriptionsXML(dev *DeviceSimulator, e *YangPushExporter, id uint32) [
 			fmt.Fprintf(&b, `<periodic xmlns="%s"><period>%d</period><anchor-time>%s</anchor-time></periodic>`,
 				vrpYangPushNS, sub.PeriodCs, sub.Anchor.UTC().Format("2006-01-02T15:04:05Z"))
 		} else {
-			fmt.Fprintf(&b, `<on-change xmlns="%s"><dampening-period>0</dampening-period><sync-on-start>true</sync-on-start></on-change>`, vrpYangPushNS)
+			fmt.Fprintf(&b, `<on-change xmlns="%s"><dampening-period>%d</dampening-period></on-change>`, vrpYangPushNS, ypDampeningCs)
 		}
 		b.WriteString(`</subscription>`)
 	}

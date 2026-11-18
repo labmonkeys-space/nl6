@@ -217,8 +217,8 @@ func (e *YangPushExporter) ensureStarted() {
 	for i := range e.subs {
 		e.send(i, now, encodeSubscriptionStarted(e.subs[i], e.pubID))
 	}
-	// Subscription 10's sync push-update carries only the two status leaves
-	// and point-in-time initial-state.
+	// Subscription 10's sync push-update carries every interface entry and
+	// point-in-time initial-state.
 	e.send(2, now, encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now)))
 }
 
