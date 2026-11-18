@@ -258,7 +258,9 @@ func ypStatistics(b *bytes.Buffer, i ypIface) {
 // differ in: the on-change subscription (IETF 127) writes description on
 // every entry, empty or not, and the periodic one (IETF 125) leaves an empty
 // description out. upperPhys writes phys-address in upper case, as the device
-// does in a push-change-update.
+// does in a periodic push-update (IETF 125 and 127) and in a
+// push-change-update. Only the on-change sync push-update has it in lower
+// case.
 func ypEntryLeaves(b *bytes.Buffer, i ypIface, onChange, upperPhys bool) {
 	if i.Description != "" || onChange {
 		b.WriteString(`,"description":`)
@@ -313,7 +315,7 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 			b.WriteByte(',')
 			ypStatistics(&b, i)
 		default:
-			ypEntryLeaves(&b, i, !s.Periodic, false)
+			ypEntryLeaves(&b, i, !s.Periodic, s.Periodic)
 		}
 		b.WriteByte('}')
 	}

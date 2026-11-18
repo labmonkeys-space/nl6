@@ -52,7 +52,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   `description` is the `ifAlias` that SNMP serves: the topology link label, else the value in the device profile.
   Subscription 10 writes it on every entry, empty or not, as the IETF 127 capture does.
   Subscription 9 leaves an empty `description` out, as the IETF 125 capture does.
-  `phys-address` is lower case in a `push-update` and upper case in a `push-change-update`, as captured.
+  `phys-address` is upper case in a periodic `push-update` and in a `push-change-update`, and lower case in the sync `push-update` of the on-change subscription, as captured.
 - The YANG library carries `augmented-by` entries (draft-ietf-netmod-yang-library-augmentedby).
   They let NetCalyx load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
 - `ietf-netconf-monitoring` is served because the NE lists it.
