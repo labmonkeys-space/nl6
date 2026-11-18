@@ -11,6 +11,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 - Captures from `network-analytics/ietf-network-analytics-document-status`.
   - `125/Hackathon/yangpush-publisher/huawei-vrp-ip` holds the wire, the payloads and the subscription config.
   - `123/Hackathon/ipf-zbl1243-r-daisy-21_huawei_vrp_ne_20250717_141629` holds the YANG library and modules.
+  - `127/Hackathon/mb-alive-test-result/netcalyx/netcalyx-yangpush-receiver` holds the on-change subscription of a VRP router: `yp-s11-subscription-started.json`, `yp-s11-push-update.json` and `yp-s11-push-change-update.json`.
 - The capture repo has no licence.
   Permission to use derived fixtures was requested from Thomas Graf and is pending.
   If it is refused, replace the derived fixtures with synthetic ones of the same byte layout before merge.
@@ -33,13 +34,26 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 - The publisher ID is the device IPv4 address as a big-endian uint32.
   It is the header observation domain and the payload `message-publisher-id`.
   The capture value `16843789` is `0x0101040D`, which is `1.1.4.13`.
-- The message ID and the envelope `sequence-number` count per subscription.
-  They are 0 on `subscription-started`.
+- The message ID and the envelope `sequence-number` are one counter per publisher over all its subscriptions.
+  It starts at 1 and steps by 1, as in all 2446 messages of the IETF 127 capture.
+  The IETF 125 capture counted per subscription from 0. nl6 follows the newer capture.
 - Subscriptions 8 (statistics) and 9 (interface) are periodic at 60 s with anchor `2025-01-01T00:00:30Z`.
   Subscription 9 runs three seconds after subscription 8.
   Their filters are by reference (`STATEINTERFACE2`, `STATSINTERFACE2`), answered through `get` on `filters`.
 - A link-down interface reports `oper-status` `down`.
   The capture has 49 interfaces admin up and oper down, and none `lower-layer-down`.
+- Subscription 10 is the captured on-change subscription (the router's subscription 11).
+  Its filter is `/ietf-interfaces:interfaces/interface` and its `on-change` container carries `dampening-period` 500 and no `sync-on-start` leaf.
+  The sync `push-update` carries every interface entry with `point-in-time` `initial-state`.
+- A `push-change-update` carries one YANG Patch edit per interface.
+  The target is `/ietf-interfaces:interfaces/interface[name=<name>]` with the name as it is.
+  The value is the whole entry under `interface`, without a module prefix.
+  `point-in-time` is `state-changed`.
+- An interface entry has the leaves `name`, `description`, `type`, `enabled`, `link-up-down-trap-enable`, `admin-status`, `oper-status`, `last-change`, `if-index`, `phys-address` and `speed`, in that order, for subscriptions 9 and 10.
+  `description` is the `ifAlias` that SNMP serves: the topology link label, else the value in the device profile.
+  Subscription 10 writes it on every entry, empty or not, as the IETF 127 capture does.
+  Subscription 9 leaves an empty `description` out, as the IETF 125 capture does.
+  `phys-address` is upper case in a periodic `push-update` and in a `push-change-update`, and lower case in the sync `push-update` of the on-change subscription, as captured.
 - The YANG library carries `augmented-by` entries (draft-ietf-netmod-yang-library-augmentedby).
   They let NetCalyx load the envelope, observation, distributed-notification, push-revision and UDP-notif transport modules.
 - `ietf-netconf-monitoring` is served because the NE lists it.
@@ -48,12 +62,20 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 
 ## Where nl6 goes beyond the captures
 
-- Subscription 10 has no capture.
-  It is on-change for `oper-status | admin-status`, dampening 0, `sync-on-start` true, filter reference `ONCHANGEINTERFACE`.
-  The NE advertises on-change, but no capture shows it on the wire.
-  Its sync-on-start `push-update` carries only `name`, `admin-status` and `oper-status`.
-- Subscription 10 uses `point-in-time` `initial-state` for the sync push and `state-changed` for changes.
-  `ietf-yp-observation` defines those values for on-change subscriptions.
+- Subscription 10 keeps the ID 10 and the filter reference `ONCHANGEINTERFACE`.
+  The captured router uses ID 11, and its filter reference is not in the capture.
+- `higher-layer-if` and `lower-layer-if` are not sent.
+  The captured router lists each on one interface, between `phys-address` and `speed`.
+- The sync `push-update` goes out right after `subscription-started`.
+  The captured router sends it 5 seconds later.
+- `patch-id` counts the change-updates of a device from 0.
+  The capture has one change-update, with `patch-id` 2.
+- Dampening follows RFC 8641.
+  The first change goes out at once.
+  Changes in the next 5 seconds are collected and sent as one update when the period ends, one edit per interface in ifIndex order, each with the entry as it is then.
+  The capture has one change-update and cannot confirm this.
+- Both captured message shapes fail strict validation in the NMOP chain, on the real router as on nl6.
+  See nl6#1062.
 - The NE lacks the features `encode-json` (`ietf-subscribed-notifications`) and `yang-push-revision-supported` (`ietf-yang-push-revision`).
   nl6 adds them, because its payloads sit behind them.
 - The NE lists only `ietf-notification-capabilities` as augmenting `ietf-system-capabilities`.
@@ -114,7 +136,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
    - The Kafka JSON topic holds messages for subscriptions 8, 9 and 10 from each device.
    - A subscription 8 Kafka record has a payload above 1436 bytes, which only reassembly can deliver.
      nl6's `segments_sent` above `messages_sent` and `send_failures` 0 (summed over collectors) are a secondary check.
-   - An interface taken down through the REST API produces a subscription 10 message with `oper-status` `down` within 5 s.
+   - An interface taken down through the REST API produces a subscription 10 message with `oper-status` `down` within 10 s.
 
 The collector config is NetCalyx's `config_udpnotif_telemetry.yaml` with the Kafka JSON endpoint, `netconf.username: simadmin` and the generated key.
 NetCalyx v0.4.0 renamed `telemetry.id` to `telemetry.service_name`, the log targets to `netcalyx_collector` and `netcalyx_yang_push`, and the metric prefix to `netcalyx.`.
@@ -132,8 +154,11 @@ nl6 reported `messages_sent=27 segments_sent=372 send_failures=0`.
 
 The same day, three runs with `anydata_strict_validation: true` failed and produced two findings. Both apply to the captured NE8000 as much as to nl6:
 
-- NetCalyx seeds the library load from subscription-started's `module-version` (only `ietf-interfaces`, as the NE sends it) plus transitive imports. `iana-if-type` is imported by nothing, so libyang never sees it and rejects `iana-if-type:ethernetCsmacd` in every subscription 9 push-update. nl6 now serves `iana-if-type@2017-01-19` as import-only, which the NE library lists and nl6 had missed; serving it, and even listing it as implemented, does not make NetCalyx load it.
-- NetCalyx parses the whole payload with libyang `ANYDATA_STRICT`, so the RFC 8072 patch value `{"ietf-interfaces:interface":[...]}` in the subscription 10 change-update fails with `Node "interface" not found in the "ietf-interfaces" module`.
+- NetCalyx seeds the library load from subscription-started's `module-version` (only `ietf-interfaces`, as the NE sends it) plus transitive imports.
+  `iana-if-type` is imported by nothing, so libyang never sees it and rejects `iana-if-type:ethernetCsmacd` in every subscription 9 and subscription 10 update. nl6 now serves `iana-if-type@2017-01-19` as import-only, which the NE library lists and nl6 had missed; serving it, and even listing it as implemented, does not make NetCalyx load it.
+- NetCalyx parses the whole payload with libyang `ANYDATA_STRICT`.
+  Before the IETF 127 capture landed, subscription 10's RFC 8072 patch value `{"ietf-interfaces:interface":[...]}` failed with `Node "interface" not found in the "ietf-interfaces" module`.
+  With the captured unprefixed value `{"interface":[...]}`, it fails with `Node "interface" not found in the "ietf-yang-push" module` (nl6#1062).
 
 The gate therefore runs with strict anydata validation off, which is what NetGauze v0.13.0 checked. Follow-up and the options are in nl6#1017.
 

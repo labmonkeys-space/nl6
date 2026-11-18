@@ -159,6 +159,33 @@ func (s *SNMPServer) localSysName() string {
 	return s.device.sysName
 }
 
+// devIfAlias is the ifAlias of dev's interface: the label of the topology link
+// on that port, or "" when the port has no resolvable link.
+func devIfAlias(dev *DeviceSimulator, ifIndex int) string {
+	mgr := lldpManager()
+	if mgr == nil {
+		return ""
+	}
+	return devIfAliasVia(mgr, dev, ifIndex, mgr.FindDeviceByIP)
+}
+
+// devIfAliasVia is devIfAlias with the peer lookup supplied by the caller, for
+// a caller that must not block on the manager lock.
+func devIfAliasVia(mgr *SimulatorManager, dev *DeviceSimulator, ifIndex int, find func(ip string) *DeviceSimulator) string {
+	if dev == nil {
+		return ""
+	}
+	ll, found := findLink(mgr.topology.LinksFor(dev.IP.String()), ifIndex)
+	if !found {
+		return ""
+	}
+	peer := find(ll.PeerIP)
+	if peer == nil || peer.sysName == "" {
+		return "" // unresolvable peer / no sysName → no label (never "to__")
+	}
+	return "to_" + peer.sysName + "_" + devIfDescr(peer, ll.PeerIfIndex)
+}
+
 // lldpGet resolves a single LLDP-MIB or ifAlias OID to its dynamic value,
 // or "" when this device does not own/serve it (caller falls through to
 // the static oidIndex). It computes one OID directly — no full-table build
@@ -175,15 +202,7 @@ func (s *SNMPServer) lldpGet(oid string) string {
 		if !ok {
 			return ""
 		}
-		ll, found := findLink(s.deviceLinks(), ifIndex)
-		if !found {
-			return ""
-		}
-		peer := mgr.FindDeviceByIP(ll.PeerIP)
-		if peer == nil || peer.sysName == "" {
-			return "" // unresolvable peer / no sysName → no label (never "to__")
-		}
-		return "to_" + peer.sysName + "_" + devIfDescr(peer, ll.PeerIfIndex)
+		return devIfAlias(s.device, ifIndex)
 	}
 
 	if !isLLDPOID(oid) {

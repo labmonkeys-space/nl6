@@ -76,7 +76,7 @@ Three subscriptions start when the device starts.
 |----|------|---------|------------------|
 | 8 | periodic, 60 s | `/ietf-interfaces:interfaces/interface/statistics` | `STATEINTERFACE2` |
 | 9 | periodic, 60 s | `/ietf-interfaces:interfaces/interface` | `STATSINTERFACE2` |
-| 10 | on-change, dampening 0, sync on start | `oper-status` and `admin-status` of every interface | `ONCHANGEINTERFACE` |
+| 10 | on-change, dampening 5 s | `/ietf-interfaces:interfaces/interface` | `ONCHANGEINTERFACE` |
 
 The periodic subscriptions anchor at `2025-01-01T00:00:30Z`.
 Subscription 9 sends three seconds after subscription 8.
@@ -85,14 +85,17 @@ A large fleet therefore produces one synchronized burst a minute on the host and
 nl6 gives every device the same anchor, so the whole fleet bursts together.
 A real fleet does only if every device is configured with one anchor.
 
-Subscription 10 sends a `push-update` once at start with `name`, `admin-status` and `oper-status` of every interface.
+Subscription 10 sends a `push-update` once at start with the entry of every interface.
 Its `point-in-time` is `initial-state`.
-After that it sends a `push-change-update` for each `oper-status` or `admin-status` change, with `point-in-time` `state-changed`.
+After that it sends a `push-change-update` when `oper-status` or `admin-status` of an interface changes, with `point-in-time` `state-changed`.
+The update holds one YANG Patch edit per interface, and the value of an edit is the whole interface entry.
 Subscriptions 8 and 9 use `current-accounting`.
-Take an interface down with [the interface state API](interface-state.md) and the change arrives within a second.
+Take an interface down with [the interface state API](interface-state.md) when no dampening period is open and the change arrives within a second.
+Further changes in the next 5 seconds arrive together when those 5 seconds end.
 
 The start of each subscription sends a `subscription-started` notification first.
-Message IDs and the envelope `sequence-number` count per subscription and start at 0 on `subscription-started`.
+The message ID and the envelope `sequence-number` are the same number.
+It is one counter per device over all its subscriptions and starts at 1, so the three `subscription-started` notifications are 1, 2 and 3.
 
 Every message is JSON in the VRP envelope `ietf-yp-notification:envelope`.
 It carries `event-time`, `hostname` (the device sysName), `sequence-number` and `contents`.
@@ -163,7 +166,9 @@ That participation is not implemented.
 nl6 follows a real NE8000 on VRP R025C00.
 These differences are deliberate.
 
-- Subscription 10 is not verified against a real device. The NE8000 advertises on-change; nl6 builds the subscription from RFC 8641 and the same envelope.
+- Subscription 10 follows a captured VRP router, with four differences: `higher-layer-if` and `lower-layer-if` are not sent, the first `push-update` is not delayed by 5 seconds, `patch-id` is a counter, and changes inside a dampening period are collected into one update.
+  The capture holds one change-update and cannot confirm the last two.
+  The ID 10 and the filter reference `ONCHANGEINTERFACE` are nl6's own.
 - Every interface appears in subscription 8. The real device sent statistics for a subset.
 - The `ietf-udp-client` module revision `2025-05-14` is a guess. The device library lists none.
 - `ietf-yang-push-revision` is served at revision `2025-08-29`, the revision NetGauze v0.13.0 bundled when the fixtures were written. NetCalyx v0.4.0 bundles 2025-12-07, not yet checked against nl6. The NE library does not list the module. Its payload keys `module-version` by `name`, which only 2025-08-29 defines (2024-12-17 used `module-name`).

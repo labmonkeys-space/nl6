@@ -234,15 +234,11 @@ func (s *netconfSession) vrpExporter() *YangPushExporter {
 // (/ietf-interfaces:interfaces/interface) with the if: prefix on every step,
 // as the device's XML filter carries it.
 func vrpXPathXML(p string) string {
-	parts := strings.Split(p, " | ")
-	for i, part := range parts {
-		steps := strings.Split(strings.TrimPrefix(part, "/"), "/")
-		for j, st := range steps {
-			steps[j] = "if:" + strings.TrimPrefix(st, "ietf-interfaces:")
-		}
-		parts[i] = "/" + strings.Join(steps, "/")
+	steps := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	for i, st := range steps {
+		steps[i] = "if:" + strings.TrimPrefix(st, "ietf-interfaces:")
 	}
-	return strings.Join(parts, " | ")
+	return "/" + strings.Join(steps, "/")
 }
 
 // vrpFiltersXML renders the selection filters of e's subscriptions. The if:
@@ -294,7 +290,7 @@ func vrpSubscriptionsXML(dev *DeviceSimulator, e *YangPushExporter, id uint32) [
 			fmt.Fprintf(&b, `<periodic xmlns="%s"><period>%d</period><anchor-time>%s</anchor-time></periodic>`,
 				vrpYangPushNS, sub.PeriodCs, sub.Anchor.UTC().Format("2006-01-02T15:04:05Z"))
 		} else {
-			fmt.Fprintf(&b, `<on-change xmlns="%s"><dampening-period>0</dampening-period><sync-on-start>true</sync-on-start></on-change>`, vrpYangPushNS)
+			fmt.Fprintf(&b, `<on-change xmlns="%s"><dampening-period>%d</dampening-period></on-change>`, vrpYangPushNS, ypDampeningCs)
 		}
 		b.WriteString(`</subscription>`)
 	}

@@ -52,9 +52,11 @@ func ypCompare(t *testing.T, got []byte, fixture string) {
 func ypTestIfaces(stats bool) []ypIface {
 	st := iosxeStats{DiscontinuityTime: "2026-01-07T06:46:41Z"}
 	first := ypIface{Name: "GigabitEthernet0/1/0", Type: "iana-if-type:ethernetCsmacd", Admin: "up", Oper: "up",
-		Enabled: true, IfIndex: 1, Speed: 1000000000, Stats: st}
+		Enabled: true, IfIndex: 1, Speed: 1000000000, Stats: st,
+		Description: "uplink-a", LastChange: "2026-01-07T06:46:41Z", PhysAddress: "00:00:5e:00:53:01"}
 	second := ypIface{Name: "GigabitEthernet0/1/1", Type: "iana-if-type:ethernetCsmacd", Admin: "up", Oper: "down",
-		Enabled: true, IfIndex: 2, Speed: 1000000000, Stats: st}
+		Enabled: true, IfIndex: 2, Speed: 1000000000, Stats: st,
+		LastChange: "2026-01-07T06:46:41Z", PhysAddress: "00:00:5e:00:53:02"}
 	if stats {
 		first.Stats = iosxeStats{DiscontinuityTime: st.DiscontinuityTime,
 			InOctets: 138303671, InUnicastPkts: 166138, InBroadcastPkts: 24780, InMulticastPkts: 1184847,
@@ -93,24 +95,74 @@ func TestEncodePushUpdateOnChangeSync(t *testing.T) {
 	ypCompare(t, ypUpdate(t, vrpSubs[2], ypTestIfaces(false)), "push-update-10.json")
 }
 
-func ypChange(t *testing.T, ifc ypIface, changed StateLeafBits) []byte {
-	c := encodePushChangeUpdate(vrpSubs[2], ypMustTime(t, "2026-01-20T08:17:12.240Z"), ypTestPublisher, "edit1", ifc, changed)
+func ypChange(t *testing.T, patchID uint64, ifcs []ypIface) []byte {
+	c := encodePushChangeUpdate(vrpSubs[2], ypMustTime(t, "2026-01-20T08:17:12.240Z"), ypTestPublisher, patchID, ifcs)
 	return encodeEnvelope(ypMustTime(t, "2026-01-20T08:17:12.250Z"), ypTestHost, 1, c)
 }
 
-func TestEncodePushChangeUpdateOper(t *testing.T) {
-	ifc := ypTestIfaces(false)[0]
-	ifc.Oper = "down"
-	ypCompare(t, ypChange(t, ifc, LeafOperStatus), "push-change-update-10.json")
+// ypEdits decodes the yang-patch of a change-update envelope.
+func ypEdits(t *testing.T, raw []byte) (patchID string, edits []struct {
+	EditID string          `json:"edit-id"`
+	Target string          `json:"target"`
+	Value  json.RawMessage `json:"value"`
+}) {
+	t.Helper()
+	var env struct {
+		E struct {
+			C struct {
+				U struct {
+					D struct {
+						P struct {
+							ID   string `json:"patch-id"`
+							Edit []struct {
+								EditID string          `json:"edit-id"`
+								Target string          `json:"target"`
+								Value  json.RawMessage `json:"value"`
+							} `json:"edit"`
+						} `json:"yang-patch"`
+					} `json:"datastore-changes"`
+				} `json:"ietf-yang-push:push-change-update"`
+			} `json:"contents"`
+		} `json:"ietf-yp-notification:envelope"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("change-update is not valid JSON: %v\n%s", err, raw)
+	}
+	return env.E.C.U.D.P.ID, env.E.C.U.D.P.Edit
 }
 
-func TestEncodePushChangeUpdateAdmin(t *testing.T) {
+func TestEncodePushChangeUpdateOneEdit(t *testing.T) {
 	ifc := ypTestIfaces(false)[0]
-	ifc.Admin, ifc.Oper = "down", "down"
-	got := ypChange(t, ifc, LeafAdminStatus|LeafOperStatus)
-	want := `{"ietf-yp-notification:envelope":{"event-time":"2026-01-20T08:17:12.250Z","hostname":"ne8000-sim-1","sequence-number":1,"contents":{"ietf-yang-push:push-change-update":{"id":10,"ietf-yp-observation:timestamp":"2026-01-20T08:17:12.240Z","ietf-yp-observation:point-in-time":"state-changed","ietf-distributed-notif:message-publisher-id":3221225997,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":"edit1","operation":"merge","target":"/ietf-interfaces:interfaces/interface=GigabitEthernet0%2F1%2F0","value":{"ietf-interfaces:interface":[{"name":"GigabitEthernet0/1/0","admin-status":"down","oper-status":"down"}]}}]}}}}}}`
-	if string(got) != want {
-		t.Errorf("got:  %s\nwant: %s", got, want)
+	ifc.Oper, ifc.LastChange = "down", "2026-01-20T08:17:12Z"
+	ypCompare(t, ypChange(t, 0, []ypIface{ifc}), "push-change-update-10.json")
+}
+
+func TestEncodePushChangeUpdateTwoEdits(t *testing.T) {
+	id, edits := ypEdits(t, ypChange(t, 7, ypTestIfaces(false)))
+	if id != "7" {
+		t.Errorf("patch-id = %q, want 7", id)
+	}
+	if len(edits) != 2 || edits[0].EditID != "edit1" || edits[1].EditID != "edit2" {
+		t.Fatalf("edits = %+v, want edit1 and edit2", edits)
+	}
+	if want := "/ietf-interfaces:interfaces/interface[name=GigabitEthernet0/1/1]"; edits[1].Target != want {
+		t.Errorf("second target = %q, want %q", edits[1].Target, want)
+	}
+	// The captured on-change subscription writes description on every entry,
+	// empty or not.
+	if !bytes.Contains(edits[1].Value, []byte(`"name":"GigabitEthernet0/1/1","description":"","type":`)) {
+		t.Errorf("second value lacks an empty description: %s", edits[1].Value)
+	}
+}
+
+// The device writes the list key into the target as it is. Only JSON string
+// escaping applies.
+func TestEncodePushChangeUpdateNameIsUnescaped(t *testing.T) {
+	ifc := ypTestIfaces(false)[0]
+	ifc.Name = `Eth 1/0]"x`
+	_, edits := ypEdits(t, ypChange(t, 0, []ypIface{ifc}))
+	if want := `/ietf-interfaces:interfaces/interface[name=Eth 1/0]"x]`; len(edits) != 1 || edits[0].Target != want {
+		t.Errorf("target = %+v, want %q", edits, want)
 	}
 }
 
@@ -139,8 +191,32 @@ func TestYpIfaceTypeIdentity(t *testing.T) {
 		6: "iana-if-type:ethernetCsmacd", 24: "iana-if-type:softwareLoopback",
 		23: "iana-if-type:ppp", 9999: "iana-if-type:other", 0: "iana-if-type:other",
 	} {
-		if got := ypIfaceFrom(iosxeRow{}, ifType, 0).Type; got != want {
+		if got := ypIfaceFrom(iosxeRow{}, ifType, 0, "").Type; got != want {
 			t.Errorf("ifType %d = %q, want %q", ifType, got, want)
+		}
+	}
+}
+
+// The entry leaves beyond status come from the row and the caller: last-change
+// in seconds, phys-address as six lower-case bytes, description as given.
+func TestYpIfaceFromEntryLeaves(t *testing.T) {
+	row := iosxeRow{Name: "x", Admin: "if-state-up", Oper: "if-oper-state-ready",
+		LastChange: "2026-01-07T06:46:41.123456+00:00", PhysAddress: "00:00:5E:00:53:01"}
+	got := ypIfaceFrom(row, 6, 0, "uplink-a")
+	if got.LastChange != "2026-01-07T06:46:41Z" {
+		t.Errorf("LastChange = %q, want 2026-01-07T06:46:41Z", got.LastChange)
+	}
+	if got.PhysAddress != "00:00:5e:00:53:01" {
+		t.Errorf("PhysAddress = %q, want 00:00:5e:00:53:01", got.PhysAddress)
+	}
+	if got.Description != "uplink-a" {
+		t.Errorf("Description = %q, want uplink-a", got.Description)
+	}
+	for _, bad := range []string{"", "00:00:5E:00:53", "00:00:5E:00:53:0G", "not a mac"} {
+		row.PhysAddress, row.LastChange = bad, ""
+		got := ypIfaceFrom(row, 6, 0, "")
+		if got.PhysAddress != "" || got.LastChange != "" {
+			t.Errorf("phys %q: PhysAddress = %q, LastChange = %q, want both empty", bad, got.PhysAddress, got.LastChange)
 		}
 	}
 }
@@ -160,7 +236,7 @@ func TestYpIfaceFromStatus(t *testing.T) {
 		{iosxeAdminStatus(AdminUp), iosxeOperInvalid, "up", "unknown", true},
 	}
 	for _, c := range cases {
-		got := ypIfaceFrom(iosxeRow{Admin: c.admin, Oper: c.oper, Stats: iosxeStats{DiscontinuityTime: "2026-01-07T06:46:41.000000+00:00"}}, 6, 7)
+		got := ypIfaceFrom(iosxeRow{Admin: c.admin, Oper: c.oper, Stats: iosxeStats{DiscontinuityTime: "2026-01-07T06:46:41.000000+00:00"}}, 6, 7, "")
 		if got.Admin != c.wantAdmin || got.Oper != c.wantOper || got.Enabled != c.enabled {
 			t.Errorf("%s/%s = %s/%s enabled=%v", c.admin, c.oper, got.Admin, got.Oper, got.Enabled)
 		}
@@ -217,20 +293,6 @@ func TestYangPushPayloadsValidateWithYanglint(t *testing.T) {
 		args = append(args, file)
 		if out, err := exec.Command(yl, args...).CombinedOutput(); err != nil {
 			t.Errorf("%s: yanglint: %v\n%s", name, err, out)
-		}
-	}
-}
-
-func TestYpKeyEscape(t *testing.T) {
-	cases := map[string]string{
-		"GigabitEthernet0/1/0": "GigabitEthernet0%2F1%2F0",
-		"Eth1:2,3":             "Eth1%3A2%2C3",
-		"a-b.c_d~e":            "a-b.c_d~e",
-		"a b=c@d+e$f&g":        "a%20b%3Dc%40d%2Be%24f%26g",
-	}
-	for in, want := range cases {
-		if got := ypKeyEscape(in); got != want {
-			t.Errorf("ypKeyEscape(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

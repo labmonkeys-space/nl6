@@ -25,8 +25,14 @@ type ypSub struct {
 const (
 	ypXPathStatistics = "/ietf-interfaces:interfaces/interface/statistics"
 	ypXPathInterface  = "/ietf-interfaces:interfaces/interface"
-	ypXPathOnChange   = "/ietf-interfaces:interfaces/interface/oper-status | /ietf-interfaces:interfaces/interface/admin-status"
 )
+
+// ypDampeningCs is the on-change dampening period in centiseconds, as the
+// captured device configures it.
+const ypDampeningCs = 500
+
+// ypDampening is the same period as a duration.
+const ypDampening = ypDampeningCs * 10 * time.Millisecond
 
 var ypAnchor = time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)
 
@@ -34,17 +40,41 @@ var ypAnchor = time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)
 var vrpSubs = [3]ypSub{
 	{ID: 8, XPath: ypXPathStatistics, FilterRef: "STATEINTERFACE2", Periodic: true, PeriodCs: 6000, Anchor: ypAnchor},
 	{ID: 9, XPath: ypXPathInterface, FilterRef: "STATSINTERFACE2", Periodic: true, PeriodCs: 6000, Anchor: ypAnchor},
-	{ID: 10, XPath: ypXPathOnChange, FilterRef: "ONCHANGEINTERFACE"},
+	{ID: 10, XPath: ypXPathInterface, FilterRef: "ONCHANGEINTERFACE"},
 }
 
 // ypIface holds the ietf-interfaces leaves nl6 serves for one interface.
 type ypIface struct {
 	Name, Type, Admin, Oper string
-	Enabled                 bool
-	IfIndex                 int
-	Speed                   uint64
-	Stats                   iosxeStats
-	InUnknownProtos         uint32
+	// Description is the ifAlias, LastChange a date-and-time in seconds and
+	// PhysAddress six lower-case hex bytes. Each is empty when nl6 has no value.
+	Description, LastChange, PhysAddress string
+	Enabled                              bool
+	IfIndex                              int
+	Speed                                uint64
+	Stats                                iosxeStats
+	InUnknownProtos                      uint32
+}
+
+// ypPhysAddress returns v as six lower-case hex bytes joined by colons, or ""
+// when v is not a MAC address in that form.
+func ypPhysAddress(v string) string {
+	if len(v) != 17 {
+		return ""
+	}
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if i%3 == 2 {
+			if c != ':' {
+				return ""
+			}
+			continue
+		}
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return ""
+		}
+	}
+	return strings.ToLower(v)
 }
 
 // ypIfTypes maps IANA ifType numbers to iana-if-type identities.
@@ -87,7 +117,7 @@ var ypOperStatus = map[string]string{
 }
 
 // ypIfaceFrom converts an IOS XE row into ietf-interfaces values.
-func ypIfaceFrom(row iosxeRow, ifType int, inUnknownProtos uint32) ypIface {
+func ypIfaceFrom(row iosxeRow, ifType int, inUnknownProtos uint32, description string) ypIface {
 	admin, ok := ypAdminStatus[row.Admin]
 	if !ok {
 		admin = "unknown"
@@ -100,8 +130,15 @@ func ypIfaceFrom(row iosxeRow, ifType int, inUnknownProtos uint32) ypIface {
 	if t, err := time.Parse("2006-01-02T15:04:05.000000+00:00", stats.DiscontinuityTime); err == nil {
 		stats.DiscontinuityTime = t.UTC().Format("2006-01-02T15:04:05Z")
 	}
+	lastChange := ""
+	if t, err := time.Parse("2006-01-02T15:04:05.000000+00:00", row.LastChange); err == nil {
+		lastChange = ypSeconds(t)
+	}
 	return ypIface{
 		Name:            row.Name,
+		Description:     description,
+		LastChange:      lastChange,
+		PhysAddress:     ypPhysAddress(row.PhysAddress),
 		Type:            ypTypeIdentity(ifType),
 		Admin:           admin,
 		Oper:            oper,
@@ -170,7 +207,7 @@ func encodeSubscriptionStarted(s ypSub, publisherID uint32) []byte {
 		b.WriteString(ypSeconds(s.Anchor))
 		b.WriteString(`"}`)
 	} else {
-		b.WriteString(`,"ietf-yang-push:on-change":{"dampening-period":0,"sync-on-start":true}`)
+		b.WriteString(`,"ietf-yang-push:on-change":{"dampening-period":` + strconv.Itoa(ypDampeningCs) + `}`)
 	}
 	b.WriteString("}}")
 	return b.Bytes()
@@ -216,22 +253,43 @@ func ypStatistics(b *bytes.Buffer, i ypIface) {
 	b.WriteByte('}')
 }
 
-// ypKeyEscape percent-encodes a list key value for a target path. Only the
-// RFC 3986 unreserved set stays literal (RFC 8040 section 3.5.3).
-func ypKeyEscape(v string) string {
-	const hex = "0123456789ABCDEF"
-	var b strings.Builder
-	for i := 0; i < len(v); i++ {
-		c := v[i]
-		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~' {
-			b.WriteByte(c)
-			continue
-		}
-		b.WriteByte('%')
-		b.WriteByte(hex[c>>4])
-		b.WriteByte(hex[c&15])
+// ypEntryLeaves writes the leaves of one interface entry after its name, in the
+// order a VRP device sends them. onChange selects what the two captures
+// differ in: the on-change subscription (IETF 127) writes description on
+// every entry, empty or not, and the periodic one (IETF 125) leaves an empty
+// description out. upperPhys writes phys-address in upper case, as the device
+// does in a periodic push-update (IETF 125 and 127) and in a
+// push-change-update. Only the on-change sync push-update has it in lower
+// case.
+func ypEntryLeaves(b *bytes.Buffer, i ypIface, onChange, upperPhys bool) {
+	if i.Description != "" || onChange {
+		b.WriteString(`,"description":`)
+		ypStr(b, i.Description)
 	}
-	return b.String()
+	b.WriteString(`,"type":`)
+	ypStr(b, i.Type)
+	b.WriteString(`,"enabled":` + strconv.FormatBool(i.Enabled))
+	b.WriteString(`,"link-up-down-trap-enable":"enabled","admin-status":`)
+	ypStr(b, i.Admin)
+	b.WriteString(`,"oper-status":`)
+	ypStr(b, i.Oper)
+	if i.LastChange != "" {
+		b.WriteString(`,"last-change":`)
+		ypStr(b, i.LastChange)
+	}
+	b.WriteString(`,"if-index":` + strconv.Itoa(i.IfIndex))
+	if i.PhysAddress != "" {
+		phys := i.PhysAddress
+		if upperPhys {
+			phys = strings.ToUpper(phys)
+		}
+		b.WriteString(`,"phys-address":`)
+		ypStr(b, phys)
+	}
+	if i.Speed > 0 {
+		b.WriteString(`,"speed":`)
+		ypU64Str(b, i.Speed)
+	}
 }
 
 // encodePushUpdate renders a push-update for subscription s. A periodic
@@ -256,25 +314,8 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 		case s.XPath == ypXPathStatistics:
 			b.WriteByte(',')
 			ypStatistics(&b, i)
-		case s.XPath == ypXPathOnChange:
-			// Subscription 10's filter selects only the two status leaves.
-			b.WriteString(`,"admin-status":`)
-			ypStr(&b, i.Admin)
-			b.WriteString(`,"oper-status":`)
-			ypStr(&b, i.Oper)
 		default:
-			b.WriteString(`,"type":`)
-			ypStr(&b, i.Type)
-			b.WriteString(`,"enabled":` + strconv.FormatBool(i.Enabled))
-			b.WriteString(`,"link-up-down-trap-enable":"enabled","admin-status":`)
-			ypStr(&b, i.Admin)
-			b.WriteString(`,"oper-status":`)
-			ypStr(&b, i.Oper)
-			b.WriteString(`,"if-index":` + strconv.Itoa(i.IfIndex))
-			if i.Speed > 0 {
-				b.WriteString(`,"speed":`)
-				ypU64Str(&b, i.Speed)
-			}
+			ypEntryLeaves(&b, i, !s.Periodic, s.Periodic)
 		}
 		b.WriteByte('}')
 	}
@@ -282,26 +323,26 @@ func encodePushUpdate(s ypSub, obs time.Time, publisherID uint32, ifs []ypIface)
 	return b.Bytes()
 }
 
-// encodePushChangeUpdate renders an on-change push-change-update carrying the
-// changed status leaves of ifc as one merge edit.
-func encodePushChangeUpdate(s ypSub, obs time.Time, publisherID uint32, editID string, ifc ypIface, changed StateLeafBits) []byte {
+// encodePushChangeUpdate renders an on-change push-change-update with one
+// merge edit per interface in ifcs. Target and value follow the captured VRP
+// device: the list key is written into the target as it is, and the value is
+// the whole entry under "interface" without a module prefix.
+func encodePushChangeUpdate(s ypSub, obs time.Time, publisherID uint32, patchID uint64, ifcs []ypIface) []byte {
 	var b bytes.Buffer
 	b.WriteString(`{"ietf-yang-push:push-change-update":{`)
 	ypObservation(&b, s, obs, publisherID, "state-changed")
-	b.WriteString(`,"datastore-changes":{"yang-patch":{"patch-id":"0","edit":[{"edit-id":`)
-	ypStr(&b, editID)
-	b.WriteString(`,"operation":"merge","target":`)
-	ypStr(&b, "/ietf-interfaces:interfaces/interface="+ypKeyEscape(ifc.Name))
-	b.WriteString(`,"value":{"ietf-interfaces:interface":[{"name":`)
-	ypStr(&b, ifc.Name)
-	if changed&LeafAdminStatus != 0 {
-		b.WriteString(`,"admin-status":`)
-		ypStr(&b, ifc.Admin)
+	b.WriteString(`,"datastore-changes":{"yang-patch":{"patch-id":"` + strconv.FormatUint(patchID, 10) + `","edit":[`)
+	for n, ifc := range ifcs {
+		if n > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(`{"edit-id":"edit` + strconv.Itoa(n+1) + `","operation":"merge","target":`)
+		ypStr(&b, "/ietf-interfaces:interfaces/interface[name="+ifc.Name+"]")
+		b.WriteString(`,"value":{"interface":[{"name":`)
+		ypStr(&b, ifc.Name)
+		ypEntryLeaves(&b, ifc, true, true)
+		b.WriteString("}]}}")
 	}
-	if changed&LeafOperStatus != 0 {
-		b.WriteString(`,"oper-status":`)
-		ypStr(&b, ifc.Oper)
-	}
-	b.WriteString("}]}}]}}}}")
+	b.WriteString("]}}}}")
 	return b.Bytes()
 }

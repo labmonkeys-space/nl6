@@ -6,13 +6,22 @@ It models Huawei VRP R025C00.
 This page says where the simulation ends.
 See the [YANG-Push reference](../../../docs/reference/yang-push-udp-notif.md) for the wire behavior.
 
-## Subscription 10 is not verified against a real device
+## Subscription 10 follows a capture, with four differences
 
-Subscription 10 is on-change for `oper-status` and `admin-status`, with dampening 0 and sync on start.
-The NE8000 advertises on-change.
-nl6 builds the subscription from RFC 8641 and the envelope of the periodic subscriptions.
-Its sync-on-start `push-update` carries only `name`, `admin-status` and `oper-status`.
-The filter reference `ONCHANGEINTERFACE` is nl6's own.
+Subscription 10 is the on-change subscription of a captured VRP router: the whole interface entry, dampening 5 seconds.
+Four things differ from the capture.
+
+- `higher-layer-if` and `lower-layer-if` are not sent.
+- The sync `push-update` goes out right after `subscription-started`, not 5 seconds later.
+- `patch-id` counts the change-updates of a device from 0.
+  The capture has one change-update and cannot confirm the counter.
+- Changes inside a dampening period are collected into one update with one edit per interface.
+  The capture cannot confirm this either.
+
+The ID 10 and the filter reference `ONCHANGEINTERFACE` are nl6's own.
+
+Only a change of `admin-status` or `oper-status` triggers a change-update.
+A new `description`, for example after a topology link is added, appears in subscription 9 and not in subscription 10 until that interface changes state.
 
 ## Statistics cover every interface
 

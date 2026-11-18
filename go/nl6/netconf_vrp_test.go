@@ -267,8 +267,9 @@ func TestVrpGetSubscriptionByID(t *testing.T) {
 	}
 
 	on := vrpDataInner(t, c.rpc(vrpNGSubscriptionReq(10)))
-	want := `<on-change xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><dampening-period>0</dampening-period><sync-on-start>true</sync-on-start></on-change>`
+	want := `<on-change xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><dampening-period>500</dampening-period></on-change>`
 	if !strings.Contains(on, "<id>10</id>") || !strings.Contains(on, want) || strings.Contains(on, "periodic") ||
+		strings.Contains(on, "sync-on-start") ||
 		!strings.Contains(on, ">ONCHANGEINTERFACE</selection-filter-ref>") {
 		t.Fatalf("subscription 10:\n%s", on)
 	}
@@ -289,7 +290,7 @@ func TestVrpGetFilters(t *testing.T) {
 	want := `<filters xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications">` +
 		`<selection-filter xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><filter-id>STATEINTERFACE2</filter-id><datastore-xpath-filter xmlns:if="urn:ietf:params:xml:ns:yang:ietf-interfaces">/if:interfaces/if:interface/if:statistics</datastore-xpath-filter></selection-filter>` +
 		`<selection-filter xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><filter-id>STATSINTERFACE2</filter-id><datastore-xpath-filter xmlns:if="urn:ietf:params:xml:ns:yang:ietf-interfaces">/if:interfaces/if:interface</datastore-xpath-filter></selection-filter>` +
-		`<selection-filter xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><filter-id>ONCHANGEINTERFACE</filter-id><datastore-xpath-filter xmlns:if="urn:ietf:params:xml:ns:yang:ietf-interfaces">/if:interfaces/if:interface/if:oper-status | /if:interfaces/if:interface/if:admin-status</datastore-xpath-filter></selection-filter>` +
+		`<selection-filter xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-push"><filter-id>ONCHANGEINTERFACE</filter-id><datastore-xpath-filter xmlns:if="urn:ietf:params:xml:ns:yang:ietf-interfaces">/if:interfaces/if:interface</datastore-xpath-filter></selection-filter>` +
 		`</filters>`
 	if in != want {
 		t.Fatalf("filters\n got: %s\nwant: %s", in, want)
