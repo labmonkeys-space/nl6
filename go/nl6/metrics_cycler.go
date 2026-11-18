@@ -40,7 +40,7 @@ type MetricsCycler struct {
 	memUsed    [numDataPoints]int64 // Memory used in KB
 	tempPoints [numDataPoints]int   // Temperature in Celsius
 	memTotal   int64                // Total memory in KB (constant)
-	startTime  time.Time            // origin of the served point: the boot instant NewMetricsCycler was given
+	startTime  time.Time            // origin of the served point: the boot instant NewMetricsCycler was given, or now for a zero one
 	now        func() time.Time     // clock of the point, nil reads time.Now; unsynchronised, set before sharing
 	gpuMetrics []*GPUMetrics        // Per-GPU cycling metrics (nil for non-GPU devices)
 	// ifCounters holds the per-interface HC counter cycler (nil if no HC OIDs).
@@ -62,12 +62,13 @@ type MetricsCycler struct {
 
 // NewMetricsCycler creates a cycler with 100 data points generated from the
 // given seed and device profile. Each device gets a unique curve. boot is the
-// origin of the served point: initDeviceCyclers passes the device's boot
-// instant, so the cycler cannot be built with a clock of its own (nl6#1031).
+// origin of the served point, chosen by the caller: initDeviceCyclers passes
+// the device's boot instant (nl6#1031, a parameter since nl6#1043). A zero
+// boot falls back to now, as the counter and optical engines do.
 func NewMetricsCycler(seed int64, profile DeviceProfile, boot time.Time) *MetricsCycler {
 	c := &MetricsCycler{
 		memTotal:  profile.MemTotalKB,
-		startTime: boot,
+		startTime: bootOrNow(boot),
 	}
 
 	rng := newSeededRand(seed)
