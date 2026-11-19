@@ -652,6 +652,12 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 		}
 		return ""
 	}
+	if protocol == "yang-push" {
+		if dev.yangPushExporter != nil {
+			return dev.yangPushExporter.collector
+		}
+		return ""
+	}
 	if protocol == "snmp-trap" {
 		if dev.trapExporter != nil {
 			return dev.trapExporter.collectorStr

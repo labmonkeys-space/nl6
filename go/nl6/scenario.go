@@ -31,7 +31,7 @@ type Scenario struct {
 	// therefore a deliberate assertion, not a redundancy — it upgrades that one
 	// address to the loud-miss semantics of the explicit list.
 	ParticipantsCIDR []string
-	// Protocol is the participating push protocol. MVP: "syslog" only.
+	// Protocol is the participating push protocol, one of scenarioProtocols.
 	Protocol string
 	// Rate is the per-device emission rate in events/second (FR4). The
 	// constant-rate stub emits at exactly this rate (fixed interval);
@@ -77,6 +77,7 @@ var scenarioProtocols = map[string]bool{
 	"snmp-trap":    true,
 	"sflow":        true,
 	"netflow5":     true,
+	"yang-push":    true,
 }
 
 // flowScenarioProtocols are the FlowExporter-backed scenario protocols (gated
@@ -210,7 +211,7 @@ func (s *Scenario) Validate() error {
 		}
 	}
 	if !scenarioProtocols[s.Protocol] {
-		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)", s.Protocol)
+		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5, yang-push)", s.Protocol)
 	}
 	if s.Rate <= 0 || math.IsNaN(s.Rate) || math.IsInf(s.Rate, 0) {
 		return fmt.Errorf("scenario: rate must be a finite value > 0 events/second, got %g", s.Rate)

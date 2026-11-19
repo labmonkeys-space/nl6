@@ -121,7 +121,7 @@ func (e *GnmiDialoutExporter) scenarioGate(now time.Time) (enqueue bool, leave f
 	if part == nil {
 		// Fidelity mode: no autonomous dial-out outside a scenario window.
 		// Through the shared predicate for the same reason as the flow tick:
-		// one rule for all four subsystems. A dial-out push is autonomous (it
+		// one rule for all subsystems. A dial-out push is autonomous (it
 		// is a stream, never an operator action), so sourceBackground is the
 		// honest classification and behaviour is unchanged.
 		if fidelityMutesBackground(sourceBackground) {

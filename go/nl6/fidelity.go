@@ -10,7 +10,7 @@ import "sync/atomic"
 // fidelity.go — global "fidelity mode" (-fidelity, and POST /api/v1/fidelity
 // at runtime). When on, the fleet is
 // SILENT: no autonomous background push telemetry (flow, SNMP trap, syslog,
-// gNMI dial-out) leaves any device that is not currently inside a running
+// gNMI dial-out, YANG-Push) leaves any device that is not currently inside a running
 // load-test scenario window. Devices still answer polls (SNMP/SSH/HTTPS), and
 // a scenario still emits its gated traffic during [T0,T1) — so an operator
 // gets a clean measurement window: silent before the run, only the scenario
