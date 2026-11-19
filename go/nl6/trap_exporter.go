@@ -405,13 +405,11 @@ func (e *TrapExporter) fireWithSourceLabelled(entry *CatalogEntry, overrides map
 	case gateSuppressSilent:
 		return 0
 	case gateSuppressCounted:
-		p.ledger.emitted.Add(1)
-		p.ledger.suppressedPreWindow.Add(1)
+		p.ledger.countUnsent(&p.ledger.suppressedPreWindow, 1)
 		return 0
 	}
 	if !p.drain.admit() {
-		p.ledger.emitted.Add(1)
-		p.ledger.dropped.Add(1)
+		p.ledger.countUnsent(&p.ledger.dropped, 1)
 		return 0
 	}
 	defer p.drain.leave()

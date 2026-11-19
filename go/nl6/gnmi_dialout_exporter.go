@@ -135,8 +135,7 @@ func (e *GnmiDialoutExporter) scenarioGate(now time.Time) (enqueue bool, leave f
 		return false, func() {}
 	}
 	if !part.drain.admit() {
-		part.ledger.emitted.Add(1)
-		part.ledger.dropped.Add(1)
+		part.ledger.countUnsent(&part.ledger.dropped, 1)
 		return false, func() {}
 	}
 	part.ledger.emitted.Add(1)

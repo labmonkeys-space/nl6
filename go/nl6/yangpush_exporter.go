@@ -327,11 +327,11 @@ func (e *YangPushExporter) gate(now time.Time) (ok bool, done func(sent bool)) {
 		part.ledger.backgroundSuppressed.Add(1)
 		return false, nil
 	}
-	part.ledger.emitted.Add(1)
 	if !part.drain.admit() {
-		part.ledger.dropped.Add(1)
+		part.ledger.countUnsent(&part.ledger.dropped, 1)
 		return false, nil
 	}
+	part.ledger.emitted.Add(1)
 	return true, func(sent bool) {
 		if sent {
 			part.bucketFor(part.now()).Add(1)
