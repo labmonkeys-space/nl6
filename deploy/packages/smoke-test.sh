@@ -59,6 +59,16 @@ ver="$(/usr/bin/nl6 -version)"
 [ -n "$ver" ] || fail "nl6 -version printed nothing"
 echo "    nl6 -version => $ver"
 
+# The CI driver and the loss-diff CLI ship in the same package.
+[ -x /usr/bin/nl6-ci ] || fail "/usr/bin/nl6-ci missing or not executable"
+ver="$(/usr/bin/nl6-ci -version)"
+[ -n "$ver" ] || fail "nl6-ci -version printed nothing"
+echo "    nl6-ci -version => $ver"
+[ -x /usr/bin/nl6-reconcile ] || fail "/usr/bin/nl6-reconcile missing or not executable"
+ver="$(/usr/bin/nl6-reconcile -version)"
+[ -n "$ver" ] || fail "nl6-reconcile -version printed nothing"
+echo "    nl6-reconcile -version => $ver"
+
 # Runtime data and config in the expected layout.
 [ -f /usr/lib/systemd/system/nl6.service ] || fail "systemd unit not installed"
 [ -f /etc/nl6/nl6.conf ]                   || fail "/etc/nl6/nl6.conf not installed"

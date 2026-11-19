@@ -19,6 +19,8 @@ Each `.deb` / `.rpm` is built for both `amd64` and `arm64`.
 | Path                                | Contents                                              |
 | ----------------------------------- | ----------------------------------------------------- |
 | `/usr/bin/nl6`                      | the simulator binary                                  |
+| `/usr/bin/nl6-ci`                   | CI driver for nl6 as a test fixture, see [`nl6-ci`](../../docs/reference/nl6-ci.md) |
+| `/usr/bin/nl6-reconcile`            | sent-ledger vs received-counts loss diff              |
 | `/usr/share/nl6/resources/`         | device resource JSON (SNMP/SSH/REST response data)    |
 | `/usr/share/nl6/web/`               | web console assets                                    |
 | `/usr/share/nl6/worldcities/`       | world-cities dataset for `sysLocation` (CC BY 4.0)    |

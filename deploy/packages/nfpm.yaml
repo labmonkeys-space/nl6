@@ -55,6 +55,16 @@ contents:
     file_info:
       mode: 0755
 
+  # CI driver and loss-diff CLI. Staged per arch like the simulator binary.
+  - src: ./dist/nl6-ci-pkgstage
+    dst: /usr/bin/nl6-ci
+    file_info:
+      mode: 0755
+  - src: ./dist/nl6-reconcile-pkgstage
+    dst: /usr/bin/nl6-reconcile
+    file_info:
+      mode: 0755
+
   # Runtime data. The binary loads `resources/`, `web/` and `worldcities/` via
   # paths relative to its working directory, so the systemd unit sets
   # WorkingDirectory=/usr/share/nl6.

@@ -177,7 +177,8 @@ check-tidy: check-go
 	}
 
 ## dist: Build release binaries into dist/ — the simulator (linux amd64/arm64)
-## and the nl6-reconcile CLI (linux/darwin/windows × amd64/arm64)
+## the nl6-reconcile CLI (linux/darwin/windows × amd64/arm64), and the
+## nl6-ci CLI (linux amd64/arm64)
 dist: check-go
 	mkdir -p dist
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./nl6
@@ -192,6 +193,10 @@ dist: check-go
 	    ( cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -ldflags "$(LDFLAGS)" -o ../dist/nl6-reconcile-$$os-$$arch$$ext ./cmd/nl6-reconcile ) || exit 1; \
 	  done; \
 	done
+	# nl6-ci drives the Linux-only simulator as a CI fixture, so it is
+	# Linux-only too.
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/nl6-ci-linux-amd64 ./cmd/nl6-ci
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/nl6-ci-linux-arm64 ./cmd/nl6-ci
 
 # Native OS packages (.deb + .rpm) are built with nfpm from a single spec at
 # deploy/packages/nfpm.yaml. Pinned so local and CI builds match; not tracked
@@ -206,14 +211,16 @@ PKG_VERSION  := $(patsubst v%,%,$(APP_VERSION))
 packages: dist
 	GOBIN=$(GOBIN_DIR) go install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION)
 	@for arch in amd64 arm64; do \
-	  cp dist/$(BINARY)-linux-$$arch dist/nl6-pkgstage; \
+	  cp dist/$(BINARY)-linux-$$arch dist/nl6-pkgstage || exit 1; \
+	  cp dist/nl6-ci-linux-$$arch dist/nl6-ci-pkgstage || exit 1; \
+	  cp dist/nl6-reconcile-linux-$$arch dist/nl6-reconcile-pkgstage || exit 1; \
 	  for fmt in deb rpm; do \
 	    echo "nfpm: nl6 $(PKG_VERSION) $$arch ($$fmt)"; \
 	    VERSION=$(PKG_VERSION) ARCH=$$arch $(GOBIN_DIR)/nfpm package \
 	      -f $(PKG_DIR)/nfpm.yaml -p $$fmt -t dist/ || exit 1; \
 	  done; \
 	done; \
-	rm -f dist/nl6-pkgstage
+	rm -f dist/nl6-pkgstage dist/nl6-ci-pkgstage dist/nl6-reconcile-pkgstage
 
 # Distro images exercised by `make smoke`. Override to trim/extend the matrix.
 SMOKE_DEB_IMAGES ?= debian:13 ubuntu:24.04 ubuntu:26.04
