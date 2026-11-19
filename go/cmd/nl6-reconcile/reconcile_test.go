@@ -6,6 +6,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -296,5 +297,16 @@ func TestReconcile_MissingIsUnclassifiedToo(t *testing.T) {
 	txt := renderText(res, 0.005, false)
 	if !strings.Contains(txt, "-drained") {
 		t.Errorf("MISSING without a drain assertion is unclassified and must say so:\n%s", txt)
+	}
+}
+
+func TestValidTolerance(t *testing.T) {
+	for v, want := range map[float64]bool{0: true, 0.005: true, 1: true, -0.1: false, math.Inf(1): false} {
+		if got := validTolerance(v); got != want {
+			t.Errorf("validTolerance(%g) = %v, want %v", v, got, want)
+		}
+	}
+	if validTolerance(math.NaN()) {
+		t.Error("validTolerance(NaN) = true: a NaN band calls any loss OK")
 	}
 }

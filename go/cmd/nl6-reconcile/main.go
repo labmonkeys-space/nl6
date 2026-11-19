@@ -24,6 +24,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"os"
 )
 
@@ -51,8 +52,8 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if *tolerance < 0 {
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: -tolerance must be >= 0 (got %g)\n", *tolerance)
+	if !validTolerance(*tolerance) {
+		fmt.Fprintf(os.Stderr, "nl6-reconcile: -tolerance must be a finite number >= 0 (got %g)\n", *tolerance)
 		os.Exit(2)
 	}
 
@@ -104,6 +105,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+// validTolerance reports whether t is a usable tolerance band. NaN compares
+// false against every loss ratio, so reconcile would call any loss OK. An
+// infinite band does the same.
+func validTolerance(t float64) bool {
+	return t >= 0 && !math.IsInf(t, 0)
 }
 
 // readInput reads a file path, or stdin when the path is "-".
