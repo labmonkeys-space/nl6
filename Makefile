@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile nl6-ci yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web test-fleet check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile nl6-ci test-interop-ci-fixture yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web test-fleet check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-typecheck docs-check-orphans docs-check-csp docs-audit-overrides docs-audit-overrides-test docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -511,6 +511,24 @@ test-interop-ipfix: check-go check-docker
 	sleep 2; [ "$$(docker inspect -f '{{.State.Running}}' nl6-interop-ipfixcol2 2>/dev/null)" = true ] || fail "IPFIXcol2 container is not running"; \
 	docker exec nl6-interop-ipfixcol2 ipfixcol2 -V 2>&1 | head -1; \
 	( cd $(GO_DIR) && NL6_IPFIX_INTEROP=1 go test ./nl6/ -run 'TestIPFIXInterop' -count=1 -v -timeout 10m ) || fail "interop test failed"
+
+## test-interop-ci-fixture: Drive nl6 through nl6-ci on this host and reconcile exactly (Linux, needs sudo)
+##
+## The unit tests of nl6-ci run against a fake nl6. This one starts the real
+## simulator with nl6-ci up (through sudo -n), runs a syslog window, counts the
+## datagrams on UDP 5514 per source address, asserts that nl6-ci check
+## reconciles them exactly and that it fails when one record is missing. A
+## second cycle asks a NetFlow v5 fleet for a rate above its flow ceiling and
+## asserts that nl6-ci run fails with the reason per device. A third cycle
+## freezes nl6 during the window and asserts that nl6-ci run gives up at the
+## deadline. Each cycle ends
+## with an nl6-ci down that must exit 0 and remove the nl6sim namespace.
+## The 15m timeout stays above the budgets of up (60s API, 5m creation).
+test-interop-ci-fixture: check-go build reconcile nl6-ci
+	@[ "$$(uname -s)" = Linux ] || { echo "test-interop-ci-fixture needs a Linux host (nl6 devices need TUN and netns)"; exit 1; }
+	cd $(GO_DIR) && NL6_CI_E2E=1 NL6_CI_BIN=$(CURDIR)/go/nl6-ci NL6_RECONCILE_BIN=$(CURDIR)/go/nl6-reconcile \
+	  NL6_BIN=$(CURDIR)/$(BUILD_DIR)/$(BINARY) NL6_WORKDIR=$(CURDIR)/$(BUILD_DIR) PATH="$(CURDIR)/go:$$PATH" \
+	  go test ./cmd/nl6-ci/ -run TestCIFixtureInterop -count=1 -v -timeout 15m
 
 ## test-interop-yangpush: Receive nl6's YANG-Push over UDP-notif with a REAL NetCalyx v0.4.0 collector (needs Linux, docker, sudo, ssh-keygen)
 ##

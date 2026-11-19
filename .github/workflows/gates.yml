@@ -155,6 +155,34 @@ jobs:
       - name: Test (IPFIX / NBAR2 interop with IPFIXcol2)
         run: make test-interop-ipfix
 
+  # The nl6-ci sibling: the unit tests of nl6-ci all run against a fake nl6 on
+  # macOS and Linux, so none proves that the verbs work on a real runner. This
+  # job starts the real simulator through `nl6-ci up` (sudo, TUN, the nl6sim
+  # namespace), drives a syslog window, counts the datagrams per source address
+  # on the host and asserts that `nl6-ci check` reconciles them exactly and
+  # fails when one record is missing. A second cycle asserts that `nl6-ci run`
+  # refuses a NetFlow v5 rate above the flow ceiling. A third freezes nl6 during
+  # the window and asserts that `nl6-ci run` gives up at the deadline. It is its own job because nl6#1051 names
+  # ubuntu-26.04 in its acceptance scenario and build-test runs on ubuntu-24.04.
+  ci-fixture:
+    name: CI Fixture
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Test (nl6-ci fixture, exact reconcile)
+        run: make test-interop-ci-fixture
+
   quality:
     name: Code Quality
     runs-on: ubuntu-24.04
