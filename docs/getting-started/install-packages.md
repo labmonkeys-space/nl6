@@ -22,6 +22,8 @@ The `.deb`/`.rpm` packages are attached to each [GitHub Release](https://github.
 | Path | Contents |
 | --- | --- |
 | `/usr/bin/nl6` | the simulator binary |
+| `/usr/bin/nl6-ci` | CI driver for nl6 as a test fixture, see [`nl6-ci`](../reference/nl6-ci.md) |
+| `/usr/bin/nl6-reconcile` | loss diff of the sent ledger against received counts |
 | `/usr/share/nl6/resources/` | device resource data (SNMP/SSH/REST) |
 | `/usr/share/nl6/web/` | web console assets |
 | `/usr/share/nl6/worldcities/` | world-cities dataset for `sysLocation` (CC BY 4.0) |

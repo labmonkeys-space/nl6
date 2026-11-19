@@ -122,7 +122,8 @@ nl6-reconcile -report report.json -received collector.csv
 
 `nl6-reconcile` is a small, stateless, **cross-platform** Go CLI.
 It runs wherever you diff (your laptop, a CI runner, the monitoring host), not on the Linux-only simulator host.
-Three ways to get it:
+The `.deb` and `.rpm` packages install it as `/usr/bin/nl6-reconcile`, next to the simulator.
+Three ways to get it anywhere else:
 
 - **Download a release binary** (recommended). Grab `nl6-reconcile-<os>-<arch>` from the [releases](https://github.com/labmonkeys-space/nl6/releases) for `linux` / `darwin` / `windows` × `amd64` / `arm64`, then `chmod +x` and put it on your `PATH`.
 - **`go install`** (any platform with a Go toolchain):
@@ -132,6 +133,8 @@ Three ways to get it:
   ```
 
 - **From source**: `make reconcile` builds `go/nl6-reconcile`; run it as `./go/nl6-reconcile` or copy it onto your `PATH`.
+
+To run `nl6-reconcile` as a CI gate against a simulated fleet, see [Test a collector in CI](./ci-fixture.md).
 
 `nl6-reconcile -version` prints the build version (stamped from the same release tag as the simulator, so a report's `metadata.nl6_version` and the diff tool's version together pin a reconciliation).
 

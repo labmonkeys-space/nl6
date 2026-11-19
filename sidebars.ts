@@ -64,7 +64,7 @@ const sidebars: SidebarsConfig = {
           // No landing link here: a doc can be the link of one category only,
           // or its breadcrumbs and prev/next follow the wrong one. The
           // overview page is the Reference load-test landing.
-          items: ['ops/loadtest-scenarios', 'ops/loadtest-runbooks'],
+          items: ['ops/loadtest-scenarios', 'ops/loadtest-runbooks', 'ops/ci-fixture'],
         },
       ],
     },
@@ -134,7 +134,7 @@ const sidebars: SidebarsConfig = {
           type: 'category',
           label: 'Load-test scenarios',
           link: {type: 'doc', id: 'reference/loadtest-overview'},
-          items: ['reference/loadtest-api', 'reference/loadtest-report-schema'],
+          items: ['reference/loadtest-api', 'reference/loadtest-report-schema', 'reference/nl6-ci'],
         },
       ],
     },
