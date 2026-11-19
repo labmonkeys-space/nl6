@@ -166,8 +166,46 @@ The same drops also count in `state_events_dropped` of `GET /api/v1/gnmi/status`
 
 `-fidelity` mutes all three subscriptions.
 The `subscription-started` notification waits for the first unmuted activity.
-The subscriptions do not join a load-test scenario window.
-That participation is not implemented.
+A device inside a scenario window is not muted.
+
+## Load-test scenarios
+
+A [load-test scenario](loadtest-overview.md) with protocol **`yang-push`** counts the messages of each participant, so `nl6-reconcile` can compare them per device with what a collector received.
+
+```json
+{"participants_cidr": ["10.42.0.0/24"], "protocol": "yang-push", "rate": 1, "window": "5m"}
+```
+
+The device keeps its own schedule.
+The scenario starts no emitter and does not change what a device sends.
+It decides only when the device may send.
+
+| Device state | Behaviour |
+| --- | --- |
+| Armed, before `T0` | Silent. Each suppressed message and each dropped state change counts `background_suppressed`. |
+| Inside `[T0,T1)` | Sends as usual. Each message counts once. |
+| After `T1`, until the scenario releases it | Silent. |
+| Not a participant | Unchanged, with and without `-fidelity`. |
+
+- **One record is one message** of any kind: `subscription-started`, `push-update` or `push-change-update`.
+- **`rate` is required and ignored.** No `nl6_scenario_target_rate` gauge is published.
+- **A device that has not announced its subscriptions** does so at its first activity inside the window.
+  Those three `subscription-started` and the sync `push-update` count as four records.
+  A device that announced before it was claimed does not announce again.
+- **A state change outside the window is dropped.** It is not sent later, so no update inside the window reports an old state.
+  Two cases at the edges follow from the 5 second dampening period.
+  A change collected in the last seconds before the device was claimed can go out inside the window, with the state at that moment, and it counts.
+  A change collected inside the window is dropped when its dampening period ends after `T1`. The next periodic update carries the state.
+- **Message IDs have no gap.** A suppressed message consumes no ID.
+- **A device without a `yang_push` block** is excluded at arm with the reason `device has no yang-push exporter`.
+
+A window of N minutes holds N or N minus 1 messages per periodic subscription, plus four for a device that announces inside the window.
+A window shorter than a minute can hold no periodic message.
+The scenario is accepted and the row then shows zero `emitted`.
+
+The report row has the key `(yang-push, <device IP>, <collector host:port>)`.
+On the received side, count the messages of a device whose envelope `event-time` is in `[T0,T1)`, with `T0` and `T1` as the report states them.
+Both have millisecond precision, and the device sends nothing in the last partial millisecond before `T1`, so the two sides select the same messages.
 
 ## What is not modelled
 

@@ -62,8 +62,8 @@ Request body:
 |-------|------|----------|---------|
 | `participants` | `[]string` | yes¹ | Device management IPs, as a **set**. At most **100,000** entries, **no repeats** (a duplicate is a `400`). Each must be an **IPv4 dotted quad**; IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are a `400`. Existence is checked at arm, not here. |
 | `participants_cidr` | `[]string` | yes¹ | Compact prefix selector: IPv4 CIDR prefixes in **canonical (masked) form**, at most **1,024** entries. The participant set is the **union** of `participants` and every live device whose IP falls inside any prefix, resolved at arm time. `400` at submit for: a non-canonical prefix (`10.42.1.5/16`, and the error names the canonical form), an IPv6 or IPv4-mapped prefix, a duplicate prefix, or a prefix nested inside another (it adds nothing to the union). An explicit `participants` entry covered by a prefix is allowed and makes that address's absence loud. `["0.0.0.0/0"]` spells whole-fleet. |
-| `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
-| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and `snmp-trap` (one event per scheduler pop).<br/><br/>For **flow protocols** it sets the record rate by sizing each participant's flow cache, and it has a per-device ceiling; see [Choose participant cardinality and rate](../ops/loadtest-scenarios.md#choose-participant-cardinality-and-rate).<br/><br/>For `gnmi-dialout`, `rate` does **not** control emission, because the stream runs at its dial-out SAMPLE interval. No `nl6_scenario_target_rate` gauge is published for such a run.<br/><br/>Always required and fingerprinted. |
+| `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, `"netflow5"`, or `"yang-push"`. |
+| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and `snmp-trap` (one event per scheduler pop).<br/><br/>For **flow protocols** it sets the record rate by sizing each participant's flow cache, and it has a per-device ceiling; see [Choose participant cardinality and rate](../ops/loadtest-scenarios.md#choose-participant-cardinality-and-rate).<br/><br/>For `gnmi-dialout`, `rate` does **not** control emission, because the stream runs at its dial-out SAMPLE interval. No `nl6_scenario_target_rate` gauge is published for such a run.<br/><br/>For `yang-push`, `rate` does **not** control emission either. The device keeps the subscription periods it announces and sends on state changes.<br/><br/>Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
 | `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
@@ -133,7 +133,7 @@ Response `202`:
 `400` examples:
 
 ```json
-{"error": "scenario: unknown protocol \"snmp\" (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)"}
+{"error": "scenario: unknown protocol \"snmp\" (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5, yang-push)"}
 {"error": "invalid window \"nope\": …", "field": "window"}
 {"error": "json: unknown field \"bogus\""}
 ```

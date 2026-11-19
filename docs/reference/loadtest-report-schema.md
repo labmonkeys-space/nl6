@@ -182,6 +182,7 @@ Every protocol is also bounded by the window `[T0,T1)` and the participant sourc
 | Syslog 5424 | `syslog_sd_param` | RFC 5424 SD-PARAM `[nl6@<PEN> runId="<id>"]` | **yes** |
 | SNMP trap/inform | `snmp_enterprise_varbind` | enterprise varbind under the nl6 PEN | **yes** |
 | NetFlow v5 | `window_source_ip` | no taggable field, so isolate by participant source IPs + `[T0,T1)` | n/a |
+| YANG-Push | `window_source_ip` | no field a run can set. `message-publisher-id` is the device IPv4 as an integer, so isolate by it or by source IP + `[T0,T1)` | n/a |
 
 A PEN-dependent lever needs `-scenario-pen`.
 Without it, `mechanism` is `window_source_ip` and `degraded` is `true`.
@@ -193,10 +194,15 @@ One row per participant, keyed by the **join tuple** `(protocol, source_ip, coll
 This is the same tuple a collector groups its received counts by, so the two sides line up row-for-row.
 Every ledger field is always present (explicit zeros, never omitted), so a zero-valued row still diffs cleanly.
 
-What one record means differs for two protocols:
+What one record means differs for three protocols:
 
 - **sFlow** counts raw `flow_sample` records, never `samples × sampling_rate`, so the synthetic sampling rate cannot manufacture phantom loss. The periodic `counters_sample` is a keepalive. It flows continuously, including before `T0`, and is never counted. So the datagram sequence number is not 0 at `T0`; key on the sample sequence instead.
 - **gNMI dial-out** gates both SAMPLE and ON_CHANGE. Arming needs a live Publish stream, otherwise the device is `excluded`. In the window a notification counts `sent` when written to a live stream and `send_failures` when the stream is down.
+- **YANG-Push** counts messages: `subscription-started`, `push-update` and `push-change-update`.
+  A message split into several UDP-notif segments counts once.
+  A failed segment counts one `send_failures` for the message.
+  Select the received side by the envelope `event-time` in `[T0,T1)`.
+  See [YANG-Push in a load-test scenario](yang-push-udp-notif.md#load-test-scenarios).
 
 | Field | Meaning |
 |-------|---------|

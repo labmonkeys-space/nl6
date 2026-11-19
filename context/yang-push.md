@@ -93,7 +93,8 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 - A `get` on a subscription by ID also returns `receiver-instances`.
   Strict subtree filtering would not.
   An unknown ID returns an empty `<data/>`, and NetCalyx reports that as a parse error.
-- Scenario-window participation is not implemented.
+- Scenario participation gates the device's own schedule, as gNMI dial-out does.
+  There is no scenario emitter, and the scenario rate is ignored.
 
 ## Operational decisions
 
@@ -114,6 +115,14 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   A failed bind fails the opt-in for that device, with no fallback.
 - `-fidelity` mutes all three subscriptions through `fidelityMutesBackground(sourceBackground)`.
   `subscription-started` is deferred until the first unmuted activity.
+- A `yang-push` scenario installs `scenPart` on the exporter.
+  `gate` then decides per message: `backgroundSuppressed` outside the window, else `emitted` and one of `inWindow`, `drain`, `sendFailures` or `dropped`.
+  One record is one message.
+  The drain admit is held across all segments and the bucket is chosen after the last write, as syslog does.
+  A refused message is not built, so it consumes no message ID.
+  The two dampening collection sites use `gateEvent`: a state change outside the window is dropped and counts `backgroundSuppressed`.
+  `ensureStarted` sets `started` only when the first announcement passes the gate.
+  `ypInWindow` closes the gate at the millisecond of T1, because the report and the envelope `event-time` both have millisecond precision.
 - Status is `GET /api/v1/yangpush/status` with `messages_sent`, `segments_sent`, `send_failures`, `state_events_dropped` and `fidelity_suppressed`.
   `state_events_dropped` counts the exporter's own listener channel, which drops the oldest (`AddListenerCounting`).
   The same drops also count in the shared gNMI `state_events_dropped`.
