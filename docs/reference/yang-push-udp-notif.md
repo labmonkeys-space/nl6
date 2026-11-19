@@ -85,6 +85,13 @@ A large fleet therefore produces one synchronized burst a minute on the host and
 nl6 gives every device the same anchor, so the whole fleet bursts together.
 A real fleet does only if every device is configured with one anchor.
 
+**Setting the host clock back pauses the periodic updates.**
+The devices send no `push-update` for the two periodic subscriptions (IDs 8 and 9) for about as long as the clock went back.
+If the clock goes back 5 minutes, the collector receives no periodic update for about 5 minutes.
+The subscriptions stay active, and the updates start again on their own.
+The on-change subscription (ID 10) is not affected.
+Setting the clock forward loses no update. The next one goes out late, by at most the size of the jump, and the one after is back on the anchor.
+
 Subscription 10 sends a `push-update` once at start with the entry of every interface.
 Its `point-in-time` is `initial-state`.
 After that it sends a `push-change-update` when `oper-status` or `admin-status` of an interface changes, with `point-in-time` `state-changed`.
