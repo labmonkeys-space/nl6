@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -408,6 +409,21 @@ func startScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	writeScenarioJSON(w, http.StatusOK, scenarioStatus(ctrl))
 }
 
+// stopResponseWriteTimeout is the write deadline the stop handler re-arms
+// once the finalize returns. The report holds one counter row per device, so
+// it gets the server's full WriteTimeout again.
+const stopResponseWriteTimeout = 30 * time.Second
+
+// rearmStopResponseDeadline never fails the request: the report is worth more
+// than the deadline. http.ErrNotSupported is expected from writers with no
+// connection (httptest.ResponseRecorder).
+func rearmStopResponseDeadline(w http.ResponseWriter) {
+	err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(stopResponseWriteTimeout))
+	if err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Printf("stop scenario: cannot adjust the connection deadline, a long finalize may lose its response: %v", err)
+	}
+}
+
 // stopScenarioHandler: POST /api/v1/scenarios/{id}/stop → 200 report.
 func stopScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	ctrl, ok := lookupScenario(w, r)
@@ -419,7 +435,13 @@ func stopScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	// already exists, so serve it (200) rather than a spurious 409. Only a
 	// stop with no finalized result (e.g. stop-before-start) is a real
 	// phase conflict.
-	if _, err := ctrl.Stop(); err != nil {
+	_, err := ctrl.Stop()
+	// Stop waits for the finalize, which is bounded at finalizeBudget (60 s),
+	// past the server's 30 s WriteTimeout. Nothing is written while it waits,
+	// so the expired deadline costs nothing until the response. Re-arm it
+	// here, above the branch, as the create handler does (nl6#746).
+	rearmStopResponseDeadline(w)
+	if err != nil {
 		if rep := buildScenarioReport(manager, ctrl); rep != nil {
 			writeScenarioJSON(w, http.StatusOK, rep)
 			return
