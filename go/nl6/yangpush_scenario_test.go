@@ -8,18 +8,24 @@ package main
 import (
 	"errors"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// ypFailConn refuses writes while fail is set.
+// ypFailConn refuses writes while fail is set. It runs onWrite, when set,
+// before each write.
 type ypFailConn struct {
 	net.Conn
-	fail *atomic.Bool
+	fail    *atomic.Bool
+	onWrite *atomic.Pointer[func()]
 }
 
 func (c ypFailConn) Write(b []byte) (int, error) {
+	if h := c.onWrite.Load(); h != nil {
+		(*h)()
+	}
 	if c.fail.Load() {
 		return 0, errors.New("write refused")
 	}
@@ -38,6 +44,8 @@ type ypScen struct {
 	led  *ledgerEntry
 	part *scenarioPart
 	fail *atomic.Bool
+	// onWrite runs on the run goroutine before each socket write.
+	onWrite *atomic.Pointer[func()]
 }
 
 // newYPScen starts an exporter. With claimed set, the part is installed
@@ -54,8 +62,8 @@ func newYPScen(t *testing.T, claimed bool, phase scenarioPhase) *ypScen {
 		t.Fatalf("NewYangPushExporter: %v", err)
 	}
 	e.newTimer = fc.NewTimer
-	s := &ypScen{e: e, fc: fc, c: c, st: st, dev: dev, gate: &atomic.Pointer[gateState]{}, led: &ledgerEntry{}, fail: &atomic.Bool{}}
-	e.conn = ypFailConn{Conn: e.conn, fail: s.fail}
+	s := &ypScen{e: e, fc: fc, c: c, st: st, dev: dev, gate: &atomic.Pointer[gateState]{}, led: &ledgerEntry{}, fail: &atomic.Bool{}, onWrite: &atomic.Pointer[func()]{}}
+	e.conn = ypFailConn{Conn: e.conn, fail: s.fail, onWrite: s.onWrite}
 	s.part = &scenarioPart{gate: s.gate, ledger: s.led, drain: &drainGate{}, now: fc.Now, owner: "scn-test"}
 	s.setPhase(phase)
 	if claimed {
@@ -246,6 +254,45 @@ func TestYangPushScenarioAnnounceRefusedIsRetried(t *testing.T) {
 	ypLedgerIdentity(t, s.led)
 }
 
+// A device whose announcement is cut short announces all of it again at its
+// next chance. Here the scenario ends while the first subscription-started is
+// on the wire, so the other three messages are refused.
+func TestYangPushScenarioPartialAnnounceIsRepeated(t *testing.T) {
+	s := newYPScen(t, true, phaseArmed)
+	s.setPhase(phaseRunning)
+	var once sync.Once
+	end := func() { once.Do(func() { s.setPhase(phaseStopped) }) }
+	s.onWrite.Store(&end)
+	s.tick(t, ypFirstTick)
+	if m := s.c.mustNext(t); m.Kind != "ietf-subscribed-notifications:subscription-started" || m.SubID != 8 || m.MsgID != 1 {
+		t.Fatalf("got %s id %d msg %d, want subscription-started 8 msg 1", m.Kind, m.SubID, m.MsgID)
+	}
+	s.quiet(t)
+	if em, in := s.led.emitted.Load(), s.led.inWindow.Load(); em != 1 || in != 1 {
+		t.Errorf("emitted %d in_window %d, want 1 and 1", em, in)
+	}
+	ypLedgerIdentity(t, s.led)
+
+	s.e.scenPart.Store(nil)
+	s.tick(t, 3*time.Second)
+	want := []struct {
+		kind string
+		sub  uint32
+	}{
+		{"ietf-subscribed-notifications:subscription-started", 8},
+		{"ietf-subscribed-notifications:subscription-started", 9},
+		{"ietf-subscribed-notifications:subscription-started", 10},
+		{"ietf-yang-push:push-update", 10},
+		{"ietf-yang-push:push-update", 9},
+	}
+	for i, w := range want {
+		m := s.c.mustNext(t)
+		if m.Kind != w.kind || m.SubID != w.sub || m.MsgID != uint32(i+2) {
+			t.Fatalf("after release message %d = %s id %d msg %d, want %s id %d msg %d", i, m.Kind, m.SubID, m.MsgID, w.kind, w.sub, i+2)
+		}
+	}
+}
+
 // A state change before T0 is dropped. It must not go out inside the window
 // with an old state.
 func TestYangPushScenarioChangeBeforeT0Dropped(t *testing.T) {
@@ -367,5 +414,29 @@ func TestYangPushScenarioLastPartialMillisecondIsOutside(t *testing.T) {
 	}
 	if em, bg := s.led.emitted.Load(), s.led.backgroundSuppressed.Load(); em != 1 || bg != 2 {
 		t.Errorf("emitted %d background_suppressed %d, want 1 and 2", em, bg)
+	}
+}
+
+// The gate has a lower bound too. A caller that read the clock before Start
+// published the window must not send with an event-time before the reported
+// T0. The bound is the millisecond the report prints for T0.
+func TestYangPushScenarioBeforeT0MillisecondIsOutside(t *testing.T) {
+	s := newYPScen(t, false, phaseRunning)
+	base := s.fc.Now().Truncate(time.Millisecond)
+	s.gate.Store(&gateState{phase: phaseRunning, t0: base.Add(500 * time.Microsecond), t1: base.Add(time.Minute)})
+	s.e.scenPart.Store(s.part)
+	if s.e.speaks(base.Add(-time.Microsecond)) {
+		t.Error("speaks in the millisecond before the reported T0")
+	}
+	if ok, _ := s.e.gate(base.Add(-time.Microsecond)); ok {
+		t.Error("gate let a message out whose event-time is before the reported T0")
+	}
+	if ok, done := s.e.gate(base.Add(100 * time.Microsecond)); !ok {
+		t.Error("gate refused a message whose event-time equals the reported T0")
+	} else {
+		done(true)
+	}
+	if em, bg := s.led.emitted.Load(), s.led.backgroundSuppressed.Load(); em != 1 || bg != 1 {
+		t.Errorf("emitted %d background_suppressed %d, want 1 and 1", em, bg)
 	}
 }

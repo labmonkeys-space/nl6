@@ -32,7 +32,9 @@ func ypScenarioManager(t *testing.T, n int, withExporter ...int) *SimulatorManag
 	}
 	for _, i := range withExporter {
 		ip := fmt.Sprintf("10.42.0.%d", i)
-		sm.devicesByIP[ip].yangPushExporter = &YangPushExporter{collector: "192.0.2.10:10003"}
+		e := &YangPushExporter{collector: "192.0.2.10:10003"}
+		sm.devicesByIP[ip].yangPushExporter = e
+		sm.devicesByIP[ip].yangPushExporterPtr.Store(e)
 	}
 	return sm
 }
@@ -145,6 +147,7 @@ func ypLiveScenario(t *testing.T) (*SimulatorManager, *ScenarioController, *Devi
 	readStart(t, col)
 	waitArmed(t, fc)
 	dev.yangPushExporter = e
+	dev.yangPushExporterPtr.Store(e)
 	ip := dev.IP.String()
 	sm := &SimulatorManager{
 		devices: map[string]*DeviceSimulator{dev.ID: dev}, deviceIPs: map[string]struct{}{ip: {}},
@@ -222,6 +225,25 @@ func TestScenarioYangPush_EndToEnd(t *testing.T) {
 	fc.Advance(time.Minute)
 	if m := col.mustNext(t); m.Kind != "ietf-yang-push:push-update" || m.MsgID != 7 {
 		t.Errorf("after the scenario got %s msg %d, want push-update msg 7", m.Kind, m.MsgID)
+	}
+}
+
+// An early stop reports the millisecond after the stop instant as T1. A
+// message sent in the millisecond of the stop carries that millisecond as its
+// event-time, and a receiver selecting [T0,T1) by event-time must count it.
+func TestScenarioYangPush_EarlyStopT1CoversTheStopMillisecond(t *testing.T) {
+	_, c, _, col, fc := ypLiveScenario(t)
+	fc.Advance(ypFirstTick)
+	waitArmed(t, fc)
+	col.mustNext(t)
+	sent := fc.Now().Truncate(time.Millisecond)
+	fc.Advance(700 * time.Microsecond)
+	res, err := c.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := sent.Add(time.Millisecond); !res.T1Actual.Equal(want) {
+		t.Errorf("T1 = %s, want %s: the millisecond after the stop", res.T1Actual.Format(time.RFC3339Nano), want.Format(time.RFC3339Nano))
 	}
 }
 

@@ -278,12 +278,23 @@ func (e *YangPushExporter) run() {
 // in the last partial millisecond before T1 would carry an event-time equal to
 // the reported T1. A receiver that selects [T0,T1) by event-time would not
 // count it, and the run would show a loss that did not happen.
+//
+// It also has a lower bound, which the scenario gate lacks. A caller reads the
+// clock before it loads the gate, so Start can publish the window in between.
+// A message with an event-time before the reported T0 is refused.
+//
+// An early stop cannot be handled here, because the message is already sent.
+// finishLabelled reports a T1 that covers it.
 func ypInWindow(part *scenarioPart, now time.Time) bool {
 	if part.decide(sourceScenario, now) != gateProceed {
 		return false
 	}
 	gs := part.gate.Load()
-	return gs != nil && now.Truncate(time.Millisecond).Before(gs.t1.Truncate(time.Millisecond))
+	if gs == nil {
+		return false
+	}
+	ms := now.Truncate(time.Millisecond)
+	return !ms.Before(gs.t0.Truncate(time.Millisecond)) && ms.Before(gs.t1.Truncate(time.Millisecond))
 }
 
 // speaks reports whether the device may send at now, without counting. A
@@ -354,29 +365,22 @@ func (e *YangPushExporter) gateEvent(now time.Time) bool {
 // subscription-10 sync-on-start push-update, once, at the first moment the
 // device may speak: fidelity off, or inside the window of the scenario that
 // claimed it. Each of the four messages is gated and counted on its own. If
-// the first one is refused, the device has not announced and tries again at
-// its next activity.
+// one is refused, the rest is not sent and the device has not announced. It
+// sends all four again at its next activity, so a collector never sees
+// push-updates for a subscription it was not told about.
 func (e *YangPushExporter) ensureStarted() {
 	now := e.clock()
 	if e.started || !e.speaks(now) {
 		return
 	}
 	for i := range e.subs {
-		ok, done := e.gate(now)
-		if !ok {
-			if i == 0 {
-				return
-			}
-			continue
+		if !e.emit(i, now, func() []byte { return encodeSubscriptionStarted(e.subs[i], e.pubID) }) {
+			return
 		}
-		e.started = true
-		done(e.send(i, now, encodeSubscriptionStarted(e.subs[i], e.pubID)))
 	}
 	// Subscription 10's sync push-update carries every interface entry and
 	// point-in-time initial-state.
-	if ok, done := e.gate(now); ok {
-		done(e.send(2, now, encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now))))
-	}
+	e.started = e.emit(2, now, func() []byte { return encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now)) })
 }
 
 // emit sends one push for subscription i if the gate lets it out, and reports

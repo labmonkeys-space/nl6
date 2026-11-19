@@ -653,8 +653,8 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 		return ""
 	}
 	if protocol == "yang-push" {
-		if dev.yangPushExporter != nil {
-			return dev.yangPushExporter.collector
+		if yp := dev.yangPushExporterPtr.Load(); yp != nil {
+			return yp.collector
 		}
 		return ""
 	}

@@ -26,7 +26,9 @@ A shortfall is real wire/collector loss, not measurement noise.
 
 - **Bounded window.** A scenario suppresses background telemetry for its participants, emits only during `[T0,T1)`, then finalizes an immutable report.
 - **A sent-ledger, not a guess.** Every record is counted at the send site into exactly one bucket (`in_window` / `drain` / `send_failures` / `dropped` / `suppressed_pre_window`); `sent = in_window + drain` is the reconciliation denominator.
-- **Eight protocols, one shape.** Any one of **syslog · SNMP trap/inform · NetFlow v5/v9 · IPFIX · sFlow · gNMI dial-out · YANG-Push**. Each device opts in via its own export config; the scenario gates whichever protocol it targets.
+- **Eight protocols, one shape.**
+  Any one of **syslog · SNMP trap/inform · NetFlow v5/v9 · IPFIX · sFlow · gNMI dial-out · YANG-Push**.
+  Each device opts in via its own export config; the scenario gates whichever protocol it targets.
 - **Localize, don't just total.** The report splits in-window sends into equal time sub-windows (loss localization) and tags each run per protocol so you can isolate it on a shared collector.
 
 ## Where to go next

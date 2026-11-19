@@ -518,13 +518,15 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		return c.claim(&dev.gnmiDialoutExporter.scenPart, part)
 	}
 	if c.spec.Protocol == "yang-push" {
-		if dev.yangPushExporter == nil {
+		// The field is guarded by the device lock, which is not held here.
+		yp := dev.yangPushExporterPtr.Load()
+		if yp == nil {
 			return false, "device has no yang-push exporter",
 				"opt the device in with a yang_push block (huawei_ne8000 only)"
 		}
 		// No liveness check: UDP-notif has no stream to prove, unlike the
 		// dial-out Publish stream.
-		return c.claim(&dev.yangPushExporter.scenPart, part)
+		return c.claim(&yp.scenPart, part)
 	}
 	switch c.spec.Protocol {
 	case "syslog":
@@ -617,8 +619,8 @@ func (c *ScenarioController) scenPartSlot(dev *DeviceSimulator) *atomic.Pointer[
 			return &dev.gnmiDialoutExporter.scenPart
 		}
 	case "yang-push":
-		if dev.yangPushExporter != nil {
-			return &dev.yangPushExporter.scenPart
+		if yp := dev.yangPushExporterPtr.Load(); yp != nil {
+			return &yp.scenPart
 		}
 	case "syslog":
 		if dev.syslogExporter != nil {
@@ -1457,6 +1459,14 @@ func (c *ScenarioController) finishLabelled(to scenarioPhase) (*ScenarioResult, 
 	prev := c.gate.Load() // never nil: Start always published a running gate
 	t0, plannedT1 := prev.t0, prev.t1
 	actualT1 := c.now()
+	if c.spec.Protocol == "yang-push" {
+		// A yang-push receiver selects [T0,T1) by the envelope event-time,
+		// which has milliseconds, as the reported T1 has. A message sent in the
+		// millisecond of an early stop would carry an event-time equal to the
+		// reported T1 and read as lost. Report the next millisecond instead.
+		// ypInWindow covers a run that reaches the planned T1.
+		actualT1 = actualT1.Add(time.Millisecond - time.Duration(actualT1.Nanosecond())%time.Millisecond)
+	}
 	if actualT1.After(plannedT1) {
 		actualT1 = plannedT1
 	}

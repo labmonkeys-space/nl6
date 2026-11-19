@@ -191,11 +191,13 @@ It decides only when the device may send.
 - **`rate` is required and ignored.** No `nl6_scenario_target_rate` gauge is published.
 - **A device that has not announced its subscriptions** does so at its first activity inside the window.
   Those three `subscription-started` and the sync `push-update` count as four records.
+  If the window ends before all four went out, the device sends all four again once it may speak.
   A device that announced before it was claimed does not announce again.
 - **A state change outside the window is dropped.** It is not sent later, so no update inside the window reports an old state.
   Two cases at the edges follow from the 5 second dampening period.
   A change collected in the last seconds before the device was claimed can go out inside the window, with the state at that moment, and it counts.
-  A change collected inside the window is dropped when its dampening period ends after `T1`. The next periodic update carries the state.
+  A change collected inside the window is dropped when its dampening period ends after `T1`.
+  The next periodic update carries the state.
 - **Message IDs have no gap.** A suppressed message consumes no ID.
 - **A device without a `yang_push` block** is excluded at arm with the reason `device has no yang-push exporter`.
 

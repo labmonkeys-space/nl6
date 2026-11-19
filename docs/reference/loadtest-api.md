@@ -233,12 +233,12 @@ Deterministic ordering (participants sorted by source IP).
 `404` for an unknown id.
 It is valid in every phase.
 A `submitted` scenario has no participant rows yet.
-It shows only `nl6_scenario_phase` and `nl6_scenario_target_rate`, or only `nl6_scenario_phase` for `gnmi-dialout`.
+It shows only `nl6_scenario_phase` and `nl6_scenario_target_rate`, or only `nl6_scenario_phase` for `gnmi-dialout` and `yang-push`.
 
 | Metric | Type | Labels | Meaning |
 |--------|------|--------|---------|
 | `nl6_scenario_phase` | gauge | `id`, `phase` | `1` on the active phase label (info-style) |
-| `nl6_scenario_target_rate` | gauge | `id` | configured base rate (events/s); for a `rate_profile` scenario this is the constant base rate, **not** the instantaneous λ(t); absent for `gnmi-dialout`, which paces to its SAMPLE interval, not to a rate |
+| `nl6_scenario_target_rate` | gauge | `id` | configured base rate (events/s); for a `rate_profile` scenario this is the constant base rate, **not** the instantaneous λ(t); absent for `gnmi-dialout`, which paces to its SAMPLE interval, not to a rate, and for `yang-push`, where each device keeps its subscription periods |
 | `nl6_scenario_sent_total` | counter | `id`, `protocol`, `source_ip`, `collector` | records sent (`in_window + drain`) per participant |
 | `nl6_scenario_emitted_total` | counter | (same tuple) | records emitted (identity total) per participant |
 | `nl6_scenario_in_window_total` | counter | (same tuple) | records sent inside the measurement window per participant |
