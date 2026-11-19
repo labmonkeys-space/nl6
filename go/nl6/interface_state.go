@@ -86,23 +86,23 @@ type StateChange struct {
 //
 // 58 bits of nanoseconds-since-boot covers ~9.13 years; sufficient for
 // any realistic simulator session. The offset is measured with
-// sinceBootNs, on the clock sysUpTime.0 uses (nl6#1042). Single atomic
+// sinceBootNs, on the clock sysUpTime.0 uses. Single atomic
 // word guarantees a reader never sees a torn (link, admin, peerDown,
 // lastChange) tuple.
 type InterfaceState struct {
 	slots      []atomic.Uint64 // slot = ifIndex - 1; out-of-range ifIndexes return zero values
 	maxIfIndex int             // upper bound; slots has length maxIfIndex
-	bootTime   time.Time       // the device's boot instant (nl6#1031), or construction time for an engine built without one; origin of every stored lastChange offset
+	bootTime   time.Time       // the device's boot instant, or construction time for an engine built without one; origin of every stored lastChange offset
 
 	// now is the engine's clock, normalised to time.Now at construction so the
 	// mutation path never branches on nil. Same shape as the four other clock
 	// seams in this package (flap_scheduler, syslog_scheduler, trap_scheduler,
 	// optical_alarm), deliberately: a fifth shape is one more thing to learn.
 	//
-	// It exists so a test can drive a strictly-increasing clock (nl6#575). In
+	// It exists so a test can drive a strictly-increasing clock. In
 	// production the offsets are measured with sinceBootNs, which subtracts two
 	// time.Time values carrying Go's monotonic reading, so a wall-clock jump on
-	// the host moves no stored offset (nl6#1042). A test clock built with
+	// the host moves no stored offset. A test clock built with
 	// time.Unix has no monotonic reading, and Sub then falls back to the wall
 	// values, which is what such a clock is for.
 	//
@@ -488,7 +488,7 @@ func (s *InterfaceState) AdminStatus(ifIndex int) uint8 {
 // most recent transition on ifIndex (oper or admin): the boot instant's
 // wall reading plus the stored offset. Returns the boot instant (the
 // device's on an engine built by `newInterfaceStateBootedAt`, which is
-// every production device since nl6#1031, and the construction time
+// every production device, and the construction time
 // otherwise) if no transition has occurred. Returns 0 if ifIndex is out
 // of range. gNMI and NETCONF read this value; the SNMP layer reads the
 // offset itself (lastChangeSinceBootNs).
@@ -496,7 +496,7 @@ func (s *InterfaceState) AdminStatus(ifIndex int) uint8 {
 // The offset is monotonic, the boot reading is wall time. After a host
 // clock jump of J the value is therefore off by J against a timestamp
 // read from the wall clock at the same moment, such as a gNMI
-// Notification.Timestamp or a NETCONF eventTime (nl6#1042).
+// Notification.Timestamp or a NETCONF eventTime.
 func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
@@ -510,7 +510,7 @@ func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 // transition on ifIndex, in nanoseconds since the boot instant, or 0 for an
 // interface that never transitioned or is out of range. This is what
 // ifLastChange serves, so it agrees with sysUpTime.0 by construction: both
-// are measured on the monotonic clock from the same instant (nl6#1042).
+// are measured on the monotonic clock from the same instant.
 func (s *InterfaceState) lastChangeSinceBootNs(ifIndex int) uint64 {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
@@ -1190,7 +1190,7 @@ var _ = [1]struct{}{}[_layoutGuard] // compile error if layout invariant breaks
 // polled sysUpTime.0 uses (uptimeTicks), now.Sub(boot), so ifLastChange agrees
 // with sysUpTime.0 by construction. Both operands carry Go's monotonic reading
 // in production, so a host clock jump (an NTP step, a suspend, a VM pause or
-// snapshot) moves no offset (nl6#1042). The mutators must call this and never
+// snapshot) moves no offset. The mutators must call this and never
 // read UnixNano themselves; TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock
 // pins that.
 //

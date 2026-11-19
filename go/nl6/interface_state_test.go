@@ -73,7 +73,7 @@ func TestInterfaceState_LastChangeNsAbsolute(t *testing.T) {
 		t.Errorf("pre-transition: got %d, want the boot instant %d", got, s.bootTimeNs())
 	}
 	// After SetOperStatus, last-change is the boot instant + the offset, and the
-	// offset is measured on the monotonic clock (nl6#1042). So the bracket is
+	// offset is measured on the monotonic clock. So the bracket is
 	// on the offset, read with Sub like the engine reads it, not on wall
 	// readings: on a clock whose wall reading is coarser than its monotonic one
 	// (macOS: microseconds against nanoseconds), boot plus a monotonic offset
@@ -89,12 +89,14 @@ func TestInterfaceState_LastChangeNsAbsolute(t *testing.T) {
 	if got < lo || got > hi {
 		t.Errorf("post-transition offset %d ns outside [%d, %d]", got, lo, hi)
 	}
-	// The absolute value still tracks the wall clock, within the wall clock's
-	// grain on each side: the boot reading can be up to one grain below the true
-	// instant, and the monotonic offset is finer than the wall reading.
-	const grain = uint64(time.Microsecond)
+	// The absolute value still tracks the wall clock. The bracket is loose on
+	// purpose: the boot reading can be one wall grain below the true instant
+	// (macOS: a microsecond), and time.Now reads the wall and the monotonic
+	// clock one after the other, so a thread descheduled between the two reads
+	// at boot shifts every absolute value by that gap.
+	const slack = uint64(time.Second)
 	abs := s.LastChangeNs(1)
-	if wlo, whi := uint64(before.UnixNano())-grain, uint64(after.UnixNano())+grain; abs < wlo || abs > whi {
+	if wlo, whi := uint64(before.UnixNano())-slack, uint64(after.UnixNano())+slack; abs < wlo || abs > whi {
 		t.Errorf("post-transition LastChangeNs %d outside the wall bracket [%d, %d]", abs, wlo, whi)
 	}
 }

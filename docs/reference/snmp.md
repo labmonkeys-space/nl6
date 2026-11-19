@@ -606,8 +606,8 @@ Earlier releases skipped `sysName.0` and `sysLocation.0` on a walk of the system
 
 **A host clock jump does not shift `ifLastChange` against `sysUpTime.0`.** Both are measured on the monotonic clock, from the same boot instant.
 A jump is an NTP step, a host suspend, or a VM pause or snapshot.
-The gNMI and NETCONF `last-change` leaves are the boot instant's wall-clock reading plus that monotonic time since boot.
-After a jump of J they are therefore off by J against the notification's own timestamp (the gNMI `Notification` timestamp, the NETCONF `eventTime`), which reads the wall clock.
+The gNMI, NETCONF and YANG-Push `last-change` leaves are the boot instant's wall-clock reading plus that monotonic time since boot.
+After a jump of J they are therefore off by J against the notification's own timestamp (the gNMI `Notification` timestamp, the NETCONF `eventTime`, the YANG-Push `event-time`), which reads the wall clock.
 
 **What does not move yet.** `snmpEngineBoots` stays 1, and a device cannot be restarted.
 The engine time of an SNMPv3 trap counts from the moment the device's trap exporter was attached, which is its creation, not from the boot instant itself.

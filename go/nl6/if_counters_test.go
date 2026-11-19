@@ -558,9 +558,9 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 	ic := c.ifCounters.Load()
 
 	// A strictly-increasing injected clock, so the lastChange assertion below
-	// holds BY CONSTRUCTION (nl6#575). It used to read the wall clock, and the
+	// holds BY CONSTRUCTION. It used to read the wall clock, and the
 	// engine then stamped transitions from UnixNano, so the assertion could
-	// fail on any NTP step. Since nl6#1042 the engine measures offsets on the
+	// fail on any NTP step. The engine now measures offsets on the
 	// monotonic clock, but the injected clock keeps the property independent
 	// of the host.
 	//

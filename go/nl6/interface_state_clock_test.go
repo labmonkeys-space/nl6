@@ -31,8 +31,8 @@ const (
 // lastChange used to be derived from the WALL clock (UnixNano), with a rewind
 // sentinel for a backwards step, so a test asserting lastChange is
 // non-decreasing could fail on any NTP step. The seam lets such a test drive a
-// strictly-increasing clock so the property holds by construction. Since
-// nl6#1042 production measures the offsets on the monotonic clock
+// strictly-increasing clock so the property holds by construction.
+// Production now measures the offsets on the monotonic clock
 // (sinceBootNs), and a clock built with time.Unix, which has no monotonic
 // reading, makes Sub fall back to the wall values the test chose.
 //
@@ -59,11 +59,17 @@ func TestInterfaceStateClockDefaultsToWallClock(t *testing.T) {
 		t.Errorf("boot time %d is outside [%d, %d]: the default clock is not the wall clock",
 			s.bootTimeNs(), before, after)
 	}
+	// The bracket is on the offset, read on the monotonic clock like the engine
+	// reads it. A bracket on LastChangeNs cannot fail: it is the boot time,
+	// checked above, plus an offset that is never negative.
+	lo := uint64(time.Since(s.bootTime))
 	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
 		t.Fatal("SetOperStatus did not apply")
 	}
-	if lc := s.LastChangeNs(1); lc < before {
-		t.Errorf("lastChange %d predates the test start %d; the setter is not reading the wall clock", lc, before)
+	hi := uint64(time.Since(s.bootTime))
+	if off := s.lastChangeSinceBootNs(1); off < lo || off > hi {
+		t.Errorf("lastChange offset %d ns is outside [%d, %d]: the setter is not reading the clock the constructor read",
+			off, lo, hi)
 	}
 }
 
@@ -131,7 +137,7 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 }
 
 // TestInterfaceStateInjectedClockCanStepBackwards pins what a clock reading
-// before boot does now that the rewind sentinel is gone (nl6#1042). In
+// before boot does now that the rewind sentinel is gone. In
 // production both operands carry a monotonic reading and the case cannot
 // happen; a test clock stepping backwards is the only way to reach it. The
 // offset must clamp to 0, as uptimeTicks does, so the transition reads as
@@ -164,8 +170,8 @@ func TestInterfaceStateInjectedClockCanStepBackwards(t *testing.T) {
 }
 
 // TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock is the guard
-// nl6#1042 needs, because no behavioural test can catch the regression it
-// fixes. Public time APIs cannot build a time.Time whose wall clock jumped
+// the monotonic offsets need, because no behavioural test can catch a
+// regression to wall-clock offsets. Public time APIs cannot build a time.Time whose wall clock jumped
 // while its monotonic reading did not, so a mutator reverted to subtracting
 // UnixNano values passes every test that reads lastChange on a Linux clock.
 // It checks the source with go/ast, like the other AST guards in this package,
@@ -178,12 +184,12 @@ func TestInterfaceStateInjectedClockCanStepBackwards(t *testing.T) {
 //   - a production engine's boot instant AND its transition clock carry a
 //     monotonic reading, without which Sub falls back to wall values.
 func TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock(t *testing.T) {
-	// Each of these returns a wall-only value (Unix*, Round, Truncate, and the
-	// location setters strip the monotonic reading) or a number the offset could
-	// be computed from without Sub.
+	// Each of these returns a wall-only value (Unix*, Round, Truncate, AddDate
+	// and the location setters strip the monotonic reading) or a number the
+	// offset could be computed from without Sub.
 	stripping := map[string]bool{
 		"UnixNano": true, "UnixMicro": true, "UnixMilli": true, "Unix": true,
-		"Round": true, "Truncate": true, "UTC": true, "Local": true, "In": true,
+		"Round": true, "Truncate": true, "AddDate": true, "UTC": true, "Local": true, "In": true,
 	}
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "interface_state.go", nil, parser.SkipObjectResolution)
@@ -251,6 +257,11 @@ func TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock(t *testing.T) {
 					return true
 				}
 				calls++
+				if len(call.Args) != 2 {
+					t.Errorf("%s calls sinceBootNs with %d arguments at %s: this guard checks (boot, now)",
+						fn.Name.Name, len(call.Args), fset.Position(call.Pos()))
+					return true
+				}
 				first, fok := call.Args[0].(*ast.SelectorExpr)
 				if !fok || first.Sel.Name != "bootTime" {
 					t.Errorf("%s passes %s as sinceBootNs' boot: it must be s.bootTime itself",

@@ -457,14 +457,14 @@ var loadBearingGuards = []loadBearingGuard{
 			"Hoisting it reads as a refactor and makes ifLastChange go backwards under contention; " +
 			"review demonstrated the whole package stayed green with it hoisted"},
 	{"TestInterfaceStateInjectedClockCanStepBackwards", "interface_state_clock_test.go",
-		"nl6#575, rewritten by nl6#1042. The only exercise of a clock reading before boot. The rewind " +
+		"The only exercise of a clock reading before boot. The rewind " +
 			"sentinel (served by gNMI as 18446744073709551615) is gone, and a negative offset must clamp " +
 			"to 0 rather than wrap to boot plus about 9.13 years"},
 	{"TestInterfaceStateClockDefaultsToWallClock", "interface_state_clock_test.go",
-		"nl6#575. The only pin that production stays on time.Now: the seam must expose which clock is " +
+		"The only pin that production stays on time.Now: the seam must expose which clock is " +
 			"read without changing what an un-injected engine does"},
 	{"TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock", "interface_state_clock_test.go",
-		"nl6#1042. No behavioural test can see the offset computed on wall values on a Linux clock, " +
+		"No behavioural test can see the offset computed on wall values on a Linux clock, " +
 			"because public time APIs cannot build a wall-clock jump without a monotonic one. This AST " +
 			"check of sinceBootNs and its three callers, and the monotonic reading of a production boot " +
 			"instant and transition clock, are the only things that would"},

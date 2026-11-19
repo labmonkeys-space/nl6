@@ -420,8 +420,8 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	// **RFC-2863:** `ifLastChange` is specified as "value of sysUpTime
 	// at the time the interface entered its current operational state".
 	// The engine's boot instant is the device's, the instant sysUpTime.0
-	// counts from (nl6#1031), and the stored offset is measured on the same
-	// monotonic clock with the same expression (sinceBootNs, nl6#1042), so the
+	// counts from, and the stored offset is measured on the same
+	// monotonic clock with the same expression (sinceBootNs), so the
 	// two agree by construction, across a host clock jump too. They used to
 	// coincide only by claim: the engine counted from its own construction
 	// while sysUpTime.0 was a static resource value. A future device restart
