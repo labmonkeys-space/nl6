@@ -26,11 +26,11 @@ nl6 (simulated NE8000)  ──UDP-notif──▶  YANG-Push receiver  ──▶ 
 
 | Role in the draft | In the tested chain | Talks to |
 | --- | --- | --- |
-| YANG-Push publisher | nl6, device type `huawei_ne8000` | Receiver over UDP-notif, RFC 9187 |
+| YANG-Push publisher | nl6, device type `huawei_ne8000` | Receiver over UDP-notif, draft-ietf-netconf-udp-notif |
 | YANG-Push receiver | NetCalyx v0.4.0 | Publisher over NETCONF for the YANG library, the modules and the subscriptions |
 | Message broker producer | NetCalyx v0.4.0 | Kafka and the schema registry |
 | YANG schema registry | Confluent Schema Registry with `yang-schema-registry-plugin` v0.0.5 | Producer and consumer |
-| Message broker consumer | A libyang 6.4.13 consumer that validates by Schema ID | Schema registry and ClickHouse |
+| Message broker consumer | A libyang 6.4.13 consumer that validates by Schema ID | Kafka, the schema registry and ClickHouse |
 
 nl6 is only the publisher.
 Everything to the right of it is the software under test.
@@ -59,7 +59,7 @@ Each device starts three subscriptions on `ietf-interfaces`.
 | 9 | periodic, 60 s | `/ietf-interfaces:interfaces/interface` |
 | 10 | on-change, dampening 5 s | `/ietf-interfaces:interfaces/interface` |
 
-Every behaviour on the wire is copied from a capture in [network-analytics/ietf-network-analytics-document-status](https://github.com/network-analytics/ietf-network-analytics-document-status).
+The behaviour on the wire follows captures in [network-analytics/ietf-network-analytics-document-status](https://github.com/network-analytics/ietf-network-analytics-document-status).
 
 | Behaviour | Capture |
 | --- | --- |
@@ -71,14 +71,21 @@ Every behaviour on the wire is copied from a capture in [network-analytics/ietf-
 
 nl6 differs from the captures in these points:
 
-- The subscription IDs are 8, 9 and 10. The IETF 127 router uses 6, 11 and 12 for its interface subscriptions and has no statistics subscription.
+- The subscription IDs are 8, 9 and 10.
+  The IETF 127 router uses 6, 11 and 12 for its interface subscriptions and has no statistics subscription.
 - `higher-layer-if` and `lower-layer-if` are not sent.
-- The sync push-update of subscription 10 follows `subscription-started` at once. The router sends it 5 seconds later.
-- `patch-id` is a counter per device. The capture holds one change-update and cannot confirm that.
-- Changes inside a dampening period are collected into one update, as RFC 8641 describes. The capture cannot confirm that either.
-- The served YANG library holds only IETF and IANA modules. nl6 adds two features and a few `augmented-by` rows that the router's library does not list, because the payloads it sends depend on them.
-- Every interface appears in subscription 8. The router sent statistics for a subset.
-- The values are simulated. Interface names, counters, addresses and descriptions come from the nl6 device profile.
+- The sync push-update of subscription 10 follows `subscription-started` at once.
+  The router sends it 5 seconds later.
+- `patch-id` is a counter per device.
+  The capture holds one change-update and cannot confirm that.
+- Changes inside a dampening period are collected into one update, as RFC 8641 describes.
+  The capture cannot confirm that either.
+- The served YANG library holds only IETF and IANA modules.
+  nl6 adds two features and a few `augmented-by` rows that the router's library does not list, because the payloads it sends depend on them.
+- Every interface appears in subscription 8.
+  The router sent statistics for a subset.
+- The values are simulated.
+  Interface names, counters, addresses and descriptions come from the nl6 device profile.
 
 The [limitations file](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/huawei_ne8000_limitations.md) has the full list.
 
@@ -88,9 +95,13 @@ The [limitations file](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/
 Its README has the steps.
 It needs a Linux Docker engine, starts three devices by default and ends with a count of the messages at four points in the chain.
 
+The stack pins the nl6 release v0.40.2.
+That release has an older subscription 10 and one message counter per subscription.
+Set `NL6_IMAGE` to a build of nl6 `main` to get the behaviour on this page.
+
 ## What a run shows today
 
-Result of 18 November 2026, three devices, about three minutes of traffic:
+Result of 18 November 2026 with a build of nl6 that has the subscription 10 described above, three devices, about three minutes of traffic:
 
 | Point in the chain | Messages |
 | --- | --- |
@@ -106,7 +117,7 @@ The 14 invalid messages fail strict validation at the consumer for two reasons, 
 1. **An identity module is not in the registered schema.**
    Interface entries carry `type` values such as `iana-if-type:ethernetCsmacd`.
    `subscription-started` names only `ietf-interfaces` in `module-version`.
-   `iana-if-type` is not reachable from it through imports, augments, deviations or features, which is the dependency rule of section 4.3 of the draft.
+   `iana-if-type` is not reachable from it through imports, augments, deviations or features, which is the dependency rule of section 4.3 of revision 13 of the draft.
    The consumer validates by Schema ID, as section 4.7 describes, and cannot resolve the identity.
 2. **The YANG Patch value of an on-change update is not rooted at a top-level node.**
    The router writes the value as `{"interface":[...]}` for the target `/ietf-interfaces:interfaces/interface[name=...]`.
@@ -122,11 +133,16 @@ That is why it forwards all 32 messages.
 
 ## What nl6 does not cover
 
-- Only `ietf-interfaces`. The IETF 127 capture also has hardware, LLDP, alarm and Huawei native subscriptions.
-- Three fixed subscriptions per device. A subscription cannot be configured over NETCONF, and the dialect serves only `get`, `get-schema`, `close-session` and `kill-session`.
-- One vendor. Only `huawei_ne8000` streams YANG-Push.
+- Only `ietf-interfaces`.
+  The IETF 127 capture also has hardware, LLDP, alarm and Huawei native subscriptions.
+- Three fixed subscriptions per device.
+  A subscription cannot be configured over NETCONF, and the dialect serves only `get`, `get-schema`, `close-session` and `kill-session`.
+- One vendor.
+  Only `huawei_ne8000` streams YANG-Push.
 - JSON over UDP-notif only.
-- No loss ratio per device. The chain compares totals. Reconciliation per device needs YANG-Push as a load-test protocol, which nl6 does not have yet.
+- No loss ratio per device.
+  The chain compares totals.
+  Reconciliation per device needs YANG-Push as a load-test protocol, which nl6 does not have yet.
 
 ## Related pages
 
