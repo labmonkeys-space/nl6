@@ -578,6 +578,13 @@ func down(dir string, env upEnv) error {
 			return err
 		}
 		_, _ = fmt.Fprintf(env.out, "down: nl6 (pid %d) was not running, removed stale state\n", s.PID)
+		// An nl6 that crashed left its namespace behind, and the next up
+		// refuses to start on it. down did not end that nl6, so another nl6
+		// may own the namespace by now. Name it and leave it.
+		if env.nsExist() {
+			_, _ = fmt.Fprintln(env.out, "down: the network namespace nl6sim still exists. "+
+				"If no other nl6 runs on this host, remove it with: sudo ip netns delete nl6sim")
+		}
 		return nil
 	}
 	comm := procComm(s.NL6)

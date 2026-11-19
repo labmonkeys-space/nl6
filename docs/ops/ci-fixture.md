@@ -180,7 +180,8 @@ down: stopped pid <pid>
 
 `down` waits up to 90 seconds for nl6 to exit.
 When nl6 does not exit in time, `down` kills it and exits 1.
-A killed nl6 leaves its network namespace behind, so run `sudo ip netns delete nl6sim` before the next `up`.
+`down` then removes the network namespace the killed nl6 left behind.
+When that fails, the message names the command to run before the next `up`: `sudo ip netns delete nl6sim`.
 When you forget `sudo`, `down` exits 1 and keeps `.nl6-ci/state.json`.
 Run `sudo nl6-ci down` again.
 

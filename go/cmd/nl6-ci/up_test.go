@@ -1105,6 +1105,25 @@ func TestDownTreatsAGoneProcessAsStopped(t *testing.T) {
 	}
 }
 
+// A crashed nl6 leaves its namespace behind and the next up refuses to start
+// on it. down did not end that nl6, so it names the namespace and leaves it.
+func TestDownNamesTheNamespaceOfACrashedNL6(t *testing.T) {
+	f := newFakes(t)
+	f.isAlive = false
+	f.nsExists = true
+	deleted := 0
+	f.env.nsDelete = func() error { deleted++; return nil }
+	if err := down(savedFixture(t), f.env); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(f.out.String(), "nl6sim still exists") || !contains(f.out.String(), "sudo ip netns delete nl6sim") {
+		t.Errorf("out %q", f.out.String())
+	}
+	if deleted != 0 {
+		t.Errorf("namespace deleted %d times, want 0: another nl6 may own it", deleted)
+	}
+}
+
 // nl6 reads one signal only, so a second down could not stop a hung nl6
 // either. down kills it and reports the namespace it left behind.
 func TestDownKillsAnNL6ThatDoesNotExit(t *testing.T) {
