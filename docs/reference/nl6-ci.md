@@ -299,9 +299,9 @@ The start time catches another nl6 that got the pid, such as the packaged `nl6.s
 | nl6 still runs after 90 seconds and is killed. | `nl6 (pid <pid>) did not stop in time and was killed. Its network namespace nl6sim was removed` | 1 | Deleted. |
 
 A killed nl6 cannot remove its network namespace, so `down` removes it.
+When that fails, the message ends with `remove it with: sudo ip netns delete nl6sim`.
 An nl6 that crashed before `down` leaves its namespace behind too.
 `down` did not end that nl6, so it leaves the namespace and prints `down: the network namespace nl6sim still exists`, followed by the command that removes it.
-When that fails, the message ends with `remove it with: sudo ip netns delete nl6sim`.
 The next `up` refuses to start while the namespace exists.
 With `state.json` kept, run `sudo nl6-ci down` again once the cause is fixed.
 
