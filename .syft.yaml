@@ -47,6 +47,7 @@ exclude:
   - ./.venv/**
   - ./go/nl6/nl6
   - ./go/nl6-reconcile
+  - ./go/nl6-ci
   # Ruby build fixture shipped inside an npm dependency of the docs site
   # (a Gemfile.lock for its stopwords generator) — not part of anything nl6
   # builds or ships, and gem lockfiles carry no license metadata.

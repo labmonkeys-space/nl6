@@ -313,27 +313,28 @@ nix-vendor-hash: check-docker
 sbom-curate: check-node-runtime
 	$(NODE) scripts/curate-product-sbom.mjs $(SBOM)
 
-## check-sbom-coverage: Assert nl6-reconcile links no module the nl6 binary doesn't
+## check-sbom-coverage: Assert nl6-reconcile and nl6-ci link no module the nl6 binary doesn't
 # The release SBOM is derived from the nl6 binary alone (amd64/arm64 sets are
-# identical). reconcile ships in the same release, so its third-party module
-# set must stay a subset of nl6's or the SBOM under-reports what ships. Runs
-# in release.yml before the SBOM step.
+# identical). reconcile and nl6-ci ship in the same release, so their
+# third-party module sets must stay subsets of nl6's or the SBOM under-reports
+# what ships. Runs in release.yml before the SBOM step.
 check-sbom-coverage: check-go
 	@set -e; cd $(GO_DIR); \
-	tmp_nl6=$$(mktemp); tmp_rec=$$(mktemp); \
-	trap 'rm -f "$$tmp_nl6" "$$tmp_rec"' EXIT; \
+	tmp_nl6=$$(mktemp); tmp_rec=$$(mktemp); tmp_ci=$$(mktemp); \
+	trap 'rm -f "$$tmp_nl6" "$$tmp_rec" "$$tmp_ci"' EXIT; \
 	go list -deps -f '{{if and .Module (not .Module.Main)}}{{.Module.Path}}{{end}}' ./nl6 | sort -u > "$$tmp_nl6"; \
 	go list -deps -f '{{if and .Module (not .Module.Main)}}{{.Module.Path}}{{end}}' ./cmd/nl6-reconcile | sort -u > "$$tmp_rec"; \
+	go list -deps -f '{{if and .Module (not .Module.Main)}}{{.Module.Path}}{{end}}' ./cmd/nl6-ci | sort -u > "$$tmp_ci"; \
 	[ -s "$$tmp_nl6" ] || { echo "check-sbom-coverage: go list produced no modules for ./nl6 - the check cannot have run"; exit 1; }; \
-	extra=$$(comm -13 "$$tmp_nl6" "$$tmp_rec"); \
+	extra=$$( { comm -13 "$$tmp_nl6" "$$tmp_rec"; comm -13 "$$tmp_nl6" "$$tmp_ci"; } | sort -u ); \
 	if [ -n "$$extra" ]; then \
-	  echo "check-sbom-coverage: nl6-reconcile links modules absent from the nl6 binary,"; \
+	  echo "check-sbom-coverage: nl6-reconcile or nl6-ci links modules absent from the nl6 binary,"; \
 	  echo "so the binary-derived release SBOM would under-report what ships:"; \
 	  echo "$$extra"; \
 	  echo "Extend the SBOM strategy (per-binary SBOMs) before adding such a dependency."; \
 	  exit 1; \
 	fi; \
-	echo "check-sbom-coverage: reconcile module set is a subset of the nl6 binary set"
+	echo "check-sbom-coverage: reconcile and nl6-ci module sets are subsets of the nl6 binary set"
 
 ## check-ansible: Lint the labmonkeys.nl6 Ansible collection (ansible-lint in a pinned venv)
 ANSIBLE_VENV := build/ansible-venv

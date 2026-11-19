@@ -112,13 +112,14 @@ jobs:
 
       - name: Build release binaries and packages
         # `packages` depends on `dist`, so this builds the simulator (linux
-        # amd64/arm64), the nl6-reconcile CLI (all OS/arch), and the .deb/.rpm.
+        # amd64/arm64), the nl6-reconcile CLI (all OS/arch), the nl6-ci CLI (linux
+        # amd64/arm64), and the .deb/.rpm.
         run: make packages
 
       - name: Generate SHA-256 checksums
         working-directory: dist
         run: |
-          sha256sum -- nl6-linux-amd64 nl6-linux-arm64 nl6-reconcile-* *.deb *.rpm > checksums.txt
+          sha256sum -- nl6-linux-amd64 nl6-linux-arm64 nl6-reconcile-* nl6-ci-* *.deb *.rpm > checksums.txt
           cat checksums.txt
 
       - name: Install cosign
@@ -133,12 +134,12 @@ jobs:
         run: |
           cosign sign-blob --yes checksums.txt --bundle checksums.txt.cosign.bundle
 
-      - name: Check SBOM coverage (reconcile subset)
+      - name: Check SBOM coverage (nl6-reconcile and nl6-ci subset)
         # The product SBOM below is derived from the nl6 binary alone. The six
-        # nl6-reconcile binaries ship in the same release, so their third-party
-        # module set must stay a subset of nl6's — otherwise the SBOM silently
-        # under-reports what ships, and a consumer checking a CVE against it
-        # gets a false "not affected".
+        # nl6-reconcile binaries and the two nl6-ci binaries ship in the same
+        # release, so their third-party module sets must stay subsets of nl6's.
+        # Otherwise the SBOM silently under-reports what ships, and a consumer
+        # checking a CVE against it gets a false "not affected".
         run: make check-sbom-coverage
 
       - name: Generate product SBOM (syft)
@@ -209,6 +210,7 @@ jobs:
             dist/nl6-linux-amd64
             dist/nl6-linux-arm64
             dist/nl6-reconcile-*
+            dist/nl6-ci-*
             dist/*.deb
             dist/*.rpm
 
@@ -230,6 +232,7 @@ jobs:
             dist/nl6-linux-amd64
             dist/nl6-linux-arm64
             dist/nl6-reconcile-*
+            dist/nl6-ci-*
             dist/*.deb
             dist/*.rpm
             dist/checksums.txt
