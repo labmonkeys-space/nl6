@@ -7,7 +7,7 @@ description: "How huawei_ne8000 devices stream YANG-Push over UDP-notif to a col
 
 A `huawei_ne8000` device can stream interface telemetry to a collector as YANG-Push over UDP-notif.
 It models Huawei VRP R025C00.
-The transport is RFC 9187 (UDP-notif version 1, JSON).
+The transport is UDP-notif version 1 with JSON, as draft-ietf-netconf-udp-notif defines it.
 The subscriptions follow RFC 8641.
 Opt in per device.
 Devices of other types never stream.

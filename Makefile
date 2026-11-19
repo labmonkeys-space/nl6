@@ -504,8 +504,9 @@ test-interop-ipfix: check-go check-docker
 ## test-interop-yangpush: Receive nl6's YANG-Push over UDP-notif with a REAL NetCalyx v0.4.0 collector (needs Linux, docker, sudo, ssh-keygen)
 ##
 ## The YANG-Push sibling of test-interop-ipfix: every other yangpush test
-## decodes nl6's bytes with nl6's own code, so a shared misreading of RFC 9187,
-## RFC 8641 or the VRP envelope passes all of them. This builds NetCalyx from
+## decodes nl6's bytes with nl6's own code, so a shared misreading of
+## draft-ietf-netconf-udp-notif, RFC 8641 or the VRP envelope passes all of
+## them. This builds NetCalyx from
 ## its release .deb (examples/netcalyx/), starts it and Redpanda on the HOST
 ## network, generates a throwaway SSH key and starts nl6 with
 ## -netconf-enable -netconf-authorized-keys so NetCalyx can log in as simadmin

@@ -255,8 +255,9 @@ type DeviceGnmiDialoutConfig struct {
 }
 
 // DeviceYangPushConfig is the per-device YANG-Push over UDP-notif opt-in
-// (RFC 9187 transport, RFC 8641 subscriptions). nil = the device does not
-// stream. Only huawei_ne8000 can (SupportsYangPush). Collector is the UDP
+// (draft-ietf-netconf-udp-notif transport, RFC 8641 subscriptions). nil =
+// the device does not stream. Only huawei_ne8000 can (SupportsYangPush).
+// Collector is the UDP
 // target (host:port). SegmentSize is the maximum UDP-notif segment size in
 // bytes (default 1436, the captured max-segment-size).
 type DeviceYangPushConfig struct {
