@@ -88,8 +88,9 @@ func saveState(dir string, s state) error {
 
 // stateFileFlags opens nl6.log. The state directory may be shared and
 // world-writable (-state /tmp under sudo), so the open never follows a symlink
-// planted under the fixed file name.
-const stateFileFlags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC | syscall.O_NOFOLLOW
+// planted under the fixed file name. spawnNL6 removes the earlier log first,
+// so O_EXCL refuses a file that another user planted after the removal.
+const stateFileFlags = os.O_CREATE | os.O_WRONLY | os.O_EXCL | syscall.O_NOFOLLOW
 
 // writeFile writes a file nl6-ci keeps: state.json or the report. The data
 // goes to a temporary file that is renamed into place, so a writer that is

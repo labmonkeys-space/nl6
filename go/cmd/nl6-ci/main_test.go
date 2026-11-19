@@ -31,7 +31,7 @@ func TestRunDispatch(t *testing.T) {
 		{"up with a stray argument", []string{"up", "-manifest", "/nonexistent/m.json", "-netconf-enable"}, 2},
 		{"up with stray arguments before --", []string{"up", "-manifest", "/nonexistent/m.json", "x", "--", "-y"}, 2},
 		// Past the usage checks: up reads the missing manifest and exits 1.
-		{"up with nl6 flags after --", []string{"up", "-manifest", "/nonexistent/m.json", "--", "-netconf-enable"}, 1},
+		{"up with nl6 flags after --", []string{"-state", t.TempDir(), "up", "-manifest", "/nonexistent/m.json", "--", "-netconf-enable"}, 1},
 		{"up with port 0", []string{"up", "-manifest", "/nonexistent/m.json", "-port", "0"}, 2},
 		{"up with a port above 65535", []string{"up", "-manifest", "/nonexistent/m.json", "-port", "65536"}, 2},
 		{"up with a create timeout of 0", []string{"up", "-manifest", "/nonexistent/m.json", "-create-timeout", "0"}, 2},

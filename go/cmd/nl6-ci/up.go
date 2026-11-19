@@ -692,9 +692,22 @@ func waitUntil(deadline time.Time, budget, every time.Duration, last *error, f f
 	}
 }
 
-// tailFile returns the last n lines of a file, each newline terminated.
+// tailWindow bounds what tailFile reads. nl6.log grows with the fleet and the
+// run time, and the last lines fit in far less.
+const tailWindow = 1 << 20
+
+// tailFile returns the last n lines of a file, each newline terminated. It
+// reads the last tailWindow bytes only.
 func tailFile(path string, n int) string {
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path) // #nosec G304 -- the path is the nl6.log that state.json names
+	if err != nil {
+		return fmt.Sprintf("(cannot read %s: %v)\n", path, err)
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err == nil && fi.Size() > tailWindow {
+		_, _ = f.Seek(-tailWindow, io.SeekEnd) // best-effort, a failed seek reads the whole file
+	}
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return fmt.Sprintf("(cannot read %s: %v)\n", path, err)
 	}
