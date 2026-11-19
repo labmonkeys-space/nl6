@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -130,5 +131,128 @@ func TestBuildRunTags_YangPush(t *testing.T) {
 	}
 	if !strings.Contains(rt.Note, "message-publisher-id") {
 		t.Errorf("note should name message-publisher-id: %q", rt.Note)
+	}
+}
+
+// ypLiveScenario starts a real exporter for one device, lets it announce its
+// subscriptions, and arms and starts a yang-push scenario over it. Exporter
+// and controller share the fake clock.
+func ypLiveScenario(t *testing.T) (*SimulatorManager, *ScenarioController, *DeviceSimulator, *ypCollector, *ypFakeClock) {
+	t.Helper()
+	dev, _ := newYangPushTestDevice(t)
+	col := newYPCollector(t)
+	e, fc := startYangPushTest(t, dev, col.addr())
+	readStart(t, col)
+	waitArmed(t, fc)
+	dev.yangPushExporter = e
+	ip := dev.IP.String()
+	sm := &SimulatorManager{
+		devices: map[string]*DeviceSimulator{dev.ID: dev}, deviceIPs: map[string]struct{}{ip: {}},
+		deviceTypesByIP: map[string]string{}, devicesByIP: map[string]*DeviceSimulator{ip: dev},
+	}
+	c := newScenarioController(sm, fc.Now)
+	if err := c.Submit(&Scenario{Participants: []string{ip}, Protocol: "yang-push", Rate: 1, Window: 10 * time.Minute}, "s-000001"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = c.Stop() })
+	if armed, excluded, err := c.Arm(); err != nil || armed != 1 {
+		t.Fatalf("arm: armed=%d excluded=%+v err=%v", armed, excluded, err)
+	}
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return sm, c, dev, col, fc
+}
+
+func ypReportRow(t *testing.T, sm *SimulatorManager, c *ScenarioController) scenarioCounterRow {
+	t.Helper()
+	rep := buildScenarioReport(sm, c)
+	if rep == nil {
+		t.Fatal("no report")
+	}
+	if len(rep.Counters) != 1 {
+		t.Fatalf("counter rows = %d, want 1: %+v", len(rep.Counters), rep.Counters)
+	}
+	row := rep.Counters[0]
+	if row.Emitted != row.InWindow+row.Drain+row.SendFailures+row.Dropped+row.SuppressedPreWindow {
+		t.Errorf("ledger identity broken in the report row: %+v", row)
+	}
+	if row.Sent != row.InWindow+row.Drain {
+		t.Errorf("sent %d, want in_window %d + drain %d", row.Sent, row.InWindow, row.Drain)
+	}
+	return row
+}
+
+// A scenario over a running device: what the collector received inside the
+// window is what the report row says was sent.
+func TestScenarioYangPush_EndToEnd(t *testing.T) {
+	sm, c, dev, col, fc := ypLiveScenario(t)
+	fc.Advance(ypFirstTick)
+	waitArmed(t, fc)
+	fc.Advance(3 * time.Second)
+	waitArmed(t, fc)
+	received := 0
+	for {
+		m, ok := col.next(t, 100*time.Millisecond)
+		if !ok {
+			break
+		}
+		if m.Kind != "ietf-yang-push:push-update" {
+			t.Errorf("received %s inside the window, want push-update only", m.Kind)
+		}
+		received++
+	}
+	if _, err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	row := ypReportRow(t, sm, c)
+	if row.Protocol != "yang-push" || row.SourceIP != dev.IP.String() || row.Collector != col.addr() {
+		t.Errorf("row key = (%s, %s, %s), want (yang-push, %s, %s)", row.Protocol, row.SourceIP, row.Collector, dev.IP, col.addr())
+	}
+	if received != 2 || row.Emitted != 2 || row.Sent != 2 {
+		t.Errorf("received %d, emitted %d, sent %d, want 2 each", received, row.Emitted, row.Sent)
+	}
+	if rep := buildScenarioReport(sm, c); rep.Summary.Metadata.Rate.Paced {
+		t.Error("rate.paced = true for yang-push")
+	}
+	// After the scenario the device streams on its own again.
+	if dev.yangPushExporter.scenPart.Load() != nil {
+		t.Fatal("claim not released at stop")
+	}
+	fc.Advance(time.Minute)
+	if m := col.mustNext(t); m.Kind != "ietf-yang-push:push-update" || m.MsgID != 7 {
+		t.Errorf("after the scenario got %s msg %d, want push-update msg 7", m.Kind, m.MsgID)
+	}
+}
+
+// A running scenario freezes the fleet, so a claimed device cannot be deleted
+// through the manager. If the device is gone at finish anyway, finish returns
+// and the row stays, with an empty collector.
+func TestScenarioYangPush_DeviceGoneAtFinish(t *testing.T) {
+	sm, c, dev, col, fc := ypLiveScenario(t)
+	sm.scenarioMu.Lock()
+	sm.scenarios = map[string]*ScenarioController{"s-000001": c}
+	sm.refreshScenarioSnapLocked()
+	sm.scenarioMu.Unlock()
+	if err := sm.DeleteDevice(dev.ID); err == nil {
+		t.Fatal("DeleteDevice of a claimed device during a running scenario should be refused")
+	}
+	fc.Advance(ypFirstTick)
+	waitArmed(t, fc)
+	col.mustNext(t)
+
+	_ = dev.yangPushExporter.Close()
+	sm.mu.Lock()
+	delete(sm.devices, dev.ID)
+	delete(sm.devicesByIP, dev.IP.String())
+	delete(sm.deviceIPs, dev.IP.String())
+	sm.mu.Unlock()
+
+	if _, err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	row := ypReportRow(t, sm, c)
+	if row.Protocol != "yang-push" || row.SourceIP != dev.IP.String() || row.Collector != "" || row.Emitted != 1 {
+		t.Errorf("row = %+v, want yang-push, the device IP, an empty collector and 1 emitted", row)
 	}
 }

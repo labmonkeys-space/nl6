@@ -298,3 +298,39 @@ func TestReconcile_MissingIsUnclassifiedToo(t *testing.T) {
 		t.Errorf("MISSING without a drain assertion is unclassified and must say so:\n%s", txt)
 	}
 }
+
+// TestReconcile_YangPush: the tool joins on strings, so a yang-push report and
+// a received CSV reconcile without a protocol-specific code path.
+func TestReconcile_YangPush(t *testing.T) {
+	report := `{"counters":[
+		{"protocol":"yang-push","source_ip":"10.42.0.1","collector":"netcalyx:10003","sent":12},
+		{"protocol":"yang-push","source_ip":"10.42.0.2","collector":"netcalyx:10003","sent":12},
+		{"protocol":"yang-push","source_ip":"10.42.0.3","collector":"netcalyx:10003","sent":12}]}`
+	received := "protocol,source_ip,collector,received\n" +
+		"yang-push,10.42.0.1,netcalyx:10003,12\n" +
+		"yang-push,10.42.0.2,netcalyx:10003,9\n"
+	sent, err := parseReport([]byte(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recv, err := parseReceived([]byte(received))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"10.42.0.1": statusOK, "10.42.0.2": statusLoss, "10.42.0.3": statusMissing}
+	got := reconcile(sent, recv, 0.005, true)
+	if len(got) != len(want) {
+		t.Fatalf("got %d results, want %d: %+v", len(got), len(want), got)
+	}
+	for _, r := range got {
+		if r.Protocol != "yang-push" || r.Status != want[r.SourceIP] {
+			t.Errorf("%s %s: status %s, want %s", r.Protocol, r.SourceIP, r.Status, want[r.SourceIP])
+		}
+	}
+	// Without the drain assertion a shortfall is not called loss.
+	for _, r := range reconcile(sent, recv, 0.005, false) {
+		if r.SourceIP == "10.42.0.2" && r.Status != statusResidual {
+			t.Errorf("shortfall without -drained: status %s, want %s", r.Status, statusResidual)
+		}
+	}
+}
