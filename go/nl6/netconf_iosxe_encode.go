@@ -119,7 +119,9 @@ func iosxeLeaves(b *bytes.Buffer, leaves iosxeLeafSet, r iosxeRow) {
 		iosxeLeaf(b, "interface-type", r.InterfaceType)
 		iosxeLeaf(b, "admin-status", r.Admin)
 		iosxeLeaf(b, "oper-status", r.Oper)
-		// An unknown last-change (a clock rewind) omits the leaf.
+		// A row built without the state engine (no counter cycler, a cycler
+		// with no state engine, or an interface the engine does not know) has
+		// no last-change and omits the leaf.
 		if r.LastChange != "" {
 			iosxeLeaf(b, "last-change", r.LastChange)
 		}

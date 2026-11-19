@@ -213,8 +213,9 @@ func filterChildren(t *testing.T, frag string, keep map[string]bool, rewrite fun
 	return out.String()
 }
 
-// TestNetconfRowOmitsUnknownLastChange: after a clock rewind last-change is
-// unknown. The row then carries no last-change leaf, not an empty one.
+// TestNetconfRowOmitsUnknownLastChange: a row built without the state engine
+// (no counter cycler, a cycler with no state engine, or an interface the engine
+// does not know) has no last-change. The row then carries no last-change leaf, not an empty one.
 func TestNetconfRowOmitsUnknownLastChange(t *testing.T) {
 	at := time.Date(2026, 10, 29, 11, 0, 0, 0, time.UTC)
 	row := iosxeRow{Name: "GigabitEthernet1/0/1", Admin: "if-state-up", Oper: "if-oper-state-ready"}

@@ -419,11 +419,13 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	//
 	// **RFC-2863:** `ifLastChange` is specified as "value of sysUpTime
 	// at the time the interface entered its current operational state".
-	// The engine's `bootTimeUnixNs` is the device's boot instant, the
-	// instant sysUpTime.0 counts from (nl6#1031), so the two epochs
-	// coincide by construction. They used to coincide only by claim: the
-	// engine counted from its own construction while sysUpTime.0 was a
-	// static resource value. A future device restart has to move both.
+	// The engine's boot instant is the device's, the instant sysUpTime.0
+	// counts from, and the stored offset is measured on the same
+	// monotonic clock with the same expression (sinceBootNs), so the
+	// two agree by construction, across a host clock jump too. They used to
+	// coincide only by claim: the engine counted from its own construction
+	// while sysUpTime.0 was a static resource value. A future device restart
+	// has to move both.
 	if !ifX && ic.state != nil {
 		switch col {
 		case colIfAdminStatus:
@@ -431,17 +433,11 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 		case colIfOperStatus:
 			return operEnumString(ic.state.OperStatus(ifIndex))
 		case colIfLastChange:
-			// TimeTicks (hundredths of a second since the state-engine
-			// boot epoch). Pre-transition slots render as "0"; rewind-
-			// sentinel slots also render as "0" (rewind is observable
-			// elsewhere via the wallRelNs log + LastChangeRewindSentinel
-			// in StateChange.LastChangeNs). Wraps at 2^32 like sysUpTime.0,
-			// the value a real agent stores at the transition.
-			lastUnixNs := ic.state.LastChangeNs(ifIndex)
-			if lastUnixNs == LastChangeRewindSentinel || lastUnixNs <= ic.state.bootTimeUnixNs {
-				return "0"
-			}
-			return strconv.FormatUint(uint64(uint32((lastUnixNs-ic.state.bootTimeUnixNs)/10_000_000)), 10)
+			// TimeTicks (hundredths of a second since the boot instant),
+			// read from the stored offset directly. A slot that never
+			// transitioned holds 0 and renders as "0". Wraps at 2^32 like
+			// sysUpTime.0, the value a real agent stores at the transition.
+			return strconv.FormatUint(uint64(uint32(ic.state.lastChangeSinceBootNs(ifIndex)/10_000_000)), 10)
 		}
 	}
 

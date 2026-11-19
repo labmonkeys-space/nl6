@@ -604,26 +604,27 @@ func TestYangPushOnChangeAdminSkipsTwinOper(t *testing.T) {
 	}
 }
 
-// A transition stamped with LastChangeRewindSentinel omits last-change even
-// when a later transition has already written a valid timestamp into the live
-// engine slot.
-func TestYangPushChangeUpdateRewindOmitsLastChange(t *testing.T) {
+// The change-update takes last-change from the event, even when a later
+// transition has already written a newer timestamp into the live engine slot.
+func TestYangPushChangeUpdateLastChangeFromEvent(t *testing.T) {
 	dev, st := newYangPushTestDevice(t)
 	e := &YangPushExporter{dev: dev, subs: vrpSubs, pubID: 0x7F000001}
 	idx := dev.metricsCycler.ifCounters.Load().IfIndices()[0]
-	// Stamp a valid transition into the live engine slot first.
+	// Stamp a later transition into the live engine slot first.
 	st.SetLinkState(idx, OperDown)
-	raw := encodeEnvelope(ypTestStart(), "ne8000-sim", 1, e.changeUpdate(StateChange{
+	at := ypTestStart()
+	changed := at.Add(-time.Hour)
+	raw := encodeEnvelope(at, "ne8000-sim", 1, e.changeUpdate(StateChange{
 		IfIndex:      idx,
 		Admin:        AdminUp,
 		Oper:         OperDown,
-		LastChangeNs: LastChangeRewindSentinel,
+		LastChangeNs: uint64(changed.UnixNano()),
 		Changed:      LeafOperStatus,
-		At:           ypTestStart(),
+		At:           at,
 	}))
 	_, entries := ypEditEntries(t, raw)
-	if len(entries) != 1 || entries[0]["last-change"] != nil {
-		t.Fatalf("entry after clock rewind still carries last-change: %v", entries)
+	if want := changed.UTC().Format(time.RFC3339); len(entries) != 1 || entries[0]["last-change"] != want {
+		t.Fatalf("entries = %v, want one with the event's last-change %s", entries, want)
 	}
 }
 

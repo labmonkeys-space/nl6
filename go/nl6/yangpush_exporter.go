@@ -387,10 +387,7 @@ func (e *YangPushExporter) changeUpdate(evt StateChange) []byte {
 	row := e.row(evt.IfIndex, evt.At)
 	row.Admin = iosxeAdminStatus(evt.Admin)
 	row.Oper = iosxeOperStatus(evt.Admin, evt.Oper)
-	row.LastChange = "" // unknown after a clock rewind: the leaf is omitted
-	if evt.LastChangeNs != LastChangeRewindSentinel {
-		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
-	}
+	row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	return encodePushChangeUpdate(e.subs[2], evt.At, e.pubID, e.nextPatchID(), []ypIface{e.entry(row)})
 }
 

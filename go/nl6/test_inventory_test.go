@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 2311
+const minimumTestFunctions = 2312
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 27
@@ -457,11 +457,17 @@ var loadBearingGuards = []loadBearingGuard{
 			"Hoisting it reads as a refactor and makes ifLastChange go backwards under contention; " +
 			"review demonstrated the whole package stayed green with it hoisted"},
 	{"TestInterfaceStateInjectedClockCanStepBackwards", "interface_state_clock_test.go",
-		"nl6#575. The only exercise of the rewind sentinel in the package. The flap test could reach " +
-			"it by luck before this change and cannot by construction after it"},
+		"The only exercise of a clock reading before boot. The rewind " +
+			"sentinel (served by gNMI as 18446744073709551615) is gone, and a negative offset must clamp " +
+			"to 0 rather than wrap to boot plus about 9.13 years"},
 	{"TestInterfaceStateClockDefaultsToWallClock", "interface_state_clock_test.go",
-		"nl6#575. The only pin that production stays on the real wall clock: the seam must expose " +
-			"which clock is read without changing what an un-injected engine does"},
+		"The only pin that production stays on time.Now: the seam must expose which clock is " +
+			"read without changing what an un-injected engine does"},
+	{"TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock", "interface_state_clock_test.go",
+		"No behavioural test can see the offset computed on wall values on a Linux clock, " +
+			"because public time APIs cannot build a wall-clock jump without a monotonic one. This AST " +
+			"check of sinceBootNs and its three callers, and the monotonic reading of a production boot " +
+			"instant and transition clock, are the only things that would"},
 	{"TestFinalizeIsBoundedWhenTheSchedulerStalls", "scenario_finalize_join_test.go",
 		"nl6#618. The COMMON stalled-write case. The syslog scheduler fires inline, so a stalled " +
 			"write parks its run loop and finish() blocks joining it, with nl6#567's barrier ceiling " +

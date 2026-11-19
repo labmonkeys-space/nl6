@@ -68,8 +68,8 @@ func TestIfScenario3SeedsEveryInterfaceOperDown(t *testing.T) {
 			t.Errorf("GET ifOperStatus.%d = %s, want 2 (scenario 3 seeds oper down)", i, got)
 		}
 		// A seed is not a transition.
-		if got := state.LastChangeNs(i); got != state.bootTimeUnixNs {
-			t.Errorf("LastChangeNs(%d) = %d, want the boot epoch %d", i, got, state.bootTimeUnixNs)
+		if got := state.LastChangeNs(i); got != state.bootTimeNs() {
+			t.Errorf("LastChangeNs(%d) = %d, want the boot epoch %d", i, got, state.bootTimeNs())
 		}
 	}
 	// The walk reads the same engine: GETNEXT from the column and along it.
@@ -318,8 +318,8 @@ func TestIfScenario3IsVisibleOnGnmiGet(t *testing.T) {
 		t.Errorf("gNMI admin-status = %s, want UP", v)
 	}
 	state := device.metricsCycler.ifCounters.Load().State()
-	if v := get("last-change"); !strings.Contains(v, fmt.Sprint(state.bootTimeUnixNs)) {
-		t.Errorf("gNMI last-change = %s, want the boot epoch %d (no transition)", v, state.bootTimeUnixNs)
+	if v := get("last-change"); !strings.Contains(v, fmt.Sprint(state.bootTimeNs())) {
+		t.Errorf("gNMI last-change = %s, want the boot epoch %d (no transition)", v, state.bootTimeNs())
 	}
 }
 
@@ -371,10 +371,10 @@ func TestIfScenarioSeedStampsNoTransition(t *testing.T) {
 				}
 				// Seed stored a relative 0, which LastChangeNs renders as
 				// the boot epoch. A mutator would have stored `now`.
-				if got := state.LastChangeNs(i); got != state.bootTimeUnixNs {
+				if got := state.LastChangeNs(i); got != state.bootTimeNs() {
 					t.Errorf("LastChangeNs(%d) = %d, want the boot epoch %d; the scenario was "+
 						"applied through a mutator, which also broadcasts and would fire link "+
-						"telemetry for the whole fleet at startup", i, got, state.bootTimeUnixNs)
+						"telemetry for the whole fleet at startup", i, got, state.bootTimeNs())
 				}
 			}
 		})

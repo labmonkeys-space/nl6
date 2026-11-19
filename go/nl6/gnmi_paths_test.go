@@ -355,8 +355,8 @@ func TestPathResolver_LastChangeLeaf(t *testing.T) {
 	if state == nil {
 		t.Fatal("state engine not initialised")
 	}
-	if preNs != state.bootTimeUnixNs {
-		t.Errorf("pre-mutation last-change: got %d, want bootTime %d", preNs, state.bootTimeUnixNs)
+	if preNs != state.bootTimeNs() {
+		t.Errorf("pre-mutation last-change: got %d, want bootTime %d", preNs, state.bootTimeNs())
 	}
 
 	// Mutate; wait past 10ms so the change is observable in the integer slot.

@@ -604,10 +604,10 @@ A `1.3.6.1.2.1.1.3.0` row in an operator's own profile is never served; the ship
 **A walk reaches all three.** They are not in the resource map, so a GETNEXT or GETBULK takes them as candidates beside the static rows.
 Earlier releases skipped `sysName.0` and `sysLocation.0` on a walk of the system group, although a GET answered them.
 
-**A wall-clock jump on the host shifts `ifLastChange` against `sysUpTime.0`.** `sysUpTime.0` is measured on the monotonic clock, while the state engine stamps transitions from the wall clock.
+**A host clock jump does not shift `ifLastChange` against `sysUpTime.0`.** Both are measured on the monotonic clock, from the same boot instant.
 A jump is an NTP step, a host suspend, or a VM pause or snapshot.
-After a forward jump, every later transition's `ifLastChange` is ahead of `sysUpTime.0` by the size of the jump, so `sysUpTime - ifLastChange` goes negative.
-After a backward jump it is behind by the same amount.
+The gNMI, NETCONF and YANG-Push `last-change` leaves are the boot instant's wall-clock reading plus that monotonic time since boot.
+After a jump of J they are therefore off by J against the notification's own timestamp (the gNMI `Notification` timestamp, the NETCONF `eventTime`, the YANG-Push `event-time`), which reads the wall clock.
 
 **What does not move yet.** `snmpEngineBoots` stays 1, and a device cannot be restarted.
 The engine time of an SNMPv3 trap counts from the moment the device's trap exporter was attached, which is its creation, not from the boot instant itself.
