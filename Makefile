@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web test-fleet check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile nl6-ci yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web test-fleet check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-typecheck docs-check-orphans docs-check-csp docs-audit-overrides docs-audit-overrides-test docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -88,6 +88,10 @@ all: build
 # honour the toolchain its go.mod pins whatever the caller's environment says.
 build: check-go
 	cd $(BUILD_DIR) && GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+## nl6-ci: Build the nl6-ci CLI (drive nl6 as a CI test fixture)
+nl6-ci: check-go
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o nl6-ci ./cmd/nl6-ci
 
 ## reconcile: Build the nl6-reconcile CLI (report ⋈ received-counts loss diff)
 reconcile: check-go

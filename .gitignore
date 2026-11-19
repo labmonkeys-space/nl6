@@ -38,6 +38,7 @@ go/nl6/nl6
 go/nl6/nl6.pid
 go/nl6/startup.log
 go/nl6-reconcile
+go/nl6-ci
 
 # Release build artifacts
 dist/
