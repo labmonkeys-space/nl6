@@ -174,7 +174,7 @@ Watch the two workflows that run in sequence:
 The Release is created as a **draft** — review it, verify the artifacts, then
 publish:
 
-- [ ] The draft Release has the correct tag and attaches the binaries (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`, `nl6-ci-linux-<arch>`), `.deb`/`.rpm`, `checksums.txt` + `checksums.txt.cosign.bundle`, `nl6.sbom.spdx.json`, and `nl6.sbom.report.html` (open it — it is the readable view of the SPDX JSON and needs no tooling).
+- [ ] The draft Release has the correct tag and attaches the binaries (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`, `nl6-ci-linux-<arch>`), `.deb`/`.rpm`, `checksums.txt` + `checksums.txt.cosign.bundle`, `nl6.sbom.spdx.json`, and `nl6.sbom.report.html`. Open the report. It is the readable view of the SPDX JSON and needs no tooling.
 - [ ] **Verify the signatures + provenance** (see the next section). Do this on
       the draft assets before publishing.
 - [ ] **Product-SBOM sanity** — `nl6.sbom.spdx.json` describes the shipped binary, not the repo.
