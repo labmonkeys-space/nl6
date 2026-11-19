@@ -120,6 +120,20 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   nl6 gives every device the captured anchor, so the fleet bursts together.
   A real fleet does only if every device is configured with one anchor.
   nl6 does not jitter it.
+- Known limitation, not fixed: when the host clock is set back, the devices send no `push-update` for the two periodic subscriptions (IDs 8 and 9) for about as long as the clock went back.
+  Example: the clock goes back 5 minutes, and the collector receives no periodic update for about 5 minutes.
+  The subscriptions stay active. nl6 sends no `subscription-terminated` or `subscription-suspended`, and the updates start again on their own.
+  - What happens.
+    The update that was already scheduled still goes out on time.
+    After that, nl6 waits until the clock is past the time of the last update it sent.
+    The on-change subscription (ID 10) is not affected. It has no schedule and sends a `push-change-update` when an interface changes state, so those updates keep arriving the whole time.
+  - Why.
+    `periodic` in `yangpush_exporter.go` picks the next send time with `later(obs, e.clock())`.
+    After the clock goes back, the old send time is the later of the two, so the next send is planned one period after it.
+    `ResetAt` then sleeps until the clock reaches that time.
+  - A clock set forward loses no update.
+    The update already scheduled goes out late, by at most the size of the jump, and the next one is back on schedule.
+    This comes from reading the code and was not measured.
 
 ## Interop gate
 
