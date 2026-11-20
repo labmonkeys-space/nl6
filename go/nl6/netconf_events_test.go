@@ -281,6 +281,32 @@ func TestNetconfInterleavedShutdownsPushOncePerInterface(t *testing.T) {
 	sentinel.expectNext()
 }
 
+// Two producers that change one interface at the same moment can interleave
+// their broadcasts: admin(down), admin(up), oper(down), oper(up). Both oper
+// events are twins, so the last push carries the current state.
+func TestNetconfInterleavedAdminChangesOnOneInterfaceEndCurrent(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	sentinel := newNcSentinel(c, st)
+	c.sub(ncXPath("GigabitEthernet1/0/5", "oper-status"))
+
+	down := st.ApplyAdminStatus(5, AdminDown)
+	up := st.ApplyAdminStatus(5, AdminUp)
+	if len(down) < 2 || len(up) < 2 {
+		t.Fatalf("admin changes did not move oper: %d and %d events", len(down), len(up))
+	}
+	st.Broadcast(down[0])
+	st.Broadcast(up[0])
+	ncBroadcast(st, append(down[1:], up[1:]...))
+
+	for _, want := range []string{"if-oper-state-no-pass", iosxeOperInvalid, "if-oper-state-lower-layer-down", "if-oper-state-ready"} {
+		if n := c.next(); n.oper != want {
+			t.Fatalf("got %q, want %q: %s", n.oper, want, n.raw)
+		}
+	}
+	sentinel.expectNext()
+}
+
 func TestNetconfNoShutdownSequence(t *testing.T) {
 	dev, st := newNetconfTestDevice(t)
 	c := startIOSXETestClient(t, dev)
