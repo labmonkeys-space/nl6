@@ -11,4 +11,4 @@ also behind the **Sponsor** button on the repository.
 
 <!-- Add supporters here with their consent. Recognition only; no tiers, no promised benefits. -->
 
-_No supporters listed yet — be the first, and let me know if you'd like your name here._
+- [@srieger1](https://github.com/srieger1): paid two years of the nl6.eu domain. ❤️
