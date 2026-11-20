@@ -32,6 +32,7 @@ func TestBuildRunTags_NoPEN(t *testing.T) {
 		{"sflow", tagSFlowSubAgentID, false, false},
 		{"gnmi-dialout", tagGNMISyntheticPath, false, false},
 		{"netflow5", tagWindowSourceIP, false, false},
+		{"yang-push", tagWindowSourceIP, false, false},
 		{"syslog", tagWindowSourceIP, true, true},    // no PEN → degraded
 		{"snmp-trap", tagWindowSourceIP, true, true}, // no PEN → degraded
 	}

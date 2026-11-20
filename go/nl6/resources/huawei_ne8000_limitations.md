@@ -55,7 +55,9 @@ NetCalyx reports that as a parse error.
 
 `-fidelity` mutes all three subscriptions.
 The `subscription-started` notification waits for the first unmuted activity.
-The subscriptions do not take part in a load-test scenario window.
+A load-test scenario with protocol `yang-push` gates the device's own schedule.
+A participant is silent outside the window and sends as usual inside it.
+The scenario rate is ignored, and a state change outside the window is dropped.
 
 ## One burst a minute
 

@@ -102,13 +102,13 @@ When two runs share a config fingerprint but disagree on counts, the resolved di
 | `seed` | number | The seed that pinned every random draw. |
 | `nl6_version` | string | Simulator version that produced the report. Reproduction is guaranteed only on the same version. |
 | `t0` | RFC3339-ms | Actual window open (emission start). |
-| `t1` | RFC3339-ms | Actual window close. This is the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
+| `t1` | RFC3339-ms | Actual window close. This is the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). A `yang-push` run that ends early reports the millisecond after that instant, so a message sent in the same millisecond falls inside `[t0, t1)` by its event-time. |
 | `drain_end` | RFC3339-ms | When the [drain barrier](#the-drain-barrier-is-bounded) finished and the report was finalized. Observed, not configured: typically milliseconds after `t1`, or the give-up instant if the barrier hit its ceiling. |
 | `incomplete_joins` | array | **Absent on a healthy run.** Names the finalize waits that did not complete within the budget: `syslog-scheduler`, `trap-ticker`, `flow-ticker`. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
 | `drain_stragglers` | number | **Absent on a healthy run.** An upper bound on the admissions still in flight when the barrier gave up. Fleet-wide, never folded into `dropped`. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration, computed as the **planned** window `/ sub_window_count` (the basis fires were bucketed against). See [Loss localization](#loss-localization). |
-| `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
+| `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval, and a yang-push device keeps its subscription periods), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
 | `fidelity` | object | **Fleet-silence disclosure**, always present: `{silent_at_start, changed_during_window}`. `silent_at_start` is the fidelity value in force at `t0`. `changed_during_window` is true when fidelity was toggled, or a timed revert fired, between `t0` and finalize. A true there means non-participant push started or stopped mid-window, so the collector-side rate covers a mixture. |
 | `rate_cap` | object | **Shared-cap disclosure** `{per_second, shared_with}`, emitted for `syslog` only and only when `-syslog-global-cap` is in force at the run's start. `shared_with` names the syslog scenarios whose windows overlapped this one, recorded as they begin, so a peer deleted before finalize is still named. An empty list does **not** mean the bucket was uncontended: background firing spends a token per pop even when the gate suppresses the fire, so a solo run on a busy fleet without `-fidelity` is still throttled. |
 | `run_tags` | object | How this run's traffic can be isolated, as `{protocol, mechanism, value, pen, pen_required, degraded, note}`. `mechanism` values are listed under [Run-tag levers](#run-tag-levers). |
@@ -182,6 +182,7 @@ Every protocol is also bounded by the window `[T0,T1)` and the participant sourc
 | Syslog 5424 | `syslog_sd_param` | RFC 5424 SD-PARAM `[nl6@<PEN> runId="<id>"]` | **yes** |
 | SNMP trap/inform | `snmp_enterprise_varbind` | enterprise varbind under the nl6 PEN | **yes** |
 | NetFlow v5 | `window_source_ip` | no taggable field, so isolate by participant source IPs + `[T0,T1)` | n/a |
+| YANG-Push | `window_source_ip` | no field a run can set. `message-publisher-id` is the device IPv4 as an integer, so isolate by it or by source IP + `[T0,T1)` | n/a |
 
 A PEN-dependent lever needs `-scenario-pen`.
 Without it, `mechanism` is `window_source_ip` and `degraded` is `true`.
@@ -193,10 +194,15 @@ One row per participant, keyed by the **join tuple** `(protocol, source_ip, coll
 This is the same tuple a collector groups its received counts by, so the two sides line up row-for-row.
 Every ledger field is always present (explicit zeros, never omitted), so a zero-valued row still diffs cleanly.
 
-What one record means differs for two protocols:
+What one record means differs for three protocols:
 
 - **sFlow** counts raw `flow_sample` records, never `samples × sampling_rate`, so the synthetic sampling rate cannot manufacture phantom loss. The periodic `counters_sample` is a keepalive. It flows continuously, including before `T0`, and is never counted. So the datagram sequence number is not 0 at `T0`; key on the sample sequence instead.
 - **gNMI dial-out** gates both SAMPLE and ON_CHANGE. Arming needs a live Publish stream, otherwise the device is `excluded`. In the window a notification counts `sent` when written to a live stream and `send_failures` when the stream is down.
+- **YANG-Push** counts messages: `subscription-started`, `push-update` and `push-change-update`.
+  A message split into several UDP-notif segments counts once.
+  A failed segment counts one `send_failures` for the message.
+  Select the received side by the envelope `event-time` in `[T0,T1)`.
+  See [YANG-Push in a load-test scenario](yang-push-udp-notif.md#load-test-scenarios).
 
 | Field | Meaning |
 |-------|---------|

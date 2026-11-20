@@ -62,6 +62,11 @@ func buildRunTags(protocol string, pen uint32, scenarioID string) runTags {
 		// in-band identity is the synthetic-path lever.
 		rt.Mechanism = tagGNMISyntheticPath
 		rt.Note = "dial-out carries the device IP in Notification.Prefix.Target; isolate by target within [t0,t1)"
+	case "yang-push":
+		// The envelope and the UDP-notif header have no field a run can set.
+		rt.Mechanism = tagWindowSourceIP
+		rt.Value = ""
+		rt.Note = "no in-band run tag; message-publisher-id is the device IPv4 as an integer, isolate by it or by source IP within [t0,t1)"
 	case "netflow5":
 		// No in-band lever exists; window + source-IP is the native isolation,
 		// not a degradation.

@@ -38,6 +38,11 @@ func (r *ypRealTimer) Stop()                { r.t.Stop() }
 // huawei_ne8000 device to a collector over UDP-notif. One goroutine per device
 // owns the socket, both periodic timers and the state listener, so the
 // message id needs no locking.
+//
+// The device keeps its own schedule inside a load-test scenario. A scenario
+// that claims the device installs scenPart, and gate then decides per message
+// whether it is sent and how it is counted. No scenario emitter exists for
+// this protocol.
 type YangPushExporter struct {
 	dev       *DeviceSimulator
 	collector string
@@ -65,6 +70,11 @@ type YangPushExporter struct {
 	stateEventsDropped atomic.Uint64
 	fidelitySuppressed atomic.Uint64
 	countersPersisted  sync.Once
+
+	// scenPart is the scenario participation handle, nil unless a yang-push
+	// scenario claimed this device. The controller stores it, the run
+	// goroutine loads it once per gate call.
+	scenPart atomic.Pointer[scenarioPart]
 }
 
 // NewYangPushExporter opens the device's UDP-notif socket: bound to the device
@@ -219,8 +229,7 @@ func (e *YangPushExporter) run() {
 			}
 			e.ensureStarted()
 			if inWindow {
-				if fidelityMutesBackground(sourceBackground) {
-					e.fidelitySuppressed.Add(1)
+				if !e.gateEvent(e.clock()) {
 					continue
 				}
 				pending[evt.IfIndex] = struct{}{}
@@ -238,8 +247,7 @@ func (e *YangPushExporter) run() {
 					if e.twins.twin(evt) {
 						continue
 					}
-					if fidelityMutesBackground(sourceBackground) {
-						e.fidelitySuppressed.Add(1)
+					if !e.gateEvent(e.clock()) {
 						continue
 					}
 					pending[evt.IfIndex] = struct{}{}
@@ -264,51 +272,147 @@ func (e *YangPushExporter) run() {
 	}
 }
 
-// ensureStarted sends the three subscription-started notifications and the
-// subscription-10 sync-on-start push-update, once, at the first moment
-// fidelity lets the device speak.
-func (e *YangPushExporter) ensureStarted() {
-	if e.started || fidelityMutesBackground(sourceBackground) {
-		return
-	}
-	e.started = true
-	now := e.clock()
-	for i := range e.subs {
-		e.send(i, now, encodeSubscriptionStarted(e.subs[i], e.pubID))
-	}
-	// Subscription 10's sync push-update carries every interface entry and
-	// point-in-time initial-state.
-	e.send(2, now, encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now)))
-}
-
-// emit sends one push for subscription i unless fidelity mutes it, and
-// reports whether it sent.
-func (e *YangPushExporter) emit(i int, eventTime time.Time, contents func() []byte) bool {
-	if fidelityMutesBackground(sourceBackground) {
-		e.fidelitySuppressed.Add(1)
+// ypInWindow reports whether a claimed device may send at now. It is the
+// scenario gate, closed one step earlier at the end: the report states T1 in
+// milliseconds and the envelope event-time has milliseconds too, so a message
+// in the last partial millisecond before T1 would carry an event-time equal to
+// the reported T1. A receiver that selects [T0,T1) by event-time would not
+// count it, and the run would show a loss that did not happen.
+//
+// It also has a lower bound, which the scenario gate lacks. A caller reads the
+// clock before it loads the gate, so Start can publish the window in between.
+// A message with an event-time before the reported T0 is refused.
+//
+// An early stop cannot be handled here, because the message is already sent.
+// finishLabelled reports a T1 that covers it.
+func ypInWindow(part *scenarioPart, now time.Time) bool {
+	if part.decide(sourceScenario, now) != gateProceed {
 		return false
 	}
-	e.send(i, eventTime, contents())
+	gs := part.gate.Load()
+	if gs == nil {
+		return false
+	}
+	ms := now.Truncate(time.Millisecond)
+	return !ms.Before(gs.t0.Truncate(time.Millisecond)) && ms.Before(gs.t1.Truncate(time.Millisecond))
+}
+
+// speaks reports whether the device may send at now, without counting. A
+// device no scenario claimed speaks unless fidelity mutes it. A claimed device
+// speaks inside the scenario window only.
+func (e *YangPushExporter) speaks(now time.Time) bool {
+	if part := e.scenPart.Load(); part != nil {
+		return ypInWindow(part, now)
+	}
+	return !fidelityMutesBackground(sourceBackground)
+}
+
+// gate decides whether one message goes out at now, and counts it. When ok,
+// the caller sends the message and reports the result through done. A refused
+// message must not be built or sent, so it consumes no message id.
+//
+// For a claimed device it follows the gNMI dial-out gate for the decision and
+// syslog for the write: the drain admit is held across all segments, and the
+// ledger bucket is chosen when the last write returned.
+func (e *YangPushExporter) gate(now time.Time) (ok bool, done func(sent bool)) {
+	part := e.scenPart.Load()
+	if part == nil {
+		if fidelityMutesBackground(sourceBackground) {
+			e.fidelitySuppressed.Add(1)
+			return false, nil
+		}
+		return true, func(bool) {}
+	}
+	if !ypInWindow(part, now) {
+		part.ledger.backgroundSuppressed.Add(1)
+		return false, nil
+	}
+	part.ledger.emitted.Add(1)
+	if !part.drain.admit() {
+		part.ledger.dropped.Add(1)
+		return false, nil
+	}
+	return true, func(sent bool) {
+		if sent {
+			part.bucketFor(part.now()).Add(1)
+		} else {
+			part.ledger.sendFailures.Add(1)
+		}
+		part.drain.leave()
+	}
+}
+
+// gateEvent decides whether a state change is collected for the dampening
+// period. A change that arrives while the device is silent is dropped, so it
+// cannot go out later with an old state.
+func (e *YangPushExporter) gateEvent(now time.Time) bool {
+	part := e.scenPart.Load()
+	if part == nil {
+		if fidelityMutesBackground(sourceBackground) {
+			e.fidelitySuppressed.Add(1)
+			return false
+		}
+		return true
+	}
+	if !ypInWindow(part, now) {
+		part.ledger.backgroundSuppressed.Add(1)
+		return false
+	}
 	return true
 }
 
-// send frames one message for subscription i. Message id and envelope
-// sequence-number are the same counter. It is one counter per device over all
-// its subscriptions and starts at 1, as in the IETF 127 capture. The IETF 125
-// capture counted per subscription from 0. A failed segment
-// aborts the rest of the message; the id stays consumed.
-func (e *YangPushExporter) send(i int, eventTime time.Time, contents []byte) {
+// ensureStarted sends the three subscription-started notifications and the
+// subscription-10 sync-on-start push-update, once, at the first moment the
+// device may speak: fidelity off, or inside the window of the scenario that
+// claimed it. Each of the four messages is gated and counted on its own. If
+// one is refused, the rest is not sent and the device has not announced. It
+// sends all four again at its next activity, so a collector never sees
+// push-updates for a subscription it was not told about.
+func (e *YangPushExporter) ensureStarted() {
+	now := e.clock()
+	if e.started || !e.speaks(now) {
+		return
+	}
+	for i := range e.subs {
+		if !e.emit(i, now, func() []byte { return encodeSubscriptionStarted(e.subs[i], e.pubID) }) {
+			return
+		}
+	}
+	// Subscription 10's sync push-update carries every interface entry and
+	// point-in-time initial-state.
+	e.started = e.emit(2, now, func() []byte { return encodePushUpdate(e.subs[2], now, e.pubID, e.interfaces(now)) })
+}
+
+// emit sends one push for subscription i if the gate lets it out, and reports
+// whether it was let out. The contents are built only then.
+func (e *YangPushExporter) emit(i int, eventTime time.Time, contents func() []byte) bool {
+	ok, done := e.gate(eventTime)
+	if !ok {
+		return false
+	}
+	done(e.send(i, eventTime, contents()))
+	return true
+}
+
+// send frames one message for subscription i and reports whether every
+// segment was written. Message id and envelope sequence-number are the same
+// counter. It is one counter per device over all its subscriptions and starts
+// at 1, as in the IETF 127 capture. The IETF 125 capture counted per
+// subscription from 0. A failed segment aborts the rest of the message; the id
+// stays consumed.
+func (e *YangPushExporter) send(i int, eventTime time.Time, contents []byte) bool {
 	e.msgID++
 	id := e.msgID
 	payload := encodeEnvelope(eventTime, gnmiDeviceSysName(e.dev), uint64(id), contents)
 	for _, seg := range udpNotifFrame(e.pubID, id, payload, e.segSize) {
 		if _, err := e.conn.Write(seg); err != nil {
 			e.sendFailures.Add(1)
-			return
+			return false
 		}
 		e.segmentsSent.Add(1)
 	}
 	e.messagesSent.Add(1)
+	return true
 }
 
 // row reads the ietf-interfaces source values of one interface at obs.

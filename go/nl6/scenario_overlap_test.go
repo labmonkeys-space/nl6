@@ -596,7 +596,7 @@ func TestScenarioOverlap_TrapCapNotDisclosed(t *testing.T) {
 	if got := sm.effectiveRateCap("syslog"); got != 5000 {
 		t.Errorf("syslog cap = %d, want 5000: its scenario scheduler shares the fleet limiter", got)
 	}
-	for _, p := range []string{"netflow9", "ipfix", "sflow", "netflow5", "gnmi-dialout"} {
+	for _, p := range []string{"netflow9", "ipfix", "sflow", "netflow5", "gnmi-dialout", "yang-push"} {
 		if got := sm.effectiveRateCap(p); got != 0 {
 			t.Errorf("%s cap = %d, want 0 (no limiter for this protocol)", p, got)
 		}

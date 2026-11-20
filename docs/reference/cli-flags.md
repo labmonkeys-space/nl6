@@ -297,7 +297,7 @@ The scenarios themselves are driven over REST (`/api/v1/scenarios`); these flags
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-fidelity` | bool | `false` | **global** | Keep the fleet **silent**, with no autonomous flow / SNMP-trap / syslog / gNMI-dial-out push, except during a running scenario's `[T0,T1)` window, for a clean measurement window. Devices still answer polls; explicit on-demand fires still go through. Also togglable at runtime via `POST /api/v1/fidelity`, so bracketing a measurement does not require a restart; this flag is then the startup **default** rather than the value in force. See [Fidelity mode](../ops/loadtest-scenarios.md#fidelity-mode). |
+| `-fidelity` | bool | `false` | **global** | Keep the fleet **silent**, with no autonomous flow / SNMP-trap / syslog / gNMI-dial-out / YANG-Push push, except during a running scenario's `[T0,T1)` window, for a clean measurement window. Devices still answer polls; explicit on-demand fires still go through. Also togglable at runtime via `POST /api/v1/fidelity`, so bracketing a measurement does not require a restart; this flag is then the startup **default** rather than the value in force. See [Fidelity mode](../ops/loadtest-scenarios.md#fidelity-mode). |
 | `-scenario-pen` | uint | `0` | **global** | IANA Private Enterprise Number for PEN-dependent scenario [run tags](loadtest-report-schema.md#run-tag-levers) (syslog SD-PARAM, SNMP enterprise varbind). `0` = unset → those levers degrade to window + source-IP isolation. |
 
 ## LLDP topology flags

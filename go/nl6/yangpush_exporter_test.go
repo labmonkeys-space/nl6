@@ -835,6 +835,7 @@ func TestYangPushStatusEndpoint(t *testing.T) {
 	e, _ := startYangPushTest(t, dev, c.addr())
 	readStart(t, c)
 	dev.yangPushExporter = e
+	dev.yangPushExporterPtr.Store(e)
 
 	gone := &YangPushExporter{collector: c.addr()}
 	gone.messagesSent.Store(5)

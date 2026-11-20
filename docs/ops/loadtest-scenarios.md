@@ -10,7 +10,7 @@ New to the feature?
 Start with the [overview](../reference/loadtest-overview.md).
 For copy-pasteable recipes by use case, see the [runbooks](./loadtest-runbooks.md); for endpoints and shapes, the [REST API](../reference/loadtest-api.md) and [report schema](../reference/loadtest-report-schema.md).
 
-Each scenario targets one of the seven push protocols: **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**, **sFlow**, and **gNMI dial-out**.
+Each scenario targets one of the eight push protocols: **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**, **sFlow**, **gNMI dial-out**, and **YANG-Push**.
 Each protocol opts a device in via its own export config; the scenario gates whichever protocol it targets.
 Concurrency limits are in the [submit reference](../reference/loadtest-api.md#post-apiv1scenarios-submit).
 
@@ -29,7 +29,7 @@ JSON (no `format`) stays the machine source of truth.
 ## Fidelity mode
 
 **`-fidelity` makes a silent fleet.**
-By default every device starts pushing its background telemetry (flow, SNMP traps, syslog, gNMI dial-out) on its own cadence the moment it comes up.
+By default every device starts pushing its background telemetry (flow, SNMP traps, syslog, gNMI dial-out, YANG-Push) on its own cadence the moment it comes up.
 So a scenario's window is mixed in with steady background noise, and the fleet keeps emitting after the run ends.
 Start nl6 with **`-fidelity`** to invert that: the fleet is **silent**, with no autonomous push leaving any device, **except** during a running scenario's `[T0,T1)` window, where only that scenario's gated traffic flows.
 Silence before the run, only the scenario during it, silence again after.
