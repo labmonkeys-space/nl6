@@ -441,7 +441,12 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // (hrStorageRam, hrStorageVirtualMemory, hrStorageFixedDisk) OID names, pre-change
 // value shippedOIDEncodingDigestBeforeHostResTypes. Reversed by
 // TestHostResTypesRePinIsOnlyTheTyping in snmp_shipped_hostres_types_ledger_test.go.
-const shippedOIDEncodingDigest = "0fb1b930f5744c4c587e9be298d8bac778d180c9c311faa4dc09862231957837"
+// Re-pinned by nl6#1056: deleting the eleven static rows on metric-owned OIDs
+// took three names out of the corpus entirely (hrProcessorLoad.1 and two vendor
+// temperatures), pre-change value shippedOIDEncodingDigestBeforeMetricShadow.
+// Reversed by TestMetricShadowRePinIsOnlyTheDeletion in
+// snmp_shipped_metric_shadow_ledger_test.go.
+const shippedOIDEncodingDigest = "d2f55d095d58498e9e7356846c92e6adc41d4ee6e96c8d3537c9e170f2e42799"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

@@ -121,9 +121,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "static rows on metric-owned OIDs deleted",
+		file:         "snmp_shipped_metric_shadow_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       metricShadowParentRevision,
+		values:       restoreMetricShadowRows,
+		names:        metricShadowOIDNamesBefore,
+	},
+	{
 		name:         "HOST-RESOURCES-MIB columns typed",
 		file:         "snmp_shipped_hostres_types_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: metricShadowParentRevision,
 		parent:       hostResTypesParentRevision,
 		values:       nil,
 		valuesAbsentReason: "nl6#1057 changed no resource value, only oidTypeTable. Every shipped value " +

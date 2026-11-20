@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 2353
+const minimumTestFunctions = 2358
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 27
@@ -463,6 +463,9 @@ var loadBearingGuards = []loadBearingGuard{
 	{"TestInterfaceStateClockDefaultsToWallClock", "interface_state_clock_test.go",
 		"The only pin that production stays on time.Now: the seam must expose which clock is " +
 			"read without changing what an un-injected engine does"},
+	{"TestNoShippedStaticRowShadowsAMetricOID", "snmp_shipped_metric_shadow_ledger_test.go",
+		"nl6#1056. The walk tie rule serves the metric value over a static row on a metric OID, so " +
+			"such a row is invisible on the wire; this test is the only thing that shows one shipping"},
 	{"TestInterfaceStateMutatorsMeasureOffsetsOnTheMonotonicClock", "interface_state_clock_test.go",
 		"No behavioural test can see the offset computed on wall values on a Linux clock, " +
 			"because public time APIs cannot build a wall-clock jump without a monotonic one. This AST " +

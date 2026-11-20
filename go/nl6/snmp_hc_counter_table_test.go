@@ -220,7 +220,11 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // pre-change value shippedTagDigestBeforeHostResTypes. Reversed by
 // TestHostResTypesReproduceTheParentCorpus in
 // snmp_shipped_hostres_types_ledger_test.go.
-const shippedTagDigest = "a2de72158ead1fc59200b8cba7edf0f6034d20d91818ff9d61ccb58f8d00cc47"
+// Re-pinned by nl6#1056: the eleven static rows on metric-owned OIDs are
+// deleted, pre-change value shippedTagDigestBeforeMetricShadow. Reversed by
+// TestMetricShadowDeletionReproducesTheParentCorpus in
+// snmp_shipped_metric_shadow_ledger_test.go.
+const shippedTagDigest = "a91aaf3a4449c844a9d37c39e715e658f9aafef9b9f2486e93c54fabe4bba1c2"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)
