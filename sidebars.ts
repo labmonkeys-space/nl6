@@ -151,6 +151,7 @@ const sidebars: SidebarsConfig = {
         'explanation/kubernetes',
         'explanation/snmp-data-fidelity',
         'explanation/loadtest-collector-ceiling',
+        'explanation/nmop-test-chain',
       ],
     },
   ],

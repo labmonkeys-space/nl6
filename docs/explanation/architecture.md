@@ -50,7 +50,7 @@ The namespace was `opensim` before the fork was renamed; see [Network namespace]
 |---|---|---|---|---|---|---|
 | **Model** | OpenConfig, plus native origins from a per-type catalogue | Same as dial-in | Cisco native `Cisco-IOS-XE-interfaces-oper` (IOS XE dialect); Junos `NETCONF` event stream (Junos dialect); YANG library and RFC 8639 subscriptions (VRP dialect) | Same as NETCONF, Junos dialect | `ietf-interfaces` in the RFC 8641 YANG-Push notifications | None, CLI text |
 | **Encoding** | `JSON_IETF`, `PROTO` | Same as dial-in | XML | XML | JSON in `ietf-yp-notification` envelope | Plain text |
-| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem; TLS 1.2 on `juniper_mx10004` | SSH `netconf` subsystem after the Junos `outbound-ssh` preamble | UDP-notif (RFC 9187), segmented at 1436 bytes | SSH shell |
+| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem; TLS 1.2 on `juniper_mx10004` | SSH `netconf` subsystem after the Junos `outbound-ssh` preamble | UDP-notif (draft-ietf-netconf-udp-notif), segmented at 1436 bytes | SSH shell |
 | **Port (default)** | `9339` | Collector's port | `830` (SSH), `6513` (TLS) | Client's port (`4334`, RFC 8071) | Collector's port | `22` |
 | **Who connects** | Collector dials the device | Device dials the collector | Client dials the device | Device dials the client | Device sends to the collector; the collector fetches schemas over NETCONF | Client dials the device |
 | **Auth** | Shared server cert signed by the CA at `GET /api/v1/tls/ca`, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login; mutual TLS on `6513` | Device SSH login; the device stays the SSH server | None on the stream; key login (`-netconf-authorized-keys`) for the schema fetch | Device SSH login |
@@ -74,7 +74,7 @@ YANG-Push is the only surface with two directions: the stream goes out over UDP,
 | NETCONF, Junos dialect | `get`, `get-configuration`, `create-subscription` on the `NETCONF` stream, which carries mib2d link events; over SSH and TLS | `juniper_mx10004` | [NETCONF reference](../reference/netconf.md) |
 | NETCONF, VRP dialect | `get` on the YANG library, the module list, the subscriptions and their filters; `get-schema` for every served module; no `edit-config` | `huawei_ne8000` | [YANG-Push over UDP-notif](../reference/yang-push-udp-notif.md#what-a-collector-can-fetch) |
 | NETCONF call home | The Junos session on a connection the device opens, with the `outbound-ssh` preamble before the SSH banner; one session per client, redial every 15 s; SSH only | `juniper_mx10004`, opt-in | [NETCONF reference](../reference/netconf.md#call-home) |
-| YANG-Push | Three subscriptions per device: interface statistics and interface state every 60 s, and on-change `oper-status` and `admin-status`; `subscription-started`, `push-update` and `push-change-update` as an NE8000 on VRP R025C00 sends them (RFC 8639, RFC 8641, RFC 9187) | `huawei_ne8000`, opt-in | [YANG-Push over UDP-notif](../reference/yang-push-udp-notif.md) |
+| YANG-Push | Three subscriptions per device: interface statistics and interface state every 60 s, and on-change `oper-status` and `admin-status`; `subscription-started`, `push-update` and `push-change-update` as an NE8000 on VRP R025C00 sends them (RFC 8639, RFC 8641, draft-ietf-netconf-udp-notif) | `huawei_ne8000`, opt-in | [YANG-Push over UDP-notif](../reference/yang-push-udp-notif.md) |
 
 ## Package layout
 

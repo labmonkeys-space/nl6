@@ -7,12 +7,13 @@ description: "How huawei_ne8000 devices stream YANG-Push over UDP-notif to a col
 
 A `huawei_ne8000` device can stream interface telemetry to a collector as YANG-Push over UDP-notif.
 It models Huawei VRP R025C00.
-The transport is RFC 9187 (UDP-notif version 1, JSON).
+The transport is UDP-notif version 1 with JSON, as draft-ietf-netconf-udp-notif defines it.
 The subscriptions follow RFC 8641.
 Opt in per device.
 Devices of other types never stream.
 
 NetCalyx v0.4.0 is the collector nl6 is checked against.
+[nl6 in the NMOP YANG-Push test chain](../explanation/nmop-test-chain.md) shows the chain behind the collector and what a run through it shows.
 The collector learns the schema by logging in to the device over NETCONF, so NETCONF must be on too.
 
 ```
