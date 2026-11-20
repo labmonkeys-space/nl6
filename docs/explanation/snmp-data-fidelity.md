@@ -37,7 +37,7 @@ Report it with the MIB name and the object.
 | Rule | Leaves | Refuses | Note |
 |------|--------|---------|------|
 | **1. Exception sentinels** | All | A value exactly equal to `noSuchObject` or `endOfMibView` | nl6 carries SNMP exceptions internally as those strings. The match is exact: `NoSuchObject` or `noSuchObject seen` is ordinary data |
-| **2. OID values** | OID-typed leaves, today `sysObjectID` and `entPhysicalVendorType` | A value the encoder cannot represent as an OID | |
+| **2. OID values** | OID-typed leaves, today `sysObjectID`, `entPhysicalVendorType` and `hrStorageType` | A value the encoder cannot represent as an OID | |
 | **3. Numeric types** | `Counter32`, `Gauge32`, `TimeTicks`, `Counter64`, `IpAddress` | A value that does not encode at that type: whitespace, units, hex, fractions, out of range | A negative value on a 32-bit unsigned leaf loads with a warning and goes out wrap-cast, so `-1` becomes `4294967295`. The same `-1` on a `Counter64` is refused, because that type has no signed fallback |
 
 Rule 3 is the class that once shipped a real bug: a `freeMem` entry carrying the device's name went out as an OCTET STRING, and a collector that types the OID as a gauge logged a conversion error on every poll.

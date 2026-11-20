@@ -436,6 +436,14 @@ var oidTypeTable = []oidTypeEntry{
 	// AutonomousType (OBJECT IDENTIFIER); nl6#821.
 	{".1.3.6.1.2.1.47.1.1.1.1.3", ASN1_OBJECT_ID}, // entPhysicalVendorType
 
+	// HOST-RESOURCES-MIB, RFC 2790 (nl6#1057). Only the columns a shipped
+	// profile serves; another one gets typed when a profile ships it.
+	// hrStorageType is an AutonomousType (OBJECT IDENTIFIER).
+	{".1.3.6.1.2.1.25.1.1", ASN1_TIMETICKS},     // hrSystemUptime
+	{".1.3.6.1.2.1.25.1.5", ASN1_GAUGE32},       // hrSystemNumUsers
+	{".1.3.6.1.2.1.25.1.6", ASN1_GAUGE32},       // hrSystemProcesses
+	{".1.3.6.1.2.1.25.2.3.1.2", ASN1_OBJECT_ID}, // hrStorageType
+
 	// ifTable — RFC 2863
 	{".1.3.6.1.2.1.2.2.1.5", ASN1_GAUGE32},    // ifSpeed
 	{".1.3.6.1.2.1.2.2.1.9", ASN1_TIMETICKS},  // ifLastChange

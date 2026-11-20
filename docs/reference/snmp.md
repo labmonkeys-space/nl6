@@ -612,7 +612,7 @@ After a jump of J they are therefore off by J against the notification's own tim
 **What does not move yet.** `snmpEngineBoots` stays 1, and a device cannot be restarted.
 The engine time of an SNMPv3 trap counts from the moment the device's trap exporter was attached, which is its creation, not from the boot instant itself.
 Deleting and re-creating a device makes a new device, with a new boot instant, a new `sysName` and no topology links.
-`hrSystemUptime.0` on the NVIDIA profiles and the SSH `show version` uptime are still static text from the profile.
+`hrSystemUptime.0` on the NVIDIA profiles goes out as `TimeTicks`, but its value is still static, and so is the SSH `show version` uptime.
 
 ## Dynamic CPU / memory / temperature metrics
 
