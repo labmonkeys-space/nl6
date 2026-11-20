@@ -604,6 +604,41 @@ func TestYangPushOnChangeAdminSkipsTwinOper(t *testing.T) {
 	}
 }
 
+// Two producers that take different interfaces admin down at the same moment
+// can interleave their broadcasts: admin(X), admin(Y), oper(X), oper(Y). Each
+// oper event is still the twin of its own admin event, so every interface is
+// sent once.
+func TestYangPushOnChangeInterleavedAdminSkipsBothTwins(t *testing.T) {
+	_, fc, c, st, dev, up := ypOnChangeSetup(t)
+	x := st.setAdminLeaf(up[0], AdminDown)
+	y := st.setAdminLeaf(up[1], AdminDown)
+	if len(x) < 2 || len(y) < 2 {
+		t.Fatalf("admin down did not move oper: %d and %d events", len(x), len(y))
+	}
+	st.Broadcast(x[0])
+	st.Broadcast(y[0])
+	for _, ev := range append(x[1:], y[1:]...) {
+		st.Broadcast(ev)
+	}
+	id, entries := ypEditEntries(t, c.mustNext(t).Raw)
+	if id != "0" || len(entries) != 1 || entries[0]["name"] != devIfDescr(dev, up[0]) ||
+		entries[0]["admin-status"] != "down" || entries[0]["oper-status"] != "down" {
+		t.Fatalf("first admin down: patch %q entries %v, want patch 0 with %s admin and oper down", id, entries, devIfDescr(dev, up[0]))
+	}
+	waitArmedN(t, fc, 3)
+	fc.Advance(ypDampening)
+	id, entries = ypEditEntries(t, c.mustNext(t).Raw)
+	if id != "1" || len(entries) != 1 || entries[0]["name"] != devIfDescr(dev, up[1]) ||
+		entries[0]["admin-status"] != "down" || entries[0]["oper-status"] != "down" {
+		t.Fatalf("collected update: patch %q entries %v, want patch 1 with only %s admin and oper down", id, entries, devIfDescr(dev, up[1]))
+	}
+	waitArmedN(t, fc, 3)
+	fc.Advance(ypDampening)
+	if m, ok := c.next(t, 300*time.Millisecond); ok {
+		t.Fatalf("a twin oper event caused a further update: %s", m.Raw)
+	}
+}
+
 // The change-update takes last-change from the event, even when a later
 // transition has already written a newer timestamp into the live engine slot.
 func TestYangPushChangeUpdateLastChangeFromEvent(t *testing.T) {
