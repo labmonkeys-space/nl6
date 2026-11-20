@@ -437,7 +437,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // 1.3.6.1.2.1.1.3.0 out of the corpus entirely, pre-change value
 // shippedOIDEncodingDigestBeforeSysUpTimeDeletion. Reversed by
 // TestSysUpTimeRePinIsOnlyTheDeletion in snmp_shipped_sysuptime_ledger_test.go.
-const shippedOIDEncodingDigest = "c21837407f314e5a08634384f65df4b3698286a6be97bd577b9e077c316f74ee"
+// Re-pinned by nl6#1057: typing hrStorageType makes its three values
+// (hrStorageRam, hrStorageVirtualMemory, hrStorageFixedDisk) OID names, pre-change
+// value shippedOIDEncodingDigestBeforeHostResTypes. Reversed by
+// TestHostResTypesRePinIsOnlyTheTyping in snmp_shipped_hostres_types_ledger_test.go.
+const shippedOIDEncodingDigest = "0fb1b930f5744c4c587e9be298d8bac778d180c9c311faa4dc09862231957837"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

@@ -79,7 +79,9 @@ type corpusReversal struct {
 	parent string
 
 	// values reverses the change against a (profile, OID) -> value map, in place.
-	// nil means the change moved no tag; valuesAbsentReason must then say why.
+	// nil means the change moved no resource value; valuesAbsentReason must then
+	// say why. Tags moved by a type-table change are reversed through
+	// typedColumns, not here (nl6#1057).
 	values func(t *testing.T, cur map[[2]string]string)
 
 	// valuesAbsentReason explains a nil values view. Required when values is nil,
@@ -119,9 +121,22 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "HOST-RESOURCES-MIB columns typed",
+		file:         "snmp_shipped_hostres_types_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       hostResTypesParentRevision,
+		values:       nil,
+		valuesAbsentReason: "nl6#1057 changed no resource value, only oidTypeTable. Every shipped value " +
+			"already encodes at its MIB type, and the tags that move are handled by typedColumns, which " +
+			"encodes the older corpora with the four columns untyped. Verified by running the package " +
+			"with the table change and this link: every tag-digest reversal stayed green.",
+		names:        hostResTypesNamesBefore,
+		typedColumns: hostResTypedColumnPrefixes(),
+	},
+	{
 		name:         "static sysUpTime.0 deletion",
 		file:         "snmp_shipped_sysuptime_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: hostResTypesParentRevision,
 		parent:       sysUpTimeDeletionParentRevision,
 		values:       restoreSysUpTimeDeletion,
 		names:        sysUpTimeOIDNamesBeforeDeletion,
@@ -598,9 +613,10 @@ func TestCorpusReversalChainIsContiguous(t *testing.T) {
 //
 // A nil view is treated as the identity by the walkers, so an unexplained nil is
 // a silently skipped link — exactly the defect this file exists to stop, wearing
-// the costume of a deliberate decision. ONE absence is legitimate today and it was
-// verified rather than assumed (PR #599): nl6#588 has no value view because it
-// moved one OID-typed VALUE and no tag.
+// the costume of a deliberate decision. THREE absences are legitimate today, each
+// verified rather than assumed: nl6#588 moved one OID-typed VALUE and no tag (PR
+// #599), the asr9k identity fix moved two values neither of whose tags changed,
+// and nl6#1057 moved no value at all, only tags, through typedColumns.
 //
 // PR #599 also recorded nl6#541 as having no name view. That was true of the FILE,
 // not of the change: the reversal existed, spelled inline in
@@ -617,11 +633,11 @@ func TestCorpusReversalAbsentViewsAreExplained(t *testing.T) {
 		switch {
 		case r.values == nil && strings.TrimSpace(r.valuesAbsentReason) == "":
 			t.Errorf("%s has no value-view reversal and no valuesAbsentReason. A nil view is skipped "+
-				"silently, so an unexplained one is a missing link: say why shippedTagDigest did "+
-				"not move, or wire the reversal in.", r.name)
+				"silently, so an unexplained one is a missing link: say why no resource value "+
+				"moved, or wire the reversal in.", r.name)
 		case r.values == nil && len(strings.TrimSpace(r.valuesAbsentReason)) < minReason:
 			t.Errorf("%s: valuesAbsentReason is %d characters, want at least %d — it has to say why "+
-				"the change moved no tag, not merely that it did not", r.name,
+				"the change moved no value, not merely that it did not", r.name,
 				len(strings.TrimSpace(r.valuesAbsentReason)), minReason)
 		case r.values != nil && r.valuesAbsentReason != "":
 			t.Errorf("%s has a value-view reversal AND a valuesAbsentReason; the reason describes a "+

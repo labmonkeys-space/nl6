@@ -214,7 +214,13 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // pre-change value shippedTagDigestBeforeSysUpTimeDeletion. Reversed by
 // TestSysUpTimeDeletionReproducesTheParentCorpus in
 // snmp_shipped_sysuptime_ledger_test.go.
-const shippedTagDigest = "154e029d64874b240297039bceba4dc0e40ad4f4a52fcdeda3c16d906f3a71c9"
+// Re-pinned by nl6#1057: oidTypeTable types hrSystemUptime (TimeTicks),
+// hrSystemNumUsers and hrSystemProcesses (Gauge32) and hrStorageType (OBJECT
+// IDENTIFIER), so their 17 shipped instances change tag and no value moves,
+// pre-change value shippedTagDigestBeforeHostResTypes. Reversed by
+// TestHostResTypesReproduceTheParentCorpus in
+// snmp_shipped_hostres_types_ledger_test.go.
+const shippedTagDigest = "a2de72158ead1fc59200b8cba7edf0f6034d20d91818ff9d61ccb58f8d00cc47"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

@@ -64,6 +64,26 @@ func TestValidateSNMPResourceValues_VendorTypeMustBeAnOID(t *testing.T) {
 	}
 }
 
+// TestValidateSNMPResourceValues_HrStorageTypeMustBeAnOID: hrStorageType is an
+// AutonomousType since nl6#1057, so a value that is not an OID is refused at
+// load, naming the file, the OID and the value, as for entPhysicalVendorType.
+func TestValidateSNMPResourceValues_HrStorageTypeMustBeAnOID(t *testing.T) {
+	res := guardResources([2]string{".1.3.6.1.2.1.25.2.3.1.2.1", "hrStorageRam"})
+	err := validateSNMPResourceValues("operator_snmp.json", res)
+	if err == nil {
+		t.Fatal(`hrStorageType.1 = "hrStorageRam": want rejection, got nil`)
+	}
+	for _, want := range []string{"operator_snmp.json", ".1.3.6.1.2.1.25.2.3.1.2.1", `"hrStorageRam"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+	ok := guardResources([2]string{".1.3.6.1.2.1.25.2.3.1.2.1", "1.3.6.1.2.1.25.2.1.2"})
+	if err := validateSNMPResourceValues("operator_snmp.json", ok); err != nil {
+		t.Errorf("hrStorageType.1 = hrStorageRam as an OID: want it loaded, got %v", err)
+	}
+}
+
 // TestValidateSNMPResourceValues_MatchIsExact covers the three "is data" rows
 // of the matrix. isSNMPExceptionValue is an exact string test, and this pins
 // that the guard did not widen it into a substring or case-folding match.
@@ -566,6 +586,15 @@ var typedClassCases = []typedClassCase{
 	{".1.3.6.1.2.1.1.3.0", "123456789", "a plain uptime"},
 	{".1.3.6.1.2.1.1.3.0", "4567890123", "past the TimeTicks wrap"},
 	{".1.3.6.1.2.1.1.3.0", "up 5 days", "prose"},
+	// HOST-RESOURCES-MIB, typed by nl6#1057: hrSystemUptime (TimeTicks),
+	// hrSystemNumUsers and hrSystemProcesses (Gauge32). A row here fails if the
+	// column is untyped.
+	{".1.3.6.1.2.1.25.1.1.0", "187654300", "hrSystemUptime, a plain uptime"},
+	{".1.3.6.1.2.1.25.1.1.0", "up 5 days", "hrSystemUptime as prose"},
+	{".1.3.6.1.2.1.25.1.5.0", "3", "hrSystemNumUsers, a plain gauge"},
+	{".1.3.6.1.2.1.25.1.5.0", "three", "hrSystemNumUsers as prose"},
+	{".1.3.6.1.2.1.25.1.6.0", "312", "hrSystemProcesses, a plain gauge"},
+	{".1.3.6.1.2.1.25.1.6.0", "many", "hrSystemProcesses as prose"},
 	// Counter64 (ifHCInOctets.1)
 	{".1.3.6.1.2.1.31.1.1.1.6.1", "9876543210", "a 64-bit counter"},
 	{".1.3.6.1.2.1.31.1.1.1.6.1", "18446744073709551615", "the 64-bit maximum"},
