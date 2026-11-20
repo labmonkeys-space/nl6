@@ -15,7 +15,7 @@ import "time"
 // The entry is per interface because producers broadcast after the mutator
 // returns, so two admin changes on different interfaces can interleave their
 // events. A twin that never arrives leaves its entry behind until the next
-// admin change on that interface overwrites it.
+// admin change that moves oper on that interface overwrites it.
 //
 // Not safe for concurrent use. Each owner calls it from one goroutine.
 type operTwins map[int]time.Time
