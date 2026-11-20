@@ -1115,6 +1115,15 @@ func (s *SNMPServer) getMetricValue(oid string, p int) string {
 	if !exists {
 		return ""
 	}
+	// hrStorageSize.1 and hrStorageUsed.1 count hrStorageAllocationUnits.1,
+	// not KB. Only these two: the vendor OIDs that share MetricMemTotal and
+	// MetricMemUsed stay in KB (nl6#1056).
+	switch oid {
+	case hrStorageSize1OID:
+		return kbInStorageUnits(s.device.metricsCycler.memTotal, s.device.hrStorageUnits)
+	case hrStorageUsed1OID:
+		return kbInStorageUnits(s.device.metricsCycler.memUsed[p], s.device.hrStorageUnits)
+	}
 	switch metricType {
 	case MetricCPUPercent:
 		return s.device.metricsCycler.GetCPUPercent(p)

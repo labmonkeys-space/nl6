@@ -122,6 +122,12 @@ type DeviceSimulator struct {
 	// Zero on hand-built test fixtures, which then answer sysUpTime.0 from
 	// their resources.
 	bootTime time.Time
+	// hrStorageUnits is hrStorageAllocationUnits.1 as the device's own profile
+	// ships it, resolved once by initDeviceCyclers (nl6#1056). The metric
+	// engine serves hrStorageSize.1 and hrStorageUsed.1 in these units, so the
+	// values agree with the row a collector reads and stay within Integer32.
+	// Zero (a hand-built fixture) means 1024, the HOST-RESOURCES KBytes unit.
+	hrStorageUnits int64
 	// now is the clock sysUpTime.0 alone is read against; nil means time.Now.
 	// A test seam for that one object, set before the device is shared: the
 	// engines keep their own seams (MetricsCycler.now, InterfaceState.now).
