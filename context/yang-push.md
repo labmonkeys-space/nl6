@@ -77,7 +77,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
 - An admin change that also moves oper-status broadcasts two events, one per leaf.
   Subscription 10 sends the whole entry on the first and drops the second through `operTwins`.
   The check is kept per interface, because producers broadcast after the mutator returns and two admin changes on different interfaces can interleave their events.
-  Two producers that change the same interface inside that window can still cause one extra update with correct state.
+  `operTwins` keeps every pending instant per interface, at most 4, so two producers that change the same interface inside that window are covered too.
 - Both captured message shapes fail strict validation in the NMOP chain, on the real router as on nl6.
   See nl6#1062.
 - The NE lacks the features `encode-json` (`ietf-subscribed-notifications`) and `yang-push-revision-supported` (`ietf-yang-push-revision`).

@@ -184,6 +184,36 @@ func TestJunosAdminChangeRendersOnePair(t *testing.T) {
 	}
 }
 
+// Two producers that change one interface at the same moment can interleave
+// their broadcasts. The session ends on the link-up pair, never on a second
+// link-down pair.
+func TestJunosInterleavedAdminChangesOnOneInterfaceEndUp(t *testing.T) {
+	c, state := junosFlapClient(t, true)
+	down := state.ApplyAdminStatus(1, AdminDown)
+	up := state.ApplyAdminStatus(1, AdminUp)
+	if len(down) < 2 || len(up) < 2 {
+		t.Fatalf("admin changes did not move oper: %d and %d events", len(down), len(up))
+	}
+	state.Broadcast(down[0])
+	state.Broadcast(up[0])
+	ncBroadcast(state, append(down[1:], up[1:]...))
+
+	c.junosPair("1", "xe-0/0/0", "SNMP_TRAP_LINK_DOWN", "WARNING")
+	c.junosPair("1", "xe-0/0/0", "SNMP_TRAP_LINK_UP", "NOTICE")
+	// What follows is the units' way up, never a second physical pair.
+	for _, unit := range []string{"73", "74", "75", "76"} {
+		for i := 0; i < 2; i++ {
+			if m := c.readFramed(); !strings.Contains(m, "ifIndex "+unit+",") {
+				t.Fatalf("want unit ifIndex %s, got:\n%s", unit, m)
+			}
+		}
+	}
+	_ = c.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if b, err := c.br.ReadByte(); err == nil {
+		t.Fatalf("extra bytes after the pairs: %q", b)
+	}
+}
+
 // TestJunosLinkEventEscapesDeviceText pins that the interface name and the
 // hostname are escaped once when the event is built, so both renderings
 // carry well-formed XML in the body, the parameter and the hostname.
