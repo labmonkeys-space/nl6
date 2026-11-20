@@ -52,14 +52,11 @@ type netconfEvents struct {
 	// the dialect constructor and may be nil.
 	onEvent func(s *netconfSession, e *netconfStateEvent)
 
-	// skip names the oper event that follows an admin event which moved
+	// twins names the oper events that follow an admin event which moved
 	// oper too. The admin event already pushed the row, so its twin is
-	// dropped. Only the dispatcher goroutine touches it.
-	skip struct {
-		ifIndex int
-		at      time.Time
-		set     bool
-	}
+	// dropped. Every dialect asks it once per event, in order. Only the
+	// dispatcher goroutine touches it.
+	twins operTwins
 }
 
 // netconfPush is one rendered push and the subscription it belongs to.
@@ -124,7 +121,7 @@ func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 // the dialect's renderer, the start hook, the dispatcher release at end
 // and the unsubscribe bookkeeping. Both dialects share all of it.
 func (s *netconfSession) wireEvents(onEvent func(*netconfSession, *netconfStateEvent)) {
-	ev := &netconfEvents{ready: make(chan struct{})}
+	ev := &netconfEvents{ready: make(chan struct{}), twins: operTwins{}}
 	if manager != nil {
 		ev.sent, ev.dropped = &manager.netconfNotificationsSent, &manager.netconfNotificationsDropped
 	} else {
@@ -394,21 +391,6 @@ func (e *netconfStateEvent) fullRow() iosxeRow {
 	return *e.row
 }
 
-// twinOperEvent reports whether evt is the oper event that follows an admin
-// event which already moved oper. An admin change broadcasts both, with the
-// same ifIndex and instant, and only the first is rendered. Every dialect
-// calls it once per event, in order.
-func (ev *netconfEvents) twinOperEvent(evt StateChange) bool {
-	if evt.Changed == LeafOperStatus && ev.skip.set && ev.skip.ifIndex == evt.IfIndex && ev.skip.at.Equal(evt.At) {
-		ev.skip.set = false
-		return true
-	}
-	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
-		ev.skip.ifIndex, ev.skip.at, ev.skip.set = evt.IfIndex, evt.At, true
-	}
-	return false
-}
-
 // handleStateChange renders one event for this session alone.
 func (s *netconfSession) handleStateChange(evt StateChange) {
 	s.handleStateEvent(&netconfStateEvent{evt: evt, dev: s.dev})
@@ -430,7 +412,7 @@ func (s *netconfSession) iosxeStateEvent(e *netconfStateEvent) {
 		return
 	}
 	ev := s.ev
-	if ev.twinOperEvent(evt) {
+	if ev.twins.twin(evt) {
 		return
 	}
 	// The event carries the link as it was when the change happened. The

@@ -178,7 +178,7 @@ func (s *netconfSession) junosStateEvent(e *netconfStateEvent) {
 	}
 	ev := s.ev
 	// An admin change renders one pair, not one per event it broadcasts.
-	if ev.twinOperEvent(e.evt) {
+	if ev.twins.twin(e.evt) {
 		return
 	}
 	ev.mu.Lock()

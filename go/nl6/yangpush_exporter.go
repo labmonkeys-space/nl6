@@ -52,11 +52,7 @@ type YangPushExporter struct {
 	msgID   uint32 // messages sent so far, over all subscriptions
 	patchID uint64 // change-updates sent so far; run goroutine only
 	started bool
-	skip    struct {
-		ifIndex int
-		at      time.Time
-		set     bool
-	}
+	twins   operTwins // admin events whose oper twin is still to come
 
 	stop      chan struct{}
 	stopOnce  sync.Once
@@ -96,6 +92,7 @@ func NewYangPushExporter(dev *DeviceSimulator, cfg *DeviceYangPushConfig, clock 
 		clock:     clock,
 		subs:      vrpSubs,
 		conn:      conn,
+		twins:     operTwins{},
 		stop:      make(chan struct{}),
 	}
 	e.newTimer = func() ypTimer {
@@ -217,7 +214,7 @@ func (e *YangPushExporter) run() {
 		case <-timers[1].C():
 			periodic(1)
 		case evt := <-sc:
-			if e.twinOperEvent(evt) {
+			if e.twins.twin(evt) {
 				continue
 			}
 			e.ensureStarted()
@@ -238,7 +235,7 @@ func (e *YangPushExporter) run() {
 			for n := len(sc); n > 0; n-- {
 				select {
 				case evt := <-sc:
-					if e.twinOperEvent(evt) {
+					if e.twins.twin(evt) {
 						continue
 					}
 					if fidelityMutesBackground(sourceBackground) {
@@ -265,21 +262,6 @@ func (e *YangPushExporter) run() {
 			}
 		}
 	}
-}
-
-// twinOperEvent reports whether evt is the oper event that follows an admin
-// event which already moved oper. An admin change broadcasts both, with the
-// same ifIndex and instant, and the first already sent or queued the whole
-// entry. Only the run goroutine calls it.
-func (e *YangPushExporter) twinOperEvent(evt StateChange) bool {
-	if evt.Changed == LeafOperStatus && e.skip.set && e.skip.ifIndex == evt.IfIndex && e.skip.at.Equal(evt.At) {
-		e.skip.set = false
-		return true
-	}
-	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
-		e.skip.ifIndex, e.skip.at, e.skip.set = evt.IfIndex, evt.At, true
-	}
-	return false
 }
 
 // ensureStarted sends the three subscription-started notifications and the

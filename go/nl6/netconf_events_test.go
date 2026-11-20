@@ -253,6 +253,34 @@ func TestNetconfShutdownOnUpLinkPushesNoPass(t *testing.T) {
 	sentinel.expectNext()
 }
 
+// Two producers that shut different interfaces at the same moment can
+// interleave their broadcasts: admin(5), admin(7), oper(5), oper(7). Each
+// interface is still pushed once.
+func TestNetconfInterleavedShutdownsPushOncePerInterface(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	sentinel := newNcSentinel(c, st)
+	oper5 := c.sub(ncXPath("GigabitEthernet1/0/5", "oper-status"))
+	oper7 := c.sub(ncXPath("GigabitEthernet1/0/7", "oper-status"))
+
+	x := st.ApplyAdminStatus(5, AdminDown)
+	y := st.ApplyAdminStatus(7, AdminDown)
+	if len(x) < 2 || len(y) < 2 {
+		t.Fatalf("shutdown did not move oper: %d and %d events", len(x), len(y))
+	}
+	st.Broadcast(x[0])
+	st.Broadcast(y[0])
+	ncBroadcast(st, append(x[1:], y[1:]...))
+
+	if n := c.next(); n.sub != oper5 || n.oper != "if-oper-state-no-pass" {
+		t.Fatalf("first interface push: %s", n.raw)
+	}
+	if n := c.next(); n.sub != oper7 || n.oper != "if-oper-state-no-pass" {
+		t.Fatalf("second interface push: %s", n.raw)
+	}
+	sentinel.expectNext()
+}
+
 func TestNetconfNoShutdownSequence(t *testing.T) {
 	dev, st := newNetconfTestDevice(t)
 	c := startIOSXETestClient(t, dev)
