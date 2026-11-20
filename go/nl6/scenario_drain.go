@@ -150,6 +150,10 @@ const finalizeBudget = drainBarrierTimeout
 // identity for the affected participants, which is why the count is reported
 // rather than swallowed. Production never asserts that identity (every
 // identityHolds call site is a test), so nothing fails on a live simulator.
+//
+// A fire REFUSED by the closed gate is a different case and does not break the
+// identity. It counts through ledgerEntry.countUnsent, so the snapshot holds it
+// completely or not at all.
 func (d *drainGate) closeAndWait(id string) int64 {
 	return d.closeAndWaitUntil(id, time.Now().Add(drainBarrierTimeout))
 }

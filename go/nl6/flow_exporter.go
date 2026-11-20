@@ -718,8 +718,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			} else {
 				// Window is closing: these records are dropped, not sent.
 				if len(expired) > 0 {
-					part.ledger.emitted.Add(uint64(len(expired)))
-					part.ledger.dropped.Add(uint64(len(expired)))
+					part.ledger.countUnsent(&part.ledger.dropped, uint64(len(expired)))
 				}
 				expired = nil
 				if !sendTemplate && len(fe.counterSources) == 0 {

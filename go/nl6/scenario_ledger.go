@@ -40,6 +40,15 @@ type ledgerEntry struct {
 	sendFailures        atomic.Uint64
 	dropped             atomic.Uint64
 
+	// unsentMu makes the two adds of countUnsent one step against snapshot
+	// and identityHolds. A fire that sends nothing is not covered
+	// by the drain barrier, so without it a finalize snapshot can land between
+	// the adds and report emitted one above the sum. countUnsent takes the
+	// read lock. snapshot and identityHolds take the write lock. A read of one
+	// counter (metricSum) needs no lock. The path of a fire that is sent must
+	// not take it: the drain barrier already covers that path.
+	unsentMu sync.RWMutex
+
 	// backgroundSuppressed is informational disclosure (FR15/FR21): how
 	// many background fires the gate skipped for this participant. NOT
 	// part of the ledger identity.
@@ -272,9 +281,20 @@ func subWindowIndex(gs *gateState, t time.Time) int {
 	return idx
 }
 
+// countUnsent counts n records that were generated and not sent. bucket is
+// &l.dropped or &l.suppressedPreWindow. A snapshot sees both adds or neither.
+func (l *ledgerEntry) countUnsent(bucket *atomic.Uint64, n uint64) {
+	l.unsentMu.RLock()
+	defer l.unsentMu.RUnlock()
+	l.emitted.Add(n)
+	bucket.Add(n)
+}
+
 // identityHolds checks the ledger identity exactly. Call only after the
 // drain barrier (or under synctest quiesce) — mid-run the counters move.
 func (l *ledgerEntry) identityHolds() bool {
+	l.unsentMu.Lock()
+	defer l.unsentMu.Unlock()
 	sent := l.inWindow.Load() + l.drain.Load()
 	return l.emitted.Load() == sent+l.sendFailures.Load()+l.dropped.Load()+l.suppressedPreWindow.Load()
 }
@@ -298,6 +318,8 @@ type ledgerSnapshot struct {
 }
 
 func (l *ledgerEntry) snapshot() ledgerSnapshot {
+	l.unsentMu.Lock()
+	defer l.unsentMu.Unlock()
 	var sw [scenarioSubWindowCount]uint64
 	for i := range l.subWindows {
 		sw[i] = l.subWindows[i].Load()

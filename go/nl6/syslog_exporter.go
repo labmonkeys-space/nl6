@@ -328,8 +328,7 @@ func (e *SyslogExporter) fireWithSourceLabelled(entry *SyslogCatalogEntry, overr
 		return nil
 	case gateSuppressCounted:
 		// Emission-suppressed: generated-by-definition (n=1, no render).
-		p.ledger.emitted.Add(1)
-		p.ledger.suppressedPreWindow.Add(1)
+		p.ledger.countUnsent(&p.ledger.suppressedPreWindow, 1)
 		return nil
 	}
 	// Admit into the drain barrier. admit() atomically checks the barrier
@@ -338,8 +337,7 @@ func (e *SyslogExporter) fireWithSourceLabelled(entry *SyslogCatalogEntry, overr
 	// post-Add recheck: a fire that arrives after finalize began closing is
 	// a straggler → dropped.
 	if !p.drain.admit() {
-		p.ledger.emitted.Add(1)
-		p.ledger.dropped.Add(1)
+		p.ledger.countUnsent(&p.ledger.dropped, 1)
 		return nil
 	}
 	defer p.drain.leave()
