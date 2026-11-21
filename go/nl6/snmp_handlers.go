@@ -257,8 +257,10 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	// owned OID is at/after precomputedNextOID, OR currentOID is at/after
 	// its last owned OID.
 	if precomputedNextOID != "" {
+		// Strictly before the first metric OID: a static row ON a metric OID
+		// goes to the slow path, where the metric value wins the tie (nl6#1056).
 		metricsClear := len(sortedMetricOIDs) == 0 ||
-			compareOIDs(precomputedNextOID, sortedMetricOIDs[0]) <= 0 ||
+			compareOIDs(precomputedNextOID, sortedMetricOIDs[0]) < 0 ||
 			compareOIDs(currentOID, sortedMetricOIDs[len(sortedMetricOIDs)-1]) >= 0
 		ifCyclerClear := !ifCyclerHasRows ||
 			compareOIDs(precomputedNextOID, ifCycler.firstDynOID) <= 0 ||
@@ -380,6 +382,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	}
 
 	// Add dynamic metric OIDs as candidates for walks (uses cached sorted slice)
+	metricOID, metricVal := "", ""
 	if s.device.metricsCycler != nil && len(sortedMetricOIDs) > 0 {
 		for _, mOID := range sortedMetricOIDs {
 			if compareOIDs(mOID, currentOID) > 0 {
@@ -389,6 +392,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 						oid:  mOID,
 						resp: val,
 					})
+					metricOID, metricVal = mOID, val
 					break // Only need the first (smallest) metric OID greater than current
 				}
 			}
@@ -431,6 +435,13 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 			nextOID = candidates[i].oid
 			response = candidates[i].resp
 		}
+	}
+
+	// A static row on a metric OID (an operator resource file may carry one)
+	// ties with the metric candidate and is listed first; the metric value
+	// wins, as it does on GET, so a GET and a walk agree (nl6#1056).
+	if metricOID != "" && nextOID == metricOID {
+		response = metricVal
 	}
 
 	// A static sysUpTime.0 row (an operator resource file may still carry
@@ -1114,6 +1125,15 @@ func (s *SNMPServer) getMetricValue(oid string, p int) string {
 	metricType, exists := metricOIDs[oid]
 	if !exists {
 		return ""
+	}
+	// hrStorageSize.1 and hrStorageUsed.1 count hrStorageAllocationUnits.1,
+	// not KB. Only these two: the vendor OIDs that share MetricMemTotal and
+	// MetricMemUsed stay in KB (nl6#1056).
+	switch oid {
+	case hrStorageSize1OID:
+		return kbInStorageUnits(s.device.metricsCycler.memTotal, s.device.hrStorageUnits)
+	case hrStorageUsed1OID:
+		return kbInStorageUnits(s.device.metricsCycler.memUsed[p], s.device.hrStorageUnits)
 	}
 	switch metricType {
 	case MetricCPUPercent:

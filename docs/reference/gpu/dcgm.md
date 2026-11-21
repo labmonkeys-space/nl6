@@ -94,8 +94,8 @@ They behave like the per-GPU metrics, including the minute-boundary case, descri
 | OID | Name | Behaviour |
 |-----|------|-----------|
 | `1.3.6.1.2.1.25.3.3.1.2.1` | `hrProcessorLoad.1` | Cycling CPU percent, moves to the next point once per minute |
-| `1.3.6.1.2.1.25.2.3.1.5.1` | `hrStorageSize.1` | Constant physical memory total from the device profile, never advances |
-| `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, moves to the next point once per minute |
+| `1.3.6.1.2.1.25.2.3.1.5.1` | `hrStorageSize.1` | Constant physical memory total from the device profile, never advances, in the profile's `hrStorageAllocationUnits.1` (1 MiB on the H100 and H200, 1 KiB on the A100) |
+| `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, moves to the next point once per minute, in the same units |
 
 The other Host Resources OIDs, including storage row 2, are static.
 

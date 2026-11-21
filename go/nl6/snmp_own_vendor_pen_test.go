@@ -285,8 +285,13 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // nl6#821 typed entPhysicalVendorType as an OBJECT IDENTIFIER, so its values
 // joined the value half: 30 to 58. The 28 new ones are each profile's own
 // vendor type. The 208 port rows answer zeroDotZero, which is under no arc.
+//
+// nl6#1056 deleted the static rows that shadowed the metric engine, two of
+// them under a vendor arc: extremeCurrentTemperature.0 (1916) and huawei_ne8000's
+// temperature row (2011). The engine still serves both OIDs, but the shipped
+// corpus no longer names them: names 327 to 325. No value moved.
 const (
-	ownVendorArcNamesShipped  = 327
+	ownVendorArcNamesShipped  = 325
 	ownVendorArcValuesShipped = 58 // +1: cisco_asr9902's sysObjectID ciscoASR9902; +28: entPhysicalVendorType (nl6#821)
 )
 
