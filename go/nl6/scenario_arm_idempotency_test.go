@@ -110,8 +110,7 @@ func TestScenarioArm_ReArmPreservesLedgers(t *testing.T) {
 	if led == nil {
 		t.Fatal("no ledger after arm")
 	}
-	led.emitted.Add(3)
-	led.suppressedPreWindow.Add(3)
+	led.countUnsent(&led.suppressedPreWindow, 3)
 	led.backgroundSuppressed.Add(2)
 
 	if _, _, err := c.Arm(); err != nil {

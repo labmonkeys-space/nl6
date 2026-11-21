@@ -38,8 +38,7 @@ func TestScenarioDrain_UndoToDropped(t *testing.T) {
 	if p.drain.admit() {
 		t.Fatal("admit() must fail after the barrier closed")
 	}
-	led.emitted.Add(1)
-	led.dropped.Add(1) // the idiom's refused-admission branch
+	led.countUnsent(&led.dropped, 1) // the idiom's refused-admission branch
 
 	if got := led.dropped.Load(); got != 1 {
 		t.Errorf("dropped = %d, want 1", got)
