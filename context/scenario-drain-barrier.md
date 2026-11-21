@@ -14,7 +14,12 @@ The path of a fire that is sent takes no lock, because the barrier covers it.
 Reordering the two adds does not help.
 The snapshot loads the counters one by one, so every order leaves a window.
 Every exporter uses the helper for a refused admit (gNMI dial-out, syslog, SNMP trap, flow, YANG-Push) and for a counted suppress before T0 (syslog, trap).
-`TestLedgerUnsent_NoBareAdds` fails when a file adds `dropped` or `suppressedPreWindow` by hand.
-The one allowed bare `dropped.Add` is the admitted syslog fire whose write is abandoned.
+`dropped` and `suppressedPreWindow` are an `unsentCount`, which has `Load` and no `Add`, so a bare add, or an add through an alias of the counter, does not compile.
+They move only through `countUnsent`, or through `countAbandonedWrite` for the admitted syslog fire whose write is abandoned: that fire counted `emitted` inside the barrier, which also covers this add, so it takes no lock.
+What still compiles is reaching the type's inner field, or calling `countAbandonedWrite` from a refused path.
+`TestLedgerUnsentCountersMoveOnlyThroughTheLedger` parses the package and keeps the inner field inside the three methods that own it and `countAbandonedWrite` on its one caller.
+What gets past both the type and the test: `unsafe`, `reflect`, and overwriting a counter or a whole ledger with a zero value (`p.ledger.dropped = unsentCount{}`), which resets rather than adds.
+The test also does not check that `fireWithCtx` gets a non-nil `p` only after `admit()`, which the lock-free add relies on.
+It replaced a substring scan that an alias of the counter got past.
 It does not close one case.
 A refused fire that lands after the snapshot still moves the live ledger, so live status can read one above the finalized report for that device.

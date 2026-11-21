@@ -21,7 +21,10 @@ const scenarioSubWindowCount = 10
 // scenario window. All counters are written by producer sites (atomics,
 // adjacent to the outcome per the counter-discipline pattern) and read for
 // the report only after the drain barrier (wg.Wait) — approximate mid-run
-// atomic reads are allowed for predicates/live counts (Growth).
+// atomic reads are allowed for predicates/live counts (Growth). The barrier
+// covers only admitted fires: a fire it refused, or a counted suppress before
+// T0, moves two counters through countUnsent, and unsentMu is what keeps the
+// report exact for it.
 //
 // Ledger identity (FR23, PR0 boundary decisions in scenario_boundary.go):
 //
@@ -36,9 +39,9 @@ type ledgerEntry struct {
 	emitted             atomic.Uint64
 	inWindow            atomic.Uint64
 	drain               atomic.Uint64
-	suppressedPreWindow atomic.Uint64
+	suppressedPreWindow unsentCount
 	sendFailures        atomic.Uint64
-	dropped             atomic.Uint64
+	dropped             unsentCount
 
 	// unsentMu makes the two adds of countUnsent one step against snapshot
 	// and identityHolds. A fire that sends nothing is not covered
@@ -281,13 +284,34 @@ func subWindowIndex(gs *gateState, t time.Time) int {
 	return idx
 }
 
+// unsentCount is a ledger counter that moves only through a ledgerEntry
+// method: countUnsent for a fire that sends nothing, countAbandonedWrite for
+// an admitted fire whose write was abandoned. It has no Add, so a bare add
+// to dropped or suppressedPreWindow, or to an alias of either, does not
+// compile. TestLedgerUnsentCountersMoveOnlyThroughTheLedger keeps the inner
+// field in this file.
+type unsentCount struct {
+	viaLedgerMethodsOnly atomic.Uint64
+}
+
+// Load reads the counter. Like any single-counter read it needs no lock.
+func (c *unsentCount) Load() uint64 { return c.viaLedgerMethodsOnly.Load() }
+
 // countUnsent counts n records that were generated and not sent. bucket is
 // &l.dropped or &l.suppressedPreWindow. A snapshot sees both adds or neither.
-func (l *ledgerEntry) countUnsent(bucket *atomic.Uint64, n uint64) {
+func (l *ledgerEntry) countUnsent(bucket *unsentCount, n uint64) {
 	l.unsentMu.RLock()
 	defer l.unsentMu.RUnlock()
 	l.emitted.Add(n)
-	bucket.Add(n)
+	bucket.viaLedgerMethodsOnly.Add(n)
+}
+
+// countAbandonedWrite counts n records that were admitted into the drain
+// barrier, counted in emitted there, and then lost because their write was
+// abandoned (syslog's shutdown race). The barrier covers this add, so it
+// takes no lock. A fire the barrier refused uses countUnsent instead.
+func (l *ledgerEntry) countAbandonedWrite(n uint64) {
+	l.dropped.viaLedgerMethodsOnly.Add(n)
 }
 
 // identityHolds checks the ledger identity exactly. Call only after the
