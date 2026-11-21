@@ -636,8 +636,9 @@ run: check-linux build
 # does track. Every gosec release up to v2.29.0 bundles golang.org/x/tools
 # v0.49.0, which cannot read the export data Go 1.27.2 writes ("export data
 # version 5 is greater than maximum supported version 4"), so the module forces
-# x/tools v0.50.0. Once a gosec release requires x/tools >= v0.50.0 on its
-# own, this can go back to a plain `go install ...@version`.
+# x/tools v0.50.0 or later (v0.52.0 today). Once a gosec release requires
+# x/tools >= v0.50.0 on its own, this can go back to a plain
+# `go install ...@version`.
 GOLANGCI_LINT_VERSION ?= v2.14.0
 GOVULNCHECK_VERSION   ?= v1.7.0
 GOIMPORTS_VERSION     ?= v0.45.0
