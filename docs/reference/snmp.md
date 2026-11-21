@@ -80,6 +80,34 @@ USM defines no privacy-without-authentication level, and the privacy key is loca
 A device created over REST with that combination is refused with a 400.
 The CLI flags are **not** validated together, so `-snmpv3-priv aes128` with `-snmpv3-auth none` starts and then fails on every encrypted request.
 
+### Broken and weak algorithms
+
+The USM algorithms nl6 implements are the ones RFC 3414 and RFC 3826 define, because those are what managers and devices still use and what nl6 is tested against.
+Two of them are broken, and a third has known serious weaknesses:
+
+- **Single DES** (`des`) has a 56-bit key. Someone who captures SNMPv3 traffic can recover the key by exhaustive search, and with it every scoped PDU encrypted under it.
+- **MD5** (`md5`, HMAC-MD5-96) is broken as a hash function.
+- **SHA-1** (`sha1`, HMAC-SHA-96) has had a practical collision since 2017.
+
+The USM passwords add risks of their own:
+
+- **A weak password can be guessed offline.** The localized keys derive from the password and the engine ID, which travels in clear, so one captured authenticated message is enough to test guesses.
+- **A batch shares its keys.** The engine ID is fleet-wide (see below), and every device of a batch has the same password, so every device has the same localized keys. One recovered DES key or one guessed password opens the whole batch.
+- **Some credentials are public or visible.** The auto-start batch uses `simadmin` / `simadmin`, the same pair as SSH. The `-trap-snmpv3-*` passwords are visible in `ps`.
+
+What a fleet uses depends on how it was created:
+
+- **The auto-start batch** has SNMPv3 only when `-snmpv3-engine-id` is set. `-snmpv3-auth` then defaults to `md5` (an unrecognised value falls back to `md5` with a log line) and `-snmpv3-priv` to `none`, so the default is MD5 authentication with the scoped PDUs in clear.
+- **A REST-created batch** has SNMPv3 only when its request carries an `snmpv3` block with `"enabled": true`. There, `auth_protocol` and `priv_protocol` default to `0`, none.
+
+`sha1` with `aes128` is the strongest pair nl6 offers, since the SHA-2 protocols and AES-192/256 are [not implemented](#snmpv3-usm-conformance).
+
+To limit the risk:
+
+- **Choose SHA-1 with AES-128** unless the collector under test needs MD5 or DES: `-snmpv3-auth sha1 -snmpv3-priv aes128`, or `"auth_protocol": 2, "priv_protocol": 2` in the REST `snmpv3` block.
+- **Use lab credentials only**, long and unique, never ones a production network also uses. To avoid the public `simadmin` pair, create the batch over REST with its own credentials. The REST API is plain HTTP and unauthenticated, so those credentials cross the network in clear unless the API is reached on localhost or an isolated network.
+- **Run nl6 in an isolated lab**, as [SECURITY.md](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md) asks.
+
 ### Two engine-identity limitations
 
 Neither affects a single-device poll, and both are worth knowing before pointing a manager at a large fleet.
