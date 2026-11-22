@@ -53,13 +53,23 @@ func TestStateChangesArriveInMutationOrder(t *testing.T) {
 	st.RemoveListener(ch) // before close: Broadcast must never send to a closed channel
 	close(ch)
 
+	wantMutationOrder(t, ch, st, ifIndex)
+}
+
+// wantMutationOrder reads a closed listener channel and asserts that the
+// events of ifIndex form one chain: each starts from the oper-status the one
+// before it ended on, an admin event that moved oper is followed directly by
+// its twin, and the last event is the engine's state.
+func wantMutationOrder(t *testing.T, ch <-chan StateChange, st *InterfaceState, ifIndex int) {
+	t.Helper()
 	var prev *StateChange
 	n := 0
 	for evt := range ch {
-		evt := evt
+		if evt.IfIndex != ifIndex {
+			continue
+		}
 		n++
 		if prev != nil {
-			// An admin event that moved oper is followed directly by its twin.
 			wantTwin := prev.Changed == LeafAdminStatus && prev.PrevOper != prev.Oper
 			isTwin := evt.Changed == LeafOperStatus && evt.At.Equal(prev.At) && evt.PrevOper == prev.PrevOper && evt.Oper == prev.Oper
 			switch {

@@ -555,8 +555,8 @@ const (
 	// per interface.
 	LinkMovedMasked
 	// LinkMovedVisible: the link value was stored and the derived oper-status
-	// moved. lastChange is stamped and the returned StateChange must be
-	// broadcast by the caller.
+	// moved. lastChange is stamped, the returned StateChange is queued on the
+	// engine and the caller calls Deliver.
 	LinkMovedVisible
 )
 
@@ -569,9 +569,10 @@ const (
 // caller having to re-read admin (a second read, at a different instant, whose
 // verdict could disagree with what was stored).
 //
-// On LinkMovedVisible the caller is responsible for calling Broadcast on every
-// returned event, in order. The first is ifIndex's own; any after it belong to
-// subinterfaces whose derived oper-status moved with it (cascadeChildren).
+// On LinkMovedVisible the returned events are queued on the engine, in order,
+// and the caller is responsible for calling Deliver. It never broadcasts them
+// itself. The first is ifIndex's own; any after it belong to subinterfaces
+// whose derived oper-status moved with it (cascadeChildren).
 //
 // `s.now()` and `sinceBootNs` are sampled INSIDE the CAS loop so that
 // retries on contention record the timestamp of the winning CAS, not
