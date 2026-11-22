@@ -877,7 +877,10 @@ func TestProfilingShutdownStopsThePush(t *testing.T) {
 	}
 	// And Shutdown really calls it, behaviourally: a real manager (no
 	// namespace) with a push running, then Shutdown.
-	sm := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	sm, err := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
 	postProfiling(t, `{"enabled":true,"server_address":"`+srv.URL+`","duration":"10s"}`)
 	if !getProfiling(t).Pushing {
 		t.Fatal("not pushing before Shutdown")
@@ -1597,7 +1600,10 @@ func TestProfilingWithSubsystemSkipsARedundantRelabel(t *testing.T) {
 // TestProfilingLabel_FleetFlowTicker reads the fleet ticker's birth label
 // from the goroutine profile, on the real constructor's ticker.
 func TestProfilingLabel_FleetFlowTicker(t *testing.T) {
-	sm := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	sm, err := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = sm.Shutdown() })
 	time.Sleep(20 * time.Millisecond)
 	wantSubsystemLabel(t, "(*SimulatorManager).startFlowTicker.func", subsystemFlow)

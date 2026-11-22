@@ -102,7 +102,10 @@ func TestFlowTicker_AcceptsInRange(t *testing.T) {
 // nl6sim netns and its iptables rule but before any path that removes them —
 // leaking both along with the process.
 func TestFlowTicker_NilOptionIsSkipped(t *testing.T) {
-	sm := NewSimulatorManagerWithOptions(false, nil, WithFlowTickInterval(7*time.Second))
+	sm, err := NewSimulatorManagerWithOptions(false, nil, WithFlowTickInterval(7*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() { _ = sm.Shutdown() }()
 
 	if got := time.Duration(sm.flowTickerPeriod.Load()); got != 7*time.Second {
@@ -116,7 +119,10 @@ func TestFlowTicker_NilOptionIsSkipped(t *testing.T) {
 // above pin startFlowTicker's contract; this one pins that the constructor
 // actually honours it.
 func TestFlowTicker_ConstructorHonorsTheFlag(t *testing.T) {
-	sm := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	sm, err := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() { _ = sm.Shutdown() }()
 
 	if got := time.Duration(sm.flowTickerPeriod.Load()); got != 30*time.Second {
