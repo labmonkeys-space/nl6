@@ -216,11 +216,12 @@ func TestV1GetNextSkipRunEndsInNoSuchName(t *testing.T) {
 	}
 }
 
-// TestV1GetNextSkipLoopTerminatesOnNonAdvancingMap pins the skip loop's safety
-// bounds. Deleting the non-advance check (or the step cap that backs it up)
-// must fail here, not surface as a wedged UDP handler in production. The
-// oidNextMap is operator data, so a self-referencing or backwards entry is a
-// reachable input, and the loop runs inline with no recover().
+// TestV1GetNextSkipLoopTerminatesOnNonAdvancingMap pins that the skip loop
+// terminates on a non-advancing map. The oidNextMap is operator data, so a
+// self-referencing or backwards entry was a reachable input, and the loop runs
+// inline with no recover(). Since nl6#1090 findNextOIDWithServed ends such a
+// successor itself, so deleting the skip loop's own non-advance check no longer
+// fails here: this pins the termination, not which check provides it.
 func TestV1GetNextSkipLoopTerminatesOnNonAdvancingMap(t *testing.T) {
 	cases := []struct {
 		name string

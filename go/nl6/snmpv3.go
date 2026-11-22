@@ -580,8 +580,11 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 //	                       smaller one. Without this the loop hands back a
 //	                       non-increasing OID with no exception, which is
 //	                       EXACTLY the symptom nl6#526 set out to remove,
-//	                       arriving by a different route. The v1/v2c GETNEXT
-//	                       path grew the same bound in nl6#524.
+//	                       arriving by a different route. Since nl6#1090
+//	                       findNextOIDWithServed answers such a successor as
+//	                       end of MIB on every path, so this check is no
+//	                       longer reached, and no test reaches it either. It
+//	                       stays as a second bound.
 //
 // The v2c reference tests only the first two; the non-advance guard is a v3
 // property (nl6#526) and is kept per column rather than dropped for symmetry.

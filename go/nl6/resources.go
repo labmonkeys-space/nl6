@@ -1307,7 +1307,8 @@ func (sm *SimulatorManager) buildResourceIndexes(resources *DeviceResources) {
 	// forever (nl6#1090). normaliseResourceOID gives each OID whose arcs are
 	// all digits one spelling, so equal OIDs are equal strings and the sort puts
 	// them next to each other. A key that is not all digits is not validated
-	// and can still compare equal to another.
+	// and can still compare equal to another; findNextOIDWithServed ends a walk
+	// that would stall on one.
 	// oidIndex keeps one value per key, so a GET and a walk serve the same one
 	// of the entries.
 	resources.sortedOIDs = slices.Compact(resources.sortedOIDs)

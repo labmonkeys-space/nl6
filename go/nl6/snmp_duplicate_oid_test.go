@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A resource profile can carry one OID in two entries (nl6#1090): the same
@@ -250,6 +252,121 @@ func TestDuplicateOIDFromResourceFilesInEitherOrder(t *testing.T) {
 					assertGetAndWalkAgree(t, s, pos.twin)
 				})
 			}
+		}
+	}
+}
+
+// TestNonAdvancingSuccessorEndsTheWalkAtEveryVersion corrupts the index the
+// way a future defect could and requires every GETNEXT and GETBULK path to
+// answer end of MIB instead of the stalled OID: the check sits in
+// findNextOIDWithServed, which all of them call.
+func TestNonAdvancingSuccessorEndsTheWalkAtEveryVersion(t *testing.T) {
+	cases := []struct{ name, at, next string }{
+		{"fast-path/self", dupRunName2, dupRunName2},
+		{"fast-path/backwards", dupRunName2, dupRunName1},
+		{"slow-path/self", dupSysContact, dupSysContact},
+		{"last/self", dupRunName3, dupRunName3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := make(map[string]string)
+			for _, r := range dupBaseRows() {
+				fixture[r.OID] = r.Response
+			}
+			s := v3TestServer(fixture)
+			s.device.ID = "dup-oid"
+			s.device.resources.oidNextMap.Store(tc.at, tc.next)
+
+			var next, val string
+			logged := captureLog(t, func() {
+				next, val = s.findNextOID(tc.at)
+				s.findNextOID(tc.at)
+			})
+			if next != "" || val != valueEndOfMibView {
+				t.Fatalf("findNextOID(%s) = (%q, %q), want end of MIB", tc.at, next, val)
+			}
+			if n := strings.Count(logged, "does not advance"); n != 1 {
+				t.Errorf("logged %d non-advance lines over two calls, want 1:\n%s", n, logged)
+			}
+
+			t.Run("v1-getnext", func(t *testing.T) {
+				hdr := decodeResponseHeader(t, s.handleSNMPv2cRequest(v1GetNext(tc.at)))
+				if hdr.errStatus != snmpErrNoSuchName {
+					t.Errorf("error-status = %d, want noSuchName (%d)", hdr.errStatus, snmpErrNoSuchName)
+				}
+			})
+			t.Run("v2c-getnext", func(t *testing.T) {
+				vbs := decodeV2cVarbinds(t, s.handleSNMPv2cRequest(v2cGetNext(tc.at)))
+				assertEndOfMIBBindings(t, vbs, tc.at, 1)
+			})
+			t.Run("v2c-getbulk", func(t *testing.T) {
+				vbs := decodeV2cVarbinds(t, s.handleSNMPv2cRequest(v2cGetBulkRequest(0, 5, []string{tc.at})))
+				assertEndOfMIBBindings(t, vbs, tc.at, 5)
+			})
+			t.Run("v2c-getbulk-non-repeater", func(t *testing.T) {
+				vbs := decodeV2cVarbinds(t, s.handleSNMPv2cRequest(v2cGetBulkRequest(1, 0, []string{tc.at})))
+				assertEndOfMIBBindings(t, vbs, tc.at, 1)
+			})
+			t.Run("v3-getnext", func(t *testing.T) {
+				msg, err := s.parseSNMPv3Message(s.handleSNMPv3Request(v3GetNextRequest(t, s, 7, tc.at)))
+				if err != nil {
+					t.Fatalf("response does not parse as SNMPv3: %v", err)
+				}
+				_, oid, value := decodeScopedPDU(t, msg.ScopedPDU)
+				if oid != tc.at || !bytes.Equal(value, wireEndOfMibView) {
+					t.Errorf("binding %s = % x, want %s = endOfMibView", oid, value, tc.at)
+				}
+			})
+			t.Run("v3-getbulk", func(t *testing.T) {
+				// A single-column v3 walk stops at the end of its view and
+				// answers it as one binding (nl6#526).
+				assertEndOfMIBBindings(t, v3Bulk(t, s, 0, 5, []string{tc.at}).varbinds, tc.at, 1)
+			})
+		})
+	}
+}
+
+// assertEndOfMIBBindings requires want bindings, each named with the
+// requested OID and carrying endOfMibView.
+func assertEndOfMIBBindings(t *testing.T, vbs []v3Varbind, requested string, want int) {
+	t.Helper()
+	if len(vbs) != want {
+		t.Fatalf("%d bindings, want %d: %+v", len(vbs), want, vbs)
+	}
+	for i, vb := range vbs {
+		if vb.oid != requested || vb.valueTag != wireEndOfMibView[0] {
+			t.Errorf("binding %d: %s tag 0x%02X, want %s = endOfMibView", i, vb.oid, vb.valueTag, requested)
+		}
+	}
+}
+
+// TestShippedWalksNeverHitTheNonAdvanceCheck walks every shipped profile end to
+// end, dynamic sources included, and requires every step to advance without the
+// check in findNextOIDWithServed firing: a check that fired on a legitimate
+// successor would end a real walk early and look like a short MIB.
+func TestShippedWalksNeverHitTheNonAdvanceCheck(t *testing.T) {
+	for _, p := range shippedProfileNames(t) {
+		s := bootedShippedDevice(t, p, time.Now().Add(-time.Hour), nil)
+		steps := 0
+		logged := captureLog(t, func() {
+			for cur := ".0"; steps < 200000; steps++ {
+				next, _ := s.findNextOID(cur)
+				if next == "" {
+					return
+				}
+				if compareOIDs(next, cur) <= 0 {
+					t.Errorf("%s: GETNEXT(%s) = %s does not advance", p, cur, next)
+					return
+				}
+				cur = next
+			}
+			t.Errorf("%s: the walk did not end within %d steps", p, steps)
+		})
+		if strings.Contains(logged, "does not advance") {
+			t.Errorf("%s: the non-advance check fired on a shipped walk:\n%s", p, logged)
+		}
+		if steps < len(s.device.resources.sortedOIDs) {
+			t.Errorf("%s: the walk ended after %d steps, fewer than the %d static OIDs", p, steps, len(s.device.resources.sortedOIDs))
 		}
 	}
 }
