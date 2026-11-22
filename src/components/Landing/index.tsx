@@ -209,9 +209,9 @@ export default function Landing(): React.JSX.Element {
             <div style={{display: 'grid', gap: 16}}>
               <Terminal />
               <div className="nl6-hero__stats">
-                <Stat label="devices / host" value="30,000" unit="max" />
-                <Stat label="device types"   value="28"     unit="in 8 cat." />
-                <Stat label="mem / device"   value="~1"     unit="KB" />
+                <Stat label="devices / host" value="30,000" unit="tested" />
+                <Stat label="device types"   value={String(TYPE_COUNT)} unit={`in ${CATEGORY_COUNT} cat.`} />
+                <Stat label="heap / device"  value="~16"    unit="KiB" />
                 <Stat label="parallel workers" value="500"  unit="max" />
               </div>
             </div>
@@ -230,7 +230,7 @@ export default function Landing(): React.JSX.Element {
               <Copyable text="git clone https://github.com/labmonkeys-space/nl6.git" />
               <Copyable text="cd nl6" />
             </Panel>
-            <Panel title="02 · build" meta="make · go 1.26+">
+            <Panel title="02 · build" meta="make · go 1.27+">
               <Copyable text="make tidy" />
               <Copyable text="make build" />
             </Panel>
@@ -282,7 +282,7 @@ export default function Landing(): React.JSX.Element {
           <div className="nl6-sec__hd">
             <span className="nl6-sec__num">02</span>
             <h2 className="nl6-sec__title">what's in the box</h2>
-            <span className="nl6-sec__sub">six pillars</span>
+            <span className="nl6-sec__sub">{FEATURES.length} pillars</span>
           </div>
           <div className="nl6-features">
             {FEATURES.map((f, i) => (
@@ -336,10 +336,10 @@ export default function Landing(): React.JSX.Element {
           </div>
           <div className="nl6-scale">
             <Stat label="concurrent devices" value="30,000" unit="tested" />
-            <Stat label="device types"       value="28" />
-            <Stat label="resource files"     value="341" unit="json" />
-            <Stat label="world cities"       value="98"  unit="sysLocation" />
-            <Stat label="ssh commands"       value="36+" unit="linux" />
+            <Stat label="device types"       value={String(TYPE_COUNT)} />
+            <Stat label="resource files"     value="414" unit="json" />
+            <Stat label="world cities"       value="46,664" unit="sysLocation" />
+            <Stat label="ssh commands"       value="30"  unit="linux" />
           </div>
         </section>
 
