@@ -79,7 +79,7 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   The check is kept per interface, because producers broadcast after the mutator returns and two admin changes on different interfaces can interleave their events.
   `operTwins` keeps every pending instant per interface, at most 4, so two producers that change the same interface inside that window are covered too.
   A forgotten instant costs one extra update with correct state.
-  Whole pairs delivered in swapped order do not end stale here, because the collected update reads the current state.
+  Whole pairs can no longer arrive in swapped order, because events leave the engine in mutation order.
 - Both captured message shapes fail strict validation in the NMOP chain, on the real router as on nl6.
   See nl6#1062.
 - The NE lacks the features `encode-json` (`ietf-subscribed-notifications`) and `yang-push-revision-supported` (`ietf-yang-push-revision`).
