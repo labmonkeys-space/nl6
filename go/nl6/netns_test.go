@@ -54,6 +54,11 @@ func fakeNetnsCommands(t *testing.T, failOn string) *[]string {
 func TestCreateNetNamespaceCleansUpWhenVethSetupFails(t *testing.T) {
 	for _, failOn := range []string{
 		"ip link add " + VETH_HOST,
+		"ip link set " + VETH_NS + " netns " + NETNS_NAME,
+		"ip addr add " + VETH_HOST_IP,
+		"ip link set " + VETH_HOST + " up",
+		"ip netns exec " + NETNS_NAME + " ip addr add " + VETH_NS_IP,
+		"ip netns exec " + NETNS_NAME + " ip link set " + VETH_NS + " up",
 		"ip netns exec " + NETNS_NAME + " ip route add default",
 	} {
 		t.Run(failOn, func(t *testing.T) {
