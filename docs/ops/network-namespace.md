@@ -58,8 +58,9 @@ create network namespace "nl6sim": failed to create namespace: exit status 1, ou
 
 The simulator also exits when the namespace exists but the veth pair or the default route inside the namespace cannot be built.
 It exits as well when a leftover `nl6sim` namespace from an earlier run cannot be removed.
-The log line then starts with `remove leftover namespace`.
-In both cases `10.254.0.1` would not exist, and every export addressed to it would be lost while counting as sent.
+The log line then contains `remove leftover namespace`.
+Without the namespace or a complete veth pair, `10.254.0.1` would not be reachable from the devices, and every export addressed to it would be lost while counting as sent.
+Without the default route, exports to `10.254.0.1` would still arrive, but exports to an off-host collector would be lost.
 
 Run the container without the AppArmor profile.
 In Compose:
