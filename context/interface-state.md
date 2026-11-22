@@ -69,10 +69,10 @@ That is why the flap scheduler's no-op log once named two causes, one of which d
 
 1. The slot store commits and the mutator queues its events on the engine's outbox, both under `outMu`.
    `Deliver` then takes one event at a time from the outbox and runs the steps below for it, outside every lock.
-2. `Broadcast` sends a `StateChange` to every registered ON_CHANGE Subscribe listener through a per-stream depth-16 channel, drop-oldest on overflow.
-   It drops a zero-`Changed` event rather than fanning out an update for ifIndex 0.
-3. The counter-hold hook (`if_counter_hold.go`) reconciles every dial-derived column against the derived oper.
+2. The counter-hold hook (`if_counter_hold.go`) reconciles every dial-derived column against the derived oper.
    Columns hold while oper is not `up(1)`, through a per-slot immutable ledger applied at the one `heldDeltasAt` read in `GetDynamicAt`, with a seqlock and two instant clamps that keep polls monotonic. Details in `context/if-counters.md`.
+3. `Broadcast` sends a `StateChange` to every registered ON_CHANGE Subscribe listener through a per-stream depth-16 channel, drop-oldest on overflow.
+   It drops a zero-`Changed` event rather than fanning out an update for ifIndex 0.
 4. The Tier C hook fires, oper-only, gated on `LeafOperStatus`.
 
 **Tier C (`correlate-state-notifications`):** an oper transition fires correlated link traps and syslog for that ifIndex.

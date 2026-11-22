@@ -76,8 +76,9 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   The capture has one change-update and cannot confirm this.
 - An admin change that also moves oper-status broadcasts two events, one per leaf.
   Subscription 10 sends the whole entry on the first and drops the second through `operTwins`.
-  The check is kept per interface, because producers broadcast after the mutator returns and two admin changes on different interfaces can interleave their events.
-  `operTwins` keeps every pending instant per interface, at most 4, so two producers that change the same interface inside that window are covered too.
+  The check is kept per interface and holds every pending instant, at most 4.
+  That dates from the time producers broadcast after the mutator returned and two admin changes could interleave their events.
+  A twin now follows its admin event directly, so the list matters only when drop-oldest ate an event.
   A forgotten instant costs one extra update with correct state.
   Whole pairs can no longer arrive in swapped order, because events leave the engine in mutation order.
 - Both captured message shapes fail strict validation in the NMOP chain, on the real router as on nl6.
