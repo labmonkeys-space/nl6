@@ -13,8 +13,8 @@ Interop gate: `make test-interop-yangpush`, `examples/netcalyx/`, `go/nl6/yangpu
   - `123/Hackathon/ipf-zbl1243-r-daisy-21_huawei_vrp_ne_20250717_141629` holds the YANG library and modules.
   - `127/Hackathon/mb-alive-test-result/netcalyx/netcalyx-yangpush-receiver` holds the on-change subscription of a VRP router: `yp-s11-subscription-started.json`, `yp-s11-push-update.json` and `yp-s11-push-change-update.json`.
 - The capture repo has no licence.
-  Permission to use derived fixtures was requested from Thomas Graf and is pending.
-  If it is refused, replace the derived fixtures with synthetic ones of the same byte layout before merge.
+  The derived fixtures may be redistributed under the Apache License 2.0.
+  They are test data and do not ship in the binary.
 - Fixtures are anonymised.
   The hostname is `ne8000-sim-1`, interface names are synthetic and the publisher ID is `192.0.2.13` (`0xC000020D`).
 - The referee is NetCalyx v0.4.0 (`network-analytics/NetCalyx`, tag `v0.4.0`, commit `90e364e`), the Swisscom fork of NetGauze that the IETF NMOP test chain runs, since 2026-11-10.

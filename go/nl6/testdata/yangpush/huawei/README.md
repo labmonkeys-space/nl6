@@ -3,6 +3,9 @@
 `subscription-started-8`, `subscription-started-9`, `push-update-8` and `push-update-9` derive from the NMOP hackathon capture of a Huawei VRP device.
 Source: `network-analytics/ietf-network-analytics-document-status`, `125/Hackathon/yangpush-publisher/huawei-vrp-ip/yp-notifications/`.
 
+The capture repository has no licence.
+The fixtures derived from it may be redistributed under the Apache License 2.0.
+
 Anonymisation:
 - The JSON is compact, with the capture key order kept.
 - The hostname is `ne8000-sim-1`.
