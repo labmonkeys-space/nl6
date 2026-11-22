@@ -71,7 +71,7 @@ helm install nl6-lab deploy/helm/nl6-minion -n nl6 --create-namespace -f my-valu
 |-------|---------|-------|
 | `nodeSelector` | `{}` | **Set this.** Pins the pod to the node whose network stack nl6 mutates. |
 | `nl6.args` | `-auto-start-ip 10.42.0.1 -auto-count 50 ...` | Device batch + HTTP port. |
-| `nl6.securityContext.privileged` | `true` | Simplest grant for `/dev/net/tun` + caps. Set `false` to rely on the capability list only. |
+| `nl6.securityContext.privileged` | `true` | Simplest grant for `/dev/net/tun` + caps. Set `false` to rely on the capability list only. On a node with AppArmor that also needs `nl6.securityContext.appArmorProfile.type=Unconfined`, or nl6 exits at startup. |
 | `minion.id` / `minion.location` | `nl6-minion-01` / `nl6-lab` | Must match an OpenNMS Monitoring Location. |
 | `minion.httpUrl` | in-cluster Service | External URL or cluster DNS — both reachable under `hostNetwork`. |
 | `minion.kafka.bootstrapServers` | in-cluster Service | Kafka broker `host:port`. |

@@ -58,8 +58,13 @@ nl6:
   #    privileged:true is the simplest way to grant /dev/net/tun + the caps.
   #    Set privileged:false to use the explicit capability list instead (your
   #    PodSecurity policy and kernel must allow /dev/net/tun access that way).
+  #    On a node with AppArmor, privileged:false also needs the appArmorProfile
+  #    below (Kubernetes 1.30 or later). The runtime's default profile denies
+  #    the mount that `ip netns add` runs, and nl6 then exits at startup.
   securityContext:
     privileged: true
+    # appArmorProfile:
+    #   type: Unconfined
     capabilities:
       add:
         - NET_ADMIN       # TUN creation, link/route config

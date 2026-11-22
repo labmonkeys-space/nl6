@@ -16,9 +16,12 @@ docker pull ghcr.io/labmonkeys-space/nl6:latest
 # The simulator needs TUN + netns privileges: NET_ADMIN to create interfaces
 # and SYS_ADMIN to enter the namespace (setns). --network=host isn't strictly
 # required but makes the HTTP control plane reachable on :8080 directly.
+# apparmor=unconfined lets the simulator create the nl6sim namespace under
+# Docker's default AppArmor profile; without it the simulator exits.
 docker run --rm -it \
   --cap-add=NET_ADMIN \
   --cap-add=SYS_ADMIN \
+  --security-opt apparmor=unconfined \
   --device=/dev/net/tun \
   --network=host \
   ghcr.io/labmonkeys-space/nl6:latest \
@@ -52,5 +55,5 @@ make docker-down   # docker compose down
 
 `compose.yml` runs two services:
 
-- **`simulator`**: the image above with `NET_ADMIN`, `SYS_ADMIN` and `/dev/net/tun`, publishing `8080` (control plane) and `161/udp`. Flags go in as CMD overrides: `docker compose run simulator -auto-start-ip 192.168.100.1 -auto-count 5`.
+- **`simulator`**: the image above with `NET_ADMIN`, `SYS_ADMIN`, `/dev/net/tun` and `security_opt: [apparmor=unconfined]`, publishing `8080` (control plane) and `161/udp`. Flags go in as CMD overrides: `docker compose run simulator -auto-start-ip 192.168.100.1 -auto-count 5`.
 - **`bootstrapper`**: waits for the simulator's healthcheck, replays `inventory/devices.json` through the REST API with `scripts/fleet.sh`, then exits. No manifest is a clean no-op; copy `inventory/devices.example.json` to `inventory/devices.json` to opt in. The simulator has no on-disk persistence, so the manifest is what survives `compose down && compose up`.
