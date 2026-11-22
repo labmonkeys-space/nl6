@@ -266,9 +266,11 @@ export default function Landing(): React.JSX.Element {
             <Panel title="01 · pull" meta="no toolchain">
               <Copyable text="docker pull ghcr.io/labmonkeys-space/nl6:latest" />
             </Panel>
-            <Panel title="02 · run" meta="needs --cap-add=net_admin">
+            <Panel title="02 · run" meta="needs net_admin, sys_admin, apparmor=unconfined">
               <Copyable text={`docker run --rm -it \\
   --cap-add=NET_ADMIN \\
+  --cap-add=SYS_ADMIN \\
+  --security-opt apparmor=unconfined \\
   --device=/dev/net/tun \\
   --network=host \\
   ghcr.io/labmonkeys-space/nl6:latest \\

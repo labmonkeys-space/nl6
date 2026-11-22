@@ -38,6 +38,7 @@ iptables -I FORWARD 1 -i veth-sim-host -j ACCEPT
 …and removes it on clean shutdown.
 The rule exists because hosts with Docker installed default the `FORWARD` chain to `DROP`, which silently blocks per-device flow-export UDP from reaching the collector.
 Without the rule the simulator logs a warning and flows disappear on such hosts.
+A rule that cannot be installed does not stop startup, because many hosts do not need it.
 
 **iptables is required on the host.** The container image ships `iptables` for this reason.
 Bare-metal hosts need `iptables` (or `iptables-nft`) available and on the simulator's `PATH`.
@@ -45,9 +46,40 @@ Bare-metal hosts need `iptables` (or `iptables-nft`) available and on the simula
 See [Flow export how-to](flow-export.md#prerequisites-for-per-device-source-ip) for the full context.
 Per-device source IPs route out of the namespace via this FORWARD rule.
 
+## Run in Docker: AppArmor
+
+Docker's default AppArmor profile denies the `mount --make-shared /var/run/netns` that `ip netns add` runs.
+On a host with AppArmor enabled, such as Ubuntu, the simulator then cannot create `nl6sim`.
+It exits at startup with a log line like this:
+
+```text
+create network namespace "nl6sim": failed to create namespace: exit status 1, output: mount --make-shared /var/run/netns failed: Permission denied
+```
+
+The simulator also exits when the namespace exists but the veth pair or the default route inside the namespace cannot be built.
+It exits as well when a leftover `nl6sim` namespace from an earlier run cannot be removed.
+The log line then contains `remove leftover namespace`.
+Without the namespace or a complete veth pair, `10.254.0.1` would not be reachable from the devices, and every export addressed to it would be lost while counting as sent.
+Without the default route, exports to `10.254.0.1` would still arrive, but exports to an off-host collector would be lost.
+
+Run the container without the AppArmor profile.
+In Compose:
+
+```yaml
+services:
+  simulator:
+    security_opt:
+      - apparmor=unconfined
+```
+
+With `docker run`, pass `--security-opt apparmor=unconfined`.
+The option has no effect on hosts without AppArmor.
+
 ## Run without the namespace: `-no-namespace`
 
 Pass [`-no-namespace`](../reference/cli-flags.md#core-flags) to run everything in the root namespace.
+This flag is the only way the simulator runs in the root namespace.
+When the namespace cannot be created, the simulator exits instead of falling back.
 Useful for one-off debugging.
 Don't use this at scale.
 `systemd-networkd` interference will destroy throughput.

@@ -39,6 +39,10 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
+    # Docker's default AppArmor profile blocks creating the nl6sim namespace;
+    # nl6 exits at startup without this. Ignored on hosts without AppArmor.
+    security_opt:
+      - apparmor=unconfined
     devices:
       - /dev/net/tun
     command:

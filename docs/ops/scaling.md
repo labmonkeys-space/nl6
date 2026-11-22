@@ -56,6 +56,7 @@ When running under Docker, pair the host tuning above with:
 
 - `--cap-add=NET_ADMIN` + `--cap-add=SYS_ADMIN` + `--device=/dev/net/tun` so the container can manage TUN / netns.
   `SYS_ADMIN` lets the simulator enter the `nl6sim` namespace with `setns`.
+- `--security-opt apparmor=unconfined` so Docker's default AppArmor profile does not block creating the namespace.
 - `--network=host` so per-device TUN IPs are reachable from outside the container.
 - A memory budget of about `16 KiB * device_count` of live heap plus a comfortable buffer for the Go runtime.
 

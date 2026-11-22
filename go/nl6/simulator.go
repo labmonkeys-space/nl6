@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -87,6 +88,19 @@ func setupSignalHandler() {
 		os.Exit(0)
 	}()
 }
+
+// namespaceFailureHint follows the error when the nl6sim namespace cannot be
+// created. It names every requirement, not only AppArmor: a container without
+// CAP_SYS_ADMIN fails the same way and would not be helped by security_opt alone.
+const namespaceFailureHint = `The simulator needs root, CAP_NET_ADMIN, CAP_SYS_ADMIN and /dev/net/tun.
+On bare metal, run it with sudo.
+In Docker, give the simulator service cap_add: [NET_ADMIN, SYS_ADMIN], devices: ["/dev/net/tun"] and security_opt: ["apparmor=unconfined"] (docker run: --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --device=/dev/net/tun --security-opt apparmor=unconfined).
+In Kubernetes, run the container with privileged: true, or add the capabilities and appArmorProfile: {type: Unconfined}.
+To run without namespace isolation on purpose, pass -no-namespace.`
+
+// namespaceUnsupportedHint replaces namespaceFailureHint where the namespace
+// can never be created, so the advice about capabilities does not apply.
+const namespaceUnsupportedHint = `Pass -no-namespace to run without namespace isolation on this platform.`
 
 func main() {
 	// Define command-line flags
@@ -396,9 +410,17 @@ func main() {
 
 	// Initialize manager with namespace support (unless disabled)
 	useNamespace := !*noNamespace
-	manager = NewSimulatorManagerWithOptions(useNamespace,
+	var managerErr error
+	manager, managerErr = NewSimulatorManagerWithOptions(useNamespace,
 		WithFlowTickInterval(flowDurations.Tick.Duration()),
 		WithFlowTickSync(*flowTickSync))
+	if managerErr != nil {
+		hint := namespaceFailureHint
+		if runtime.GOOS != "linux" {
+			hint = namespaceUnsupportedHint
+		}
+		log.Fatalf("%s\n%s", strings.TrimSpace(managerErr.Error()), hint)
+	}
 	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
 	fidelitySilent.Store(*fidelity)
 	// Remember what the flag said, so GET /api/v1/fidelity can report the

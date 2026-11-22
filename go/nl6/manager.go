@@ -41,6 +41,8 @@ var deleteDeviceTunInterfacesInNamespace = func(sm *SimulatorManager, interfaceN
 	return sm.bulkDeleteTunInterfacesInNamespace(interfaceNames)
 }
 
+var createNetNamespace = CreateNetNamespace
+
 // ManagerOption configures a SimulatorManager during construction.
 //
 // This exists because a post-construction setter cannot configure a subsystem
@@ -94,8 +96,12 @@ func WithFlowTickSync(sync bool) ManagerOption {
 	return func(sm *SimulatorManager) { sm.flowTickSync = sync }
 }
 
-// NewSimulatorManagerWithOptions creates a manager with configurable namespace isolation
-func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *SimulatorManager {
+// NewSimulatorManagerWithOptions creates a manager with configurable namespace
+// isolation. A requested namespace that cannot be created is an error: there is
+// no fallback to the root namespace, because exports for the veth address would
+// leave by the default route and be lost while counting as sent. Running in the
+// root namespace is only ever chosen with -no-namespace.
+func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) (*SimulatorManager, error) {
 	// Go 1.20+ auto-seeds the math/rand package, so an explicit Seed call
 	// would be a no-op (and is deprecated).
 
@@ -119,15 +125,12 @@ func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *S
 
 	// Initialize network namespace for device isolation
 	if useNamespace {
-		ns, err := CreateNetNamespace()
+		ns, err := createNetNamespace()
 		if err != nil {
-			log.Printf("WARNING: Failed to create network namespace: %v", err)
-			log.Printf("Falling back to root namespace (systemd-networkd may consume resources)")
-			sm.useNamespace = false
-		} else {
-			sm.netNamespace = ns
-			log.Printf("Network namespace '%s' active - devices isolated from systemd-networkd", NETNS_NAME)
+			return nil, fmt.Errorf("create network namespace %q: %w", NETNS_NAME, err)
 		}
+		sm.netNamespace = ns
+		log.Printf("Network namespace '%s' active - devices isolated from systemd-networkd", NETNS_NAME)
 	}
 
 	// Pre-generate shared SSH host key for all devices
@@ -157,7 +160,7 @@ func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *S
 	// later. Phase 3 of per-device-export-config.
 	sm.initFlowSubsystem()
 
-	return sm
+	return sm, nil
 }
 
 // getNextTunName returns the next on-demand TUN interface name and advances the

@@ -16,6 +16,16 @@ Run with `sudo` or use a container that grants `CAP_NET_ADMIN`, `CAP_SYS_ADMIN` 
 `CAP_SYS_ADMIN` lets the simulator enter the `nl6sim` namespace with `setns`.
 See [Docker](../getting-started/docker.md).
 
+### The simulator exits with "create network namespace"
+The simulator could not create the `nl6sim` namespace or its veth pair, and it stops instead of running without them.
+Under Docker on a host with AppArmor, the log line ends in `mount --make-shared /var/run/netns failed: Permission denied`.
+Add `security_opt: [apparmor=unconfined]` to the service, or `--security-opt apparmor=unconfined` to `docker run`.
+See [Network namespace](network-namespace.md#run-in-docker-apparmor).
+On bare metal, run the simulator with `sudo`.
+When the log line contains `remove leftover namespace`, an earlier run left `nl6sim` behind.
+Remove it with `sudo ip netns delete nl6sim`, or reboot the host.
+To run in the root namespace on purpose, pass `-no-namespace`.
+
 ### Port conflicts
 Something else is listening on `:8080` (the default control plane).
 Pick an alternative with [`-port`](../reference/cli-flags.md#core-flags), e.g. `-port 9090`.

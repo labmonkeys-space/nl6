@@ -46,6 +46,16 @@ const (
 	VETH_NETMASK = "30"
 )
 
+// netnsDir is where iproute2 keeps named namespaces. A variable so a test can
+// point it at a scratch directory.
+var netnsDir = "/var/run/netns"
+
+// runCommand runs one ip or iptables command of namespace setup and teardown.
+// A variable so a test can record the commands and fail one of them.
+var runCommand = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
 // NetNamespace manages the network namespace for simulated devices
 type NetNamespace struct {
 	Name      string
@@ -66,22 +76,23 @@ func CreateNetNamespace() (*NetNamespace, error) {
 	log.Printf("Creating network namespace '%s' for device isolation...", NETNS_NAME)
 	startTime := time.Now()
 
-	// Check if namespace already exists and clean it up
+	// Check if namespace already exists and clean it up. A leftover that
+	// cannot be removed is returned as the cause: the add below would only
+	// fail with "File exists".
 	if namespaceExists(NETNS_NAME) {
 		log.Printf("Network namespace '%s' already exists, cleaning up...", NETNS_NAME)
 		if err := deleteNetNamespace(NETNS_NAME); err != nil {
-			log.Printf("Warning: failed to clean up existing namespace: %v", err)
+			return nil, fmt.Errorf("remove leftover namespace: %w", err)
 		}
 	}
 
 	// Create the network namespace
-	cmd := exec.Command("ip", "netns", "add", NETNS_NAME)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runCommand("ip", "netns", "add", NETNS_NAME); err != nil {
 		return nil, fmt.Errorf("failed to create namespace: %v, output: %s", err, string(output))
 	}
 
 	// Open the namespace file descriptor for later use
-	nsPath := fmt.Sprintf("/var/run/netns/%s", NETNS_NAME)
+	nsPath := fmt.Sprintf("%s/%s", netnsDir, NETNS_NAME)
 	fd, err := syscall.Open(nsPath, syscall.O_RDONLY, 0)
 	if err != nil {
 		// Best-effort cleanup; the open error is what we surface.
@@ -96,12 +107,16 @@ func CreateNetNamespace() (*NetNamespace, error) {
 		log.Printf("Warning: failed to bring up loopback: %v", err)
 	}
 
-	// Setup veth pair for connectivity
+	// Setup veth pair for connectivity. Without it the collector address
+	// VETH_HOST_IP does not exist and every export from the namespace is lost,
+	// so a failure here is fatal like a failed namespace. Close only removes
+	// the veth once VethSetup is set, so a half-built pair is deleted first.
 	if err := ns.setupVethPair(); err != nil {
-		log.Printf("Warning: veth setup failed: %v (devices may not be reachable from host)", err)
-	} else {
-		ns.VethSetup = true
+		_, _ = runCommand("ip", "link", "delete", VETH_HOST)
+		_ = ns.Close()
+		return nil, fmt.Errorf("set up veth pair: %w", err)
 	}
+	ns.VethSetup = true
 
 	// Enable IP forwarding so remote machines can reach devices in the namespace
 	enableIPForwarding()
@@ -115,29 +130,25 @@ func CreateNetNamespace() (*NetNamespace, error) {
 // setupVethPair creates a veth pair connecting host to namespace
 func (ns *NetNamespace) setupVethPair() error {
 	// Delete existing veth if present
-	exec.Command("ip", "link", "delete", VETH_HOST).Run()
+	_, _ = runCommand("ip", "link", "delete", VETH_HOST)
 
 	// Create veth pair
-	cmd := exec.Command("ip", "link", "add", VETH_HOST, "type", "veth", "peer", "name", VETH_NS)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runCommand("ip", "link", "add", VETH_HOST, "type", "veth", "peer", "name", VETH_NS); err != nil {
 		return fmt.Errorf("failed to create veth pair: %v, output: %s", err, string(output))
 	}
 
 	// Move one end to namespace
-	cmd = exec.Command("ip", "link", "set", VETH_NS, "netns", NETNS_NAME)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		exec.Command("ip", "link", "delete", VETH_HOST).Run()
+	if output, err := runCommand("ip", "link", "set", VETH_NS, "netns", NETNS_NAME); err != nil {
+		_, _ = runCommand("ip", "link", "delete", VETH_HOST)
 		return fmt.Errorf("failed to move veth to namespace: %v, output: %s", err, string(output))
 	}
 
 	// Configure host side
-	cmd = exec.Command("ip", "addr", "add", fmt.Sprintf("%s/%s", VETH_HOST_IP, VETH_NETMASK), "dev", VETH_HOST)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runCommand("ip", "addr", "add", fmt.Sprintf("%s/%s", VETH_HOST_IP, VETH_NETMASK), "dev", VETH_HOST); err != nil {
 		return fmt.Errorf("failed to configure host veth IP: %v, output: %s", err, string(output))
 	}
 
-	cmd = exec.Command("ip", "link", "set", VETH_HOST, "up")
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runCommand("ip", "link", "set", VETH_HOST, "up"); err != nil {
 		return fmt.Errorf("failed to bring up host veth: %v, output: %s", err, string(output))
 	}
 
@@ -150,9 +161,11 @@ func (ns *NetNamespace) setupVethPair() error {
 		return fmt.Errorf("failed to bring up ns veth: %v", err)
 	}
 
-	// Set default route in namespace to go through veth
+	// Set default route in namespace to go through veth. Without it nothing
+	// leaves the namespace for an off-host collector, so this is fatal like
+	// the steps above.
 	if err := ns.execInNs("ip", "route", "add", "default", "via", VETH_HOST_IP); err != nil {
-		log.Printf("Warning: failed to add default route in namespace: %v", err)
+		return fmt.Errorf("failed to add default route in namespace: %v", err)
 	}
 
 	// Allow forwarding of traffic originating in the namespace. Hosts with
@@ -172,8 +185,7 @@ func (ns *NetNamespace) setupVethPair() error {
 // abort veth setup, since many deployments either don't need the rule (no
 // forwarded egress from the ns) or have it managed externally.
 func (ns *NetNamespace) addForwardAcceptRule() {
-	cmd := exec.Command("iptables", "-I", "FORWARD", "1", "-i", VETH_HOST, "-j", "ACCEPT")
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runCommand("iptables", "-I", "FORWARD", "1", "-i", VETH_HOST, "-j", "ACCEPT"); err != nil {
 		log.Printf("Warning: failed to install FORWARD ACCEPT rule for %s (iptables missing?): %v, output: %s",
 			VETH_HOST, err, string(output))
 		return
@@ -185,7 +197,7 @@ func (ns *NetNamespace) addForwardAcceptRule() {
 // Safe to call when the rule is absent (e.g. if the install failed) — iptables
 // simply returns non-zero and we swallow it.
 func (ns *NetNamespace) removeForwardAcceptRule() {
-	exec.Command("iptables", "-D", "FORWARD", "-i", VETH_HOST, "-j", "ACCEPT").Run()
+	_, _ = runCommand("iptables", "-D", "FORWARD", "-i", VETH_HOST, "-j", "ACCEPT")
 }
 
 // AddRouteToNamespace adds a route on the host to reach IPs inside the namespace
@@ -208,8 +220,7 @@ func (ns *NetNamespace) AddRouteToNamespace(network string, netmask string) erro
 // execInNs executes a command inside the network namespace
 func (ns *NetNamespace) execInNs(name string, args ...string) error {
 	fullArgs := append([]string{"netns", "exec", ns.Name, name}, args...)
-	cmd := exec.Command("ip", fullArgs...)
-	output, err := cmd.CombinedOutput()
+	output, err := runCommand("ip", fullArgs...)
 	if err != nil {
 		return fmt.Errorf("command failed: %v, output: %s", err, string(output))
 	}
@@ -290,7 +301,7 @@ func (ns *NetNamespace) Close() error {
 	// Delete veth pair (deleting one end deletes both)
 	if ns.VethSetup {
 		ns.removeForwardAcceptRule()
-		exec.Command("ip", "link", "delete", VETH_HOST).Run()
+		_, _ = runCommand("ip", "link", "delete", VETH_HOST)
 		ns.VethSetup = false
 	}
 
@@ -306,15 +317,14 @@ func (ns *NetNamespace) Close() error {
 
 // namespaceExists checks if a network namespace exists
 func namespaceExists(name string) bool {
-	nsPath := fmt.Sprintf("/var/run/netns/%s", name)
+	nsPath := fmt.Sprintf("%s/%s", netnsDir, name)
 	_, err := os.Stat(nsPath)
 	return err == nil
 }
 
 // deleteNetNamespace deletes a network namespace
 func deleteNetNamespace(name string) error {
-	cmd := exec.Command("ip", "netns", "delete", name)
-	output, err := cmd.CombinedOutput()
+	output, err := runCommand("ip", "netns", "delete", name)
 	if err != nil {
 		// Namespace might already be gone
 		if strings.Contains(string(output), "No such file") {

@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 2348
+const minimumTestFunctions = 2353
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 27
@@ -138,9 +138,9 @@ const maximumHeadroom = 25
 //
 // This is the half the count cannot reach. A file that gains a constraint still
 // declares its tests, so the parse count does not move, but the tests stop
-// running wherever the constraint excludes them. The three rows below are Linux
-// only for good reasons and that is a decision. A fourth appearing, or one of the
-// three widening, has to be one too.
+// running wherever the constraint excludes them. The four rows below are Linux
+// only for good reasons and that is a decision. A fifth appearing, or one of the
+// four widening, has to be one too.
 //
 // The values are derived from build.Context.MatchFile over constraintProbes, so
 // they describe the EFFECT rather than the spelling: a file constrained by its
@@ -148,6 +148,7 @@ const maximumHeadroom = 25
 // makes the census blind to the difference in the right way.
 var buildConstrainedTestFiles = map[string]string{
 	"datagram_mtu_gate_linux_test.go": "does not build on darwin/arm64, freebsd/amd64, windows/amd64",
+	"netns_test.go":                   "does not build on darwin/arm64, freebsd/amd64, windows/amd64",
 	"snmp_getbulk_test.go":            "does not build on darwin/arm64, freebsd/amd64, windows/amd64",
 	"snmp_response_size_test.go":      "does not build on darwin/arm64, freebsd/amd64, windows/amd64",
 }
