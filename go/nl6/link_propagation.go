@@ -55,46 +55,49 @@ func (sm *SimulatorManager) linkPropagationOn() bool {
 	return sm != nil && sm.topology != nil && sm.linkPropagation.Load()
 }
 
-// publishStateChanges is THE post-mutation helper. It broadcasts evts on state
-// in order, exactly as every mutation site did before, and then resyncs the far
-// end of ifIndex. Call it after EVERY mutation that may have moved something,
-// including a masked one that returned no events. Nil-safe, so a site that may
-// run without a manager calls it unconditionally.
+// publishStateChanges is THE post-mutation helper. It delivers what the
+// mutation queued on state and then resyncs the far end of ifIndex. Call it
+// after EVERY mutation that may have moved something, including a masked one
+// that returned no events. Nil-safe, so a site that may run without a manager
+// calls it unconditionally.
+//
+// The mutator has already queued evts on the engine, in mutation order, and
+// Deliver broadcasts from that queue. The caller never broadcasts them itself:
+// two callers racing on one interface would otherwise deliver in either order,
+// and a consumer that renders from the event would end on the older state.
+// evts stays in the signature because every site passes its mutator's result
+// straight through. Under such a race this can return before its own events
+// are out; the caller that is delivering sends them.
 //
 // Only ifIndex is resynced, not the subinterfaces in evts: a mutation changes
 // what ifIndex transmits and nothing else, because Transmits reads a port's own
 // admin and link, never its parent's.
-func (sm *SimulatorManager) publishStateChanges(ip string, state *InterfaceState, ifIndex int, evts []StateChange) {
+func (sm *SimulatorManager) publishStateChanges(ip string, state *InterfaceState, ifIndex int, _ []StateChange) {
 	if state == nil {
 		return
 	}
-	for _, evt := range evts {
-		state.Broadcast(evt)
-	}
+	state.Deliver()
 	if sm.linkPropagationOn() {
 		sm.resyncFarEnd(ip, ifIndex)
 	}
 }
 
-// pendingBroadcast is a far end's events, held until linkPropMu is released.
+// pendingBroadcast is a far end that queued events under linkPropMu and is
+// delivered once the lock is released.
 type pendingBroadcast struct {
 	state *InterfaceState
-	evts  []StateChange
 }
 
-// flush broadcasts every pending batch in the order it was produced.
+// flush delivers every far end that queued events.
 //
-// Broadcasting happens outside linkPropMu because Broadcast runs the Tier C
+// Delivery happens outside linkPropMu because Broadcast runs the Tier C
 // notify hook, which takes the far device's mu; a device in teardown would
-// otherwise stall every propagation in the fleet. Two resyncs of one far end
-// racing each other can therefore deliver their events in either order, the
-// same contract every mutator already has: the caller broadcasts after the
-// mutator returns.
+// otherwise stall every propagation in the fleet. The order is still the
+// order of the mutations: SetPeerDown queued the events on the far end's
+// engine while it wrote the slot, and Deliver sends from that queue.
 func flush(pending []pendingBroadcast) {
 	for _, p := range pending {
-		for _, evt := range p.evts {
-			p.state.Broadcast(evt)
-		}
+		p.state.Deliver()
 	}
 }
 
@@ -234,14 +237,14 @@ func (sm *SimulatorManager) releaseLinks(links []topoLink) {
 	flush(pending)
 }
 
-// setPeerDownLocked stores down on end and appends the events to pending. An
-// end with no state takes nothing. Caller holds linkPropMu.
+// setPeerDownLocked stores down on end and, when that queued events on the
+// end's engine, appends the end to pending. An end with no state takes nothing. Caller holds linkPropMu.
 func setPeerDownLocked(end propEnd, down bool, pending []pendingBroadcast) []pendingBroadcast {
 	if end.state == nil {
 		return pending
 	}
 	if evts := end.state.SetPeerDown(end.end.IfIndex, down); len(evts) > 0 {
-		pending = append(pending, pendingBroadcast{state: end.state, evts: evts})
+		pending = append(pending, pendingBroadcast{state: end.state})
 	}
 	return pending
 }

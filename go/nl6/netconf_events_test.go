@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -776,4 +777,52 @@ func TestNetconfWriteErrorClosesSession(t *testing.T) {
 			t.Fatalf("%d pushes queued for a closed session", n)
 		}
 	})
+}
+
+// raceAdminChanges has two producers flip admin on one interface and deliver,
+// as two management surfaces do when they change one port at the same moment.
+func raceAdminChanges(st *InterfaceState, ifIndex int) {
+	var wg sync.WaitGroup
+	for w := 0; w < 2; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				target := uint8(AdminDown)
+				if i%2 == 1 {
+					target = AdminUp
+				}
+				st.ApplyAdminStatus(ifIndex, target)
+				st.Deliver()
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// Two producers race admin changes on one interface. Whatever the session
+// rendered on the way, its last push for the interface is the current state.
+func TestNetconfRacingAdminChangesEndOnCurrentState(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	sub := c.sub(ncXPath("GigabitEthernet1/0/5", "oper-status"))
+	marker := c.sub(ncXPath("GigabitEthernet1/0/6", "oper-status"))
+
+	raceAdminChanges(st, 5)
+	st.SetLinkState(6, OperDown)
+	st.Deliver()
+
+	last := ""
+	for {
+		n := c.next()
+		if n.sub == marker {
+			break
+		}
+		if n.sub == sub {
+			last = n.oper
+		}
+	}
+	if want := iosxeOperStatus(st.AdminStatus(5), st.OperStatus(5)); last != want {
+		t.Fatalf("last push says %q, the interface is %q", last, want)
+	}
 }

@@ -808,3 +808,48 @@ func TestTopologyStatus_ReportsLinkPropagation(t *testing.T) {
 	f.mgr.SetLinkPropagation(true)
 	read("flag on", true)
 }
+
+// A far end whose drain is blocked in its notify hook must not stall a resync
+// that writes it, nor a resync of another link. The far end's events follow
+// in mutation order once the drain resumes.
+func TestLinkPropagation_BlockedFarEndDrainDoesNotStallResyncs(t *testing.T) {
+	f, a, b := propagationFixture(t)
+	c := f.addDevice(t, 3, 4, "charlie")
+	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 2), B: ep(c.IP.String(), 1)}}))
+
+	bSt := deviceInterfaceState(b)
+	ch := make(chan StateChange, 16)
+	bSt.AddListener(ch)
+	defer bSt.RemoveListener(ch)
+	entered, release, stalled := blockFirstNotify(t, bSt)
+
+	// Block bravo's drain with a port that has no link.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, evts := bSt.SetLinkState(3, OperDown)
+		f.mgr.publishStateChanges(b.IP.String(), bSt, 3, evts)
+	}()
+	<-entered
+
+	postStatus(t, a, 1, "admin-status", "DOWN")
+	wantOper(t, "far end written behind a blocked drain", b, 2, "2")
+	postStatus(t, a, 2, "admin-status", "DOWN")
+	wantOper(t, "another link", c, 1, "2")
+	if stalled.Load() {
+		t.Fatal("a resync waited behind the blocked drain")
+	}
+	if len(ch) != 1 {
+		t.Fatalf("%d events out on bravo while its drain is blocked, want 1", len(ch))
+	}
+
+	release()
+	<-done
+	if len(ch) != 2 {
+		t.Fatalf("%d events on bravo after release, want 2", len(ch))
+	}
+	first, second := <-ch, <-ch
+	if first.IfIndex != 3 || second.IfIndex != 2 || !second.PeerDown {
+		t.Fatalf("want interface 3 then interface 2 held by its peer, got %+v then %+v", first, second)
+	}
+}

@@ -168,6 +168,22 @@ type InterfaceState struct {
 	// derive from a parent value that changed before its CAS. Interfaces
 	// outside a family never take it and keep the lock-free path.
 	familyMu sync.Mutex
+
+	// outMu, outbox and draining order the events of this engine. A mutator
+	// holds outMu from before its slot write until its events are appended
+	// to outbox, so the queue is in mutation order and the events of one
+	// mutation stay adjacent. Deliver broadcasts from the queue outside
+	// every lock, one drain at a time (draining). Without this, two callers
+	// that broadcast after their mutators returned could deliver in either
+	// order, and a consumer that renders from the event ended on the older
+	// state.
+	//
+	// Lock order: the manager's linkPropMu, then outMu, then familyMu.
+	// Nothing that holds outMu calls a listener, the notify hook or the
+	// counter hold hook, so a slow or stuck consumer never blocks a mutator.
+	outMu    sync.Mutex
+	outbox   []StateChange
+	draining bool
 }
 
 // NewInterfaceState builds an engine for `maxIfIndex` interfaces. Slot
@@ -567,7 +583,7 @@ const (
 // and the placement above is unchanged by that: the seam exposes WHICH clock is
 // read, never WHERE it is read. Moving the sample out of the loop would be a
 // behaviour change wearing a refactor's clothes.
-func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation, []StateChange) {
+func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (_ LinkMutation, queued []StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
 		return LinkUnchanged, nil
@@ -575,6 +591,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 	if newLink < OperUp || newLink > OperLowerLayerDn {
 		return LinkUnchanged, nil
 	}
+	defer s.lockOutbox(&queued)()
 	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
@@ -639,7 +656,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 // ONE CAS, not two. With oper derived there is nothing to store for it, and a
 // second CAS would open a window in which a concurrent link mutation is
 // attributed to the admin change.
-func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
+func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) (queued []StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
 		return nil
@@ -647,6 +664,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 	if newVal < AdminUp || newVal > AdminTesting {
 		return nil
 	}
+	defer s.lockOutbox(&queued)()
 	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
@@ -708,16 +726,17 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 //
 // Same contract as SetLinkState, minus the three-way outcome nobody here needs:
 // the returned events (the port's own, then any subinterface that moved with
-// it) are non-empty exactly when the DERIVED oper-status moved, and the caller
-// broadcasts them in order. A bit stored beneath admin down, or beneath a link
+// it) are non-empty exactly when the DERIVED oper-status moved. They are queued
+// on the engine in that order and the caller delivers them. A bit stored beneath admin down, or beneath a link
 // that is already down, moves nothing observable, stamps no lastChange and
 // returns nil, exactly like a masked link move. Storing the same value again is
 // a no-op, which is what makes the manager's resync idempotent.
-func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) []StateChange {
+func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) (queued []StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
 		return nil
 	}
+	defer s.lockOutbox(&queued)()
 	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
@@ -935,10 +954,10 @@ func deriveChildOper(admin, link uint8, peerDown bool, parentOper uint8) uint8 {
 // the REST admin-status POST, its auto-revert, and SNMP SET (add-snmp-set). It
 // returns the StateChange for each leaf that moved, admin first.
 //
-// The caller broadcasts the returned events (the mutators never do, by the
-// engine's existing design), so an ON_CHANGE listener sees admin then oper and
-// the Tier C notify hook fires once, on the oper event, exactly as it does for
-// the flap scheduler.
+// The returned events are queued on the engine and the caller delivers them
+// with Deliver (the mutators never broadcast, by the engine's existing design),
+// so an ON_CHANGE listener sees admin then oper and the Tier C notify hook
+// fires once, on the oper event, exactly as it does for the flap scheduler.
 //
 // IT NO LONGER CASCADES, and that is the point of nl6#694. It writes the admin
 // leaf; oper follows by derivation, asymmetrically (see deriveOper). Three
@@ -1030,13 +1049,13 @@ func (s *InterfaceState) SetNotify(fn func(StateChange)) {
 // drop-oldest semantics. Increments eventsEmitted per successful send,
 // eventsDropped per drop.
 //
-// **Multi-producer notes:** concurrent Broadcast calls on the same
-// listener channel can interleave the drain/retry sequences. Drop
-// accounting is therefore *approximate under contention* — it remains
-// correct to within ±1 per contended event, intended for trend analysis
-// rather than exact accounting. Realistic contention requires two
-// mutation sources (REST + flap scheduler) racing on the same device's
-// state engine within microseconds; rare in practice.
+// **Multi-producer notes:** production code reaches Broadcast through
+// Deliver only, which runs one drain per engine at a time and sends the
+// events in mutation order. Two mutation sources racing on one device
+// (REST + flap scheduler) therefore never run Broadcast concurrently.
+// A test may still call it directly, from several goroutines: the
+// drain/retry sequences can then interleave, and drop accounting is
+// approximate, correct to within ±1 per contended event.
 //
 // **Subscriber protocol violation:** Each per-listener send is wrapped
 // in its own defer-recover so that a misbehaving consumer who closes

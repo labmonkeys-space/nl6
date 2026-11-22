@@ -321,10 +321,10 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 
 	// The oper-status endpoint sets the LINK; the observable oper-status
 	// follows by derivation and may be masked by admin. Admin goes through the
-	// engine's funnel, which returns one event per leaf that moved and leaves
-	// the broadcast to us, admin first.
+	// engine's funnel, which queues one event per leaf that moved, admin
+	// first, and leaves the delivery to us.
 	//
-	// publishStateChanges broadcasts and then resyncs the far end of a topology
+	// publishStateChanges delivers and then resyncs the far end of a topology
 	// link. A masked link move returns no events but still runs it: the move
 	// changes what this port transmits even when it changes nothing it shows.
 	if isOper {

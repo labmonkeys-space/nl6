@@ -242,3 +242,40 @@ func TestJunosLinkEventEscapesDeviceText(t *testing.T) {
 		}
 	}
 }
+
+// The same race on a Junos session: the last pair for the interface names the
+// state it is in.
+func TestJunosRacingAdminChangesEndOnCurrentState(t *testing.T) {
+	c, state := junosFlapClient(t, true)
+	raceAdminChanges(state, 1)
+
+	// Read until the session is quiet, and keep the last frame for ifIndex 1.
+	last := ""
+	for {
+		_ = c.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+		var sb strings.Builder
+		var err error
+		for err == nil && !strings.HasSuffix(sb.String(), netconfEOM) {
+			var b byte
+			if b, err = c.br.ReadByte(); err == nil {
+				sb.WriteByte(b)
+			}
+		}
+		if err != nil {
+			if sb.Len() != 0 {
+				t.Fatalf("read: %v inside a frame: %q", err, sb.String())
+			}
+			break
+		}
+		if strings.Contains(sb.String(), "ifIndex 1,") {
+			last = sb.String()
+		}
+	}
+	want := "SNMP_TRAP_LINK_DOWN"
+	if state.OperStatus(1) == OperUp {
+		want = "SNMP_TRAP_LINK_UP"
+	}
+	if !strings.Contains(last, want) {
+		t.Fatalf("want the last frame for ifIndex 1 to be %s, got:\n%s", want, last)
+	}
+}
