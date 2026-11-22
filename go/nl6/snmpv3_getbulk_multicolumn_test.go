@@ -677,8 +677,9 @@ func TestV3GetBulkSingleColumnStopIsNotAppliedToMultiColumn(t *testing.T) {
 // Same probe as the single-column test: the clamp cannot be seen through the
 // binding count, because the encode bound trims to the same bindings either
 // way. It IS visible through the WORK. Corrupt each column's successor one
-// step past ceiling/N and the once-per-device logFirstBulkAbort line fires
-// only if the walk got there.
+// step past ceiling/N and the once-per-device non-advance log line fires
+// only if the walk got there. The rows are spelled with leading zeros, so the
+// corruption goes on the canonical key the index holds (nl6#1090).
 func TestV3GetBulkClampsTheWalkPerColumn(t *testing.T) {
 	const columns = 3
 	perCol := maxSNMPResponseSize/minVarbindSize/columns + 1
@@ -701,7 +702,10 @@ func TestV3GetBulkClampsTheWalkPerColumn(t *testing.T) {
 		// Step k of a column's walk lands on row k, so the clamped loop's last
 		// call is findNextOID(row perCol-1) and it stops holding row perCol.
 		// The entry an UNCLAMPED loop would consult next is this one.
-		past := fmt.Sprintf("%s.%03d", colOf(c), perCol)
+		past := normaliseResourceOID(fmt.Sprintf("%s.%03d", colOf(c), perCol))
+		if _, ok := s.device.resources.oidNextMap.Load(past); !ok {
+			t.Fatalf("the index holds no successor for %s, so corrupting it would test nothing", past)
+		}
 		s.device.resources.oidNextMap.Store(past, past)
 	}
 

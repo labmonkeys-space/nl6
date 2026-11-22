@@ -989,8 +989,12 @@ func TestV3GetBulkNonRepeatersMakesItAGetNext(t *testing.T) {
 // The clamp cannot be seen through the binding count: the encode bound trims
 // the collection to the same bindings either way. It IS visible through the
 // walk: corrupt the successor just past the ceiling so it does not advance,
-// and the once-per-device logFirstBulkAbort line fires only if the loop got
-// there. With the clamp wired in, it never does.
+// and the once-per-device non-advance log line fires only if the loop got
+// there. With the clamp wired in, it never does. The fixture spells its arcs
+// with leading zeros, which the index stores canonically since nl6#1090, so the
+// corruption is planted on the canonical key and the test first checks that
+// the index holds it: planted on the written spelling it was never read, and
+// the test passed with the clamp removed.
 func TestV3GetBulkClampsTheWalk(t *testing.T) {
 	s := v3TestServer(wideBulkFixture(400))
 	const start = ".1.3.6.1.2.1.1.1.0"
@@ -1002,7 +1006,10 @@ func TestV3GetBulkClampsTheWalk(t *testing.T) {
 	// Step k of the walk from sysDescr.0 lands on ifDescr.k, so the clamped
 	// loop's last call is findNextOID(ifDescr.<ceiling-1>). The next entry
 	// is the first one an unclamped loop would consult.
-	past := fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%03d", ceiling)
+	past := normaliseResourceOID(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%03d", ceiling))
+	if _, ok := s.device.resources.oidNextMap.Load(past); !ok {
+		t.Fatalf("the index holds no successor for %s, so corrupting it would test nothing", past)
+	}
 	s.device.resources.oidNextMap.Store(past, past)
 
 	var buf bytes.Buffer

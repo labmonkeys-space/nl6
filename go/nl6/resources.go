@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -496,14 +497,38 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 	return nil
 }
 
-// normaliseResourceOID gives a resource-file OID key the leading dot that
-// oidTypeTable, oidIndex and every lookup expect. Resource files may spell a
-// key either way; this is the single place that reconciles them.
+// normaliseResourceOID gives a resource-file OID key its canonical spelling:
+// the leading dot that oidTypeTable, oidIndex and every lookup expect, and no
+// leading zero on a numeric arc. Resource files may spell a key either way;
+// this is the single place that reconciles them.
+//
+// The leading zero matters because the walk index sorts by arc VALUE, so
+// ".18.03" and ".18.3" sort as one OID while staying two strings. Kept apart,
+// the pair could map that OID to itself in oidNextMap, and a row written with
+// the zero was reachable by a walk but never by a GET, since a request OID
+// decoded from BER never carries one (nl6#1090). An arc that is not all digits
+// is left as written: the key is not validated here.
 func normaliseResourceOID(oid string) string {
 	if len(oid) > 0 && oid[0] != '.' {
-		return "." + oid
+		oid = "." + oid
 	}
-	return oid
+	if !strings.Contains(oid, ".0") {
+		return oid
+	}
+	arcs := strings.Split(oid[1:], ".")
+	changed := false
+	for i, arc := range arcs {
+		if len(arc) > 1 && arc[0] == '0' && strings.Trim(arc, "0123456789") == "" {
+			if arcs[i] = strings.TrimLeft(arc, "0"); arcs[i] == "" {
+				arcs[i] = "0"
+			}
+			changed = true
+		}
+	}
+	if !changed {
+		return oid
+	}
+	return "." + strings.Join(arcs, ".")
 }
 
 // validateSNMPResourceValues rejects a resource response that collides with an
@@ -1274,6 +1299,18 @@ func (sm *SimulatorManager) buildResourceIndexes(resources *DeviceResources) {
 	sort.Slice(resources.sortedOIDs, func(i, j int) bool {
 		return compareOIDsLexicographically(resources.sortedOIDs[i], resources.sortedOIDs[j]) < 0
 	})
+
+	// One walk entry per OID. A profile can list an OID twice (shipped profiles
+	// repeat some ifHighSpeed rows), and an equal pair here stored that OID as
+	// its own successor. In the middle of the slice the next pair overwrote the
+	// entry; for the last OID nothing did, and a GETNEXT of it answered itself
+	// forever (nl6#1090). normaliseResourceOID gives each OID whose arcs are
+	// all digits one spelling, so equal OIDs are equal strings and the sort puts
+	// them next to each other. A key that is not all digits is not validated
+	// and can still compare equal to another.
+	// oidIndex keeps one value per key, so a GET and a walk serve the same one
+	// of the entries.
+	resources.sortedOIDs = slices.Compact(resources.sortedOIDs)
 
 	// Build oidNextMap from sortedOIDs rather than from the raw SNMP slice.
 	// The old loop used SNMP[i+1] which could land on a skipped special OID
