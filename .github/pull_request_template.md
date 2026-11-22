@@ -14,6 +14,7 @@ Closes #
 
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/) and are signed off (`git commit -s` → DCO).
 - [ ] AI-assisted commits carry an `Assisted-by:` trailer.
+- [ ] New behaviour and bug fixes in the Go code come with Go tests.
 - [ ] Tests pass (`cd go && go test ./...`) and the build is green.
 - [ ] New/edited source files have the SPDX license header.
 - [ ] Docs updated in this PR where behaviour changed (`CLAUDE.md`, `RELEASING.md`, docs site).
