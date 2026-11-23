@@ -68,7 +68,7 @@ export const DOCS: DocGroup[] = [
 export const STATUS: StatusGroup[] = [
   { k: 'Stable',        items: ['SNMP v1/v2c/v3 + SET', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX + NBAR2', 'gNMI (dial-in + dial-out)', 'NETCONF (Catalyst 9500, MX10004, call home)', 'SNMP trap + syslog export', 'LLDP topology', 'DNS + Prometheus service discovery', 'Load-test scenarios', 'TUN + netns isolation', 'Web UI + REST API'] },
   { k: 'Experimental',  items: ['sFlow v5 (synthetic)'] },
-  { k: 'Tested scale',  items: ['30,000 concurrent devices / host', '~16 KiB live heap / device (5,000-device benchmark)', 'CPU: minimal in steady state'] },
+  { k: 'Tested scale',  items: ['30,000 concurrent devices / host', '≥16 KiB live heap / device (5,000-device benchmark, no sockets or TUN)', 'CPU: minimal in steady state'] },
 ];
 
 export const TERMINAL_SCRIPT: TerminalLine[] = [

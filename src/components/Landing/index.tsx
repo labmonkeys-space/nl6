@@ -211,7 +211,7 @@ export default function Landing(): React.JSX.Element {
               <div className="nl6-hero__stats">
                 <Stat label="devices / host" value="30,000" unit="tested" />
                 <Stat label="device types"   value={String(TYPE_COUNT)} unit={`in ${CATEGORY_COUNT} cat.`} />
-                <Stat label="heap / device"  value="~16"    unit="KiB" />
+                <Stat label="heap / device"  value="16+"    unit="KiB heap" />
                 <Stat label="parallel workers" value="500"  unit="max" />
               </div>
             </div>
@@ -230,7 +230,7 @@ export default function Landing(): React.JSX.Element {
               <Copyable text="git clone https://github.com/labmonkeys-space/nl6.git" />
               <Copyable text="cd nl6" />
             </Panel>
-            <Panel title="02 · build" meta="make · go 1.27+">
+            <Panel title="02 · build" meta={`make · ${goVersion.toLowerCase()}+`}>
               <Copyable text="make tidy" />
               <Copyable text="make build" />
             </Panel>
@@ -338,7 +338,7 @@ export default function Landing(): React.JSX.Element {
             <Stat label="concurrent devices" value="30,000" unit="tested" />
             <Stat label="device types"       value={String(TYPE_COUNT)} />
             <Stat label="resource files"     value="414" unit="json" />
-            <Stat label="world cities"       value="46,664" unit="sysLocation" />
+            <Stat label="world cities"       value="45k+"   unit="sysLocation" />
             <Stat label="ssh commands"       value="30"  unit="linux" />
           </div>
         </section>
