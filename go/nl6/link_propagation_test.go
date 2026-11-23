@@ -845,6 +845,7 @@ func TestLinkPropagation_BlockedFarEndDrainDoesNotStallResyncs(t *testing.T) {
 
 	release()
 	<-done
+	waitDelivered(t, bSt)
 	if len(ch) != 2 {
 		t.Fatalf("%d events on bravo after release, want 2", len(ch))
 	}
@@ -892,6 +893,7 @@ func TestLinkPropagation_FlapRacingPropagatedChangeArrivesInMutationOrder(t *tes
 		}(w)
 	}
 	wg.Wait()
+	waitDelivered(t, bSt)
 	bSt.RemoveListener(ch) // before close: Broadcast must never send to a closed channel
 	close(ch)
 	wantMutationOrder(t, ch, bSt, 2)

@@ -50,6 +50,7 @@ func TestStateChangesArriveInMutationOrder(t *testing.T) {
 		}(w)
 	}
 	wg.Wait()
+	waitDelivered(t, st)
 	st.RemoveListener(ch) // before close: Broadcast must never send to a closed channel
 	close(ch)
 
@@ -86,6 +87,26 @@ func wantMutationOrder(t *testing.T, ch <-chan StateChange, st *InterfaceState, 
 	}
 	if snap := st.Snapshot(ifIndex); prev.Admin != snap.Admin || prev.Oper != st.OperStatus(ifIndex) {
 		t.Fatalf("last event admin=%d oper=%d, engine admin=%d oper=%d", prev.Admin, prev.Oper, snap.Admin, st.OperStatus(ifIndex))
+	}
+}
+
+// waitDelivered waits until the engine has sent every queued event. A caller
+// sends only its own backlog and a goroutine of the engine sends the rest, so
+// producers that raced can all have returned while events are still going out.
+func waitDelivered(t *testing.T, st *InterfaceState) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st.outMu.Lock()
+		idle := !st.draining && len(st.outbox) == 0
+		st.outMu.Unlock()
+		if idle {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the outbox did not drain")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -177,6 +198,7 @@ func TestDeliverBlockedDrainKeepsOrder(t *testing.T) {
 	}
 	release()
 	<-done
+	waitDelivered(t, st)
 	if len(ch) != 2 {
 		t.Fatalf("%d events after release, want 2", len(ch))
 	}
@@ -185,8 +207,64 @@ func TestDeliverBlockedDrainKeepsOrder(t *testing.T) {
 	}
 }
 
-// A panic in the notify hook reaches the caller, loses no event behind the
-// one that caused it, and leaves the engine able to deliver.
+// A caller sends the events that were queued when it started and returns.
+// What other producers queued behind them goes out on the engine's goroutine,
+// so a shared caller such as the flap scheduler never drains for them.
+func TestDeliverCallerSendsOnlyItsBacklog(t *testing.T) {
+	st := NewInterfaceState(4, nil, nil)
+	ch := make(chan StateChange, 16)
+	st.AddListener(ch)
+
+	// The hook blocks its first two calls, each on its own gate.
+	in := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	out := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	var calls atomic.Int32
+	st.SetNotify(func(StateChange) {
+		if n := calls.Add(1); n <= 2 {
+			close(in[n-1])
+			<-out[n-1]
+		}
+	})
+	var once [2]sync.Once
+	open := func(i int) { once[i].Do(func() { close(out[i]) }) }
+	t.Cleanup(func() { open(0); open(1) })
+	wait := func(c <-chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-c:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for %s", what)
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		st.SetLinkState(1, OperDown)
+		st.Deliver()
+	}()
+	wait(in[0], "the first drain to reach the hook")
+
+	// A second producer queues behind the blocked drain.
+	st.SetLinkState(1, OperUp)
+	st.Deliver()
+
+	open(0)
+	wait(done, "the first caller to return")
+	wait(in[1], "the engine's goroutine to take the second event")
+	// The second event is still inside its hook, and the first caller is back.
+	open(1)
+	waitDelivered(t, st)
+	if len(ch) != 2 {
+		t.Fatalf("%d events out, want 2", len(ch))
+	}
+	if first, second := <-ch, <-ch; first.Oper != OperDown || second.Oper != OperUp {
+		t.Fatalf("order is oper %d then %d, want down then up", first.Oper, second.Oper)
+	}
+}
+
+// A panic in the notify hook reaches the caller and strands nothing: the
+// events behind the one that caused it are sent before the caller panics.
 func TestDeliverSurvivesNotifyPanic(t *testing.T) {
 	st := NewInterfaceState(4, nil, nil)
 	ch := make(chan StateChange, 16)
@@ -200,23 +278,21 @@ func TestDeliverSurvivesNotifyPanic(t *testing.T) {
 	st.SetLinkState(2, OperDown)
 	func() {
 		defer func() {
-			if recover() == nil {
-				t.Fatal("the panic did not reach the caller")
+			if r := recover(); r != "notify hook failed" {
+				t.Fatalf("recovered %v, want the hook's panic", r)
 			}
 		}()
 		st.Deliver()
 	}()
-	if len(ch) != 1 {
-		t.Fatalf("%d events out after the panic, want 1", len(ch))
+	if len(ch) != 2 {
+		t.Fatalf("%d events out after the panic, want 2", len(ch))
 	}
-	if evt := <-ch; evt.IfIndex != 1 {
-		t.Fatalf("first event is for interface %d, want 1", evt.IfIndex)
+	if first, second := <-ch, <-ch; first.IfIndex != 1 || second.IfIndex != 2 {
+		t.Fatalf("events are for interfaces %d then %d, want 1 then 2", first.IfIndex, second.IfIndex)
 	}
+	st.SetLinkState(1, OperUp)
 	st.Deliver()
 	if len(ch) != 1 {
-		t.Fatalf("%d events out after the second drain, want 1", len(ch))
-	}
-	if evt := <-ch; evt.IfIndex != 2 {
-		t.Fatalf("second event is for interface %d, want 2", evt.IfIndex)
+		t.Fatalf("%d events out after the next mutation, want 1", len(ch))
 	}
 }

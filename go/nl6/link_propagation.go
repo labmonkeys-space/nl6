@@ -67,7 +67,7 @@ func (sm *SimulatorManager) linkPropagationOn() bool {
 // and a consumer that renders from the event would end on the older state.
 // evts stays in the signature because every site passes its mutator's result
 // straight through. Under such a race this can return before its own events
-// are out; the caller that is delivering sends them.
+// are out; the drain that is running sends them.
 //
 // Only ifIndex is resynced, not the subinterfaces in evts: a mutation changes
 // what ifIndex transmits and nothing else, because Transmits reads a port's own
@@ -238,7 +238,8 @@ func (sm *SimulatorManager) releaseLinks(links []topoLink) {
 }
 
 // setPeerDownLocked stores down on end and, when that queued events on the
-// end's engine, appends the end to pending. An end with no state takes nothing. Caller holds linkPropMu.
+// end's engine, appends the end to pending. An end with no state takes
+// nothing. Caller holds linkPropMu.
 func setPeerDownLocked(end propEnd, down bool, pending []pendingBroadcast) []pendingBroadcast {
 	if end.state == nil {
 		return pending

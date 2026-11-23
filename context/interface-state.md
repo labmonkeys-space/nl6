@@ -85,14 +85,20 @@ All mutation sources are covered because they share the single `Broadcast` funne
 `SetLinkState`, `ApplyAdminStatus` and `SetPeerDown` hold `outMu` from before their slot write until their events are appended to the outbox.
 `Deliver` broadcasts from the outbox, one drain per engine at a time.
 A caller that finds a drain running returns at once, and that drain sends its events.
+A caller sends at most the events that were queued when it started.
+A goroutine of the engine takes the drain over for the rest, without a gap.
 
 - Events of one engine arrive in mutation order, and the events of one mutation stay adjacent.
 - Engines are not ordered against each other.
 - Production code never calls `Broadcast` for a mutator's events. It calls `Deliver`.
 - The lock order is `linkPropMu`, `outMu`, `familyMu`. Nothing that holds `outMu` calls a listener, the Tier C hook or the counter-hold hook.
-- Under a race a caller can return before its own events are out. A REST or SNMP SET reply can then precede its trap by the length of another broadcast.
+- Under a race a caller can return before its own events are out. A REST or SNMP SET reply can then precede its trap.
 - The outbox has no cap, because a cap would drop a real change. It grows only while a drain is blocked.
-- `Deliver` takes one event per turn, so a panic in the Tier C hook loses no event behind the one that caused it.
+- A shared caller, such as the flap scheduler's one goroutine, never keeps draining for producers that keep mutating.
+- A panic in the Tier C hook does not stop the drain. The events behind it are sent first, then the caller panics with the first value. That value can come from an event another producer queued. A panic on the engine's goroutine has no caller and is logged.
+- All mutations of one engine serialise on `outMu`, a parent's cascade included.
+- The counter hold runs when a drain reaches the oper event. Under a race a poll right after a REST or SNMP SET reply can read counters that still advance on a port reported down.
+- A test that races producers calls `waitDelivered` before it reads its listener, because the last events can still be on the engine's goroutine.
 - `SeedPeerDown` is silent and queues nothing.
 
 Before this, each caller broadcast its mutator's events after the mutator returned, with no lock held.

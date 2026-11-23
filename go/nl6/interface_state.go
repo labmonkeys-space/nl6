@@ -166,13 +166,14 @@ type InterfaceState struct {
 	// child stamped with the older one (ifLastChange going backwards and a
 	// final event disagreeing with the state), and a child move could
 	// derive from a parent value that changed before its CAS. Interfaces
-	// outside a family never take it and keep the lock-free path.
+	// outside a family never take it. They take outMu, as every mutator does.
 	familyMu sync.Mutex
 
 	// outMu, outbox and draining order the events of this engine. A mutator
 	// holds outMu from before its slot write until its events are appended
 	// to outbox, so the queue is in mutation order and the events of one
-	// mutation stay adjacent. Deliver broadcasts from the queue outside
+	// mutation stay adjacent. Mutations of one engine therefore serialise,
+	// a parent's cascade included. Deliver broadcasts from the queue outside
 	// every lock, one drain at a time (draining). Without this, two callers
 	// that broadcast after their mutators returned could deliver in either
 	// order, and a consumer that renders from the event ended on the older
@@ -728,10 +729,11 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) (queued []State
 // Same contract as SetLinkState, minus the three-way outcome nobody here needs:
 // the returned events (the port's own, then any subinterface that moved with
 // it) are non-empty exactly when the DERIVED oper-status moved. They are queued
-// on the engine in that order and the caller delivers them. A bit stored beneath admin down, or beneath a link
-// that is already down, moves nothing observable, stamps no lastChange and
-// returns nil, exactly like a masked link move. Storing the same value again is
-// a no-op, which is what makes the manager's resync idempotent.
+// on the engine in that order and the caller delivers them. A bit stored
+// beneath admin down, or beneath a link that is already down, moves nothing
+// observable, stamps no lastChange and returns nil, exactly like a masked link
+// move. Storing the same value again is a no-op, which is what makes the
+// manager's resync idempotent.
 func (s *InterfaceState) SetPeerDown(ifIndex int, down bool) (queued []StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
@@ -1078,7 +1080,10 @@ func (s *InterfaceState) Broadcast(evt StateChange) {
 	// The counter hold first, before any subscriber can act on the event: a
 	// listener that receives this update and immediately reads counters
 	// must find them held. The window between the slot CAS and this call is
-	// the one that remains, and it is not covered by the listener path.
+	// the one that remains, and it is not covered by the listener path. It
+	// lasts until a drain reaches the event. Under a race that is another
+	// producer's drain, so a poll right after a REST or SNMP SET reply can
+	// still read counters that advance on a port reported down.
 	if evt.Changed&LeafOperStatus != 0 && s.onOper != nil {
 		s.onOper(evt.IfIndex)
 	}
