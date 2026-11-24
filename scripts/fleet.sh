@@ -9,11 +9,14 @@
 
 set -eu
 
-# POST /api/v1/devices answers 409 while another creation batch holds the
-# simulator's one-batch-at-a-time gate (nl6#565). import waits it out instead of
-# aborting. The default delay matches the server's Retry-After; the default
-# budget (60 x 5s = 5 minutes) covers a large auto-start batch at boot. Raise
-# RETRY_409_LIMIT for a fleet whose startup batch takes longer.
+# POST /api/v1/devices answers 409 with Retry-After while another creation
+# batch holds the simulator's one-batch-at-a-time gate (nl6#565). import waits
+# it out instead of aborting. The default delay matches the server's
+# Retry-After; the default budget (60 x 5s = 5 minutes) covers a large
+# auto-start batch at boot. Raise RETRY_409_LIMIT for a fleet whose startup
+# batch takes longer. A 409 WITHOUT Retry-After is a fleet frozen by a running
+# load-test scenario (nl6#1115). It lasts as long as the scenario, so import
+# fails at once.
 RETRY_409_LIMIT="${RETRY_409_LIMIT:-60}"
 RETRY_409_DELAY="${RETRY_409_DELAY:-5}"
 
@@ -148,12 +151,15 @@ case "$cmd" in
             attempt=1
             while : ; do
                 tmp="$(mktemp)"
-                http_code="$(curl -sS -o "$tmp" -w '%{http_code}' \
+                hdr="$(mktemp)"
+                http_code="$(curl -sS -o "$tmp" -D "$hdr" -w '%{http_code}' \
                     -X POST -H 'Content-Type: application/json' \
                     -d "$payload" \
                     "$URL/api/v1/devices")"
                 body="$(cat "$tmp")"
-                rm -f "$tmp"
+                retry_after=no
+                grep -qi '^retry-after:' "$hdr" && retry_after=yes
+                rm -f "$tmp" "$hdr"
                 ok="$(printf '%s' "$body" | jq -r 'try .success catch false')"
                 case "$http_code" in
                     2*)
@@ -170,6 +176,14 @@ case "$cmd" in
                         # GET /api/v1/status already answers 200, so `compose up`
                         # starts this import mid-batch and aborting here would
                         # leave a partially imported fleet.
+                        #
+                        # Only that 409 carries Retry-After. Without it the
+                        # fleet is frozen by a running scenario, which no
+                        # retry budget can be sized for (nl6#1115).
+                        if [ "$retry_after" = no ]; then
+                            echo "  [$i/$TOTAL] FAIL $label (HTTP 409 without Retry-After, not retryable; from the simulator this is a fleet frozen by a running scenario): $body" >&2
+                            exit 1
+                        fi
                         if [ "$attempt" -ge "$RETRY_409_LIMIT" ]; then
                             echo "  [$i/$TOTAL] FAIL $label (HTTP 409 after $attempt attempts): $body" >&2
                             exit 1

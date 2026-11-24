@@ -415,7 +415,7 @@ Do not poll `is_creating_devices`: it can read `false` while a create would stil
 
 **The auto-start batch counts as a batch.** A REST create issued while the `-auto-start-ip` batch runs gets the `409` until that batch completes, even though `GET /api/v1/status` already answers `200`.
 
-- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). A client of your own should do the same.
+- `scripts/fleet.sh import` treats a `409` that carries `Retry-After` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). It fails at once on a `409` without `Retry-After`, which is a frozen fleet. A client of your own should do the same.
 - The web console's Clos-fabric wizard does **not** retry. A `409` from another batch aborts it and leaves a **half-built fabric**: the devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe, because existing addresses are absorbed as successes.
 
 **What the gate does not cover.** `DELETE /api/v1/devices`, shutdown, and the detached pre-allocation workers of a batch that timed out in pre-allocation (5-minute timeout) do not take the gate.

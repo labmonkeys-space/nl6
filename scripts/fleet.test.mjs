@@ -55,34 +55,53 @@ const plain = {
   device_type: 'Cisco ASR 9000',
 };
 
-const posted = [];
-const server = createServer((req, res) => {
-  let body = '';
-  req.on('data', (chunk) => { body += chunk; });
-  req.on('end', () => {
-    if (req.method === 'POST' && req.url === '/api/v1/devices') posted.push(JSON.parse(body));
-    res.setHeader('Content-Type', 'application/json');
-    res.end('{"success":true}');
+// runImport runs `fleet.sh import` against a stub server. respond(res, n)
+// answers the n-th POST /api/v1/devices (0-based). RETRY_409_DELAY=0 and the
+// kill timer bound the run, so a stub or curl problem fails the test instead of
+// hanging make test.
+async function runImport(respond, retryLimit) {
+  const posted = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'POST' && req.url === '/api/v1/devices') {
+        posted.push(JSON.parse(body));
+        respond(res, posted.length - 1);
+        return;
+      }
+      res.end('{"success":true}');
+    });
   });
-});
-await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-const url = `http://127.0.0.1:${server.address().port}`;
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
 
-const dir = mkdtempSync(join(tmpdir(), 'nl6-fleet-test-'));
-const file = join(dir, 'inventory.json');
-writeFileSync(file, JSON.stringify({ success: true, data: [listed, plain] }));
+  const dir = mkdtempSync(join(tmpdir(), 'nl6-fleet-test-'));
+  const file = join(dir, 'inventory.json');
+  writeFileSync(file, JSON.stringify({ success: true, data: [listed, plain] }));
 
-try {
-  // RETRY_409_LIMIT=1 and the kill timer bound the run, so a stub or curl
-  // problem fails the test instead of hanging make test.
-  const env = { ...process.env, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', RETRY_409_LIMIT: '1', RETRY_409_DELAY: '0' };
-  const child = spawn('sh', [script, 'import', url, file], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  const timer = setTimeout(() => child.kill('SIGKILL'), 30_000);
-  let output = '';
-  child.stdout.on('data', (d) => { output += d; });
-  child.stderr.on('data', (d) => { output += d; });
-  const code = await new Promise((resolve) => child.on('close', resolve));
-  clearTimeout(timer);
+  try {
+    const env = { ...process.env, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', RETRY_409_LIMIT: String(retryLimit), RETRY_409_DELAY: '0' };
+    const child = spawn('sh', [script, 'import', url, file], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const timer = setTimeout(() => child.kill('SIGKILL'), 30_000);
+    let output = '';
+    child.stdout.on('data', (d) => { output += d; });
+    child.stderr.on('data', (d) => { output += d; });
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    clearTimeout(timer);
+    return { code, output, posted };
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const ok = (res) => res.end('{"success":true}');
+
+// The jq filter turns listed devices into create requests.
+{
+  const { code, output, posted } = await runImport(ok, 1);
   assert.equal(code, 0, `fleet.sh import exited ${code}:\n${output}`);
 
   assert.equal(posted.length, 2, 'one create request per listed device');
@@ -114,9 +133,38 @@ try {
     if_flap_scenario: null,
     optical_scenario: null,
   });
-} finally {
-  server.close();
-  rmSync(dir, { recursive: true, force: true });
+}
+
+// A 409 without Retry-After is a fleet frozen by a running scenario (nl6#1115).
+// It lasts as long as the scenario, so import fails on the first attempt even
+// with retries left.
+{
+  const frozen = '{"success":false,"message":"fleet membership is frozen by running scenario(s) s-000001: device create/delete is rejected until they finish"}';
+  const { code, output, posted } = await runImport((res) => { res.statusCode = 409; res.end(frozen); }, 5);
+  assert.notEqual(code, 0, `a frozen fleet must fail the import:\n${output}`);
+  assert.equal(posted.length, 1, `a frozen fleet must not be retried:\n${output}`);
+  assert.match(output, /s-000001/, 'the failure names the freezing scenario');
+  assert.doesNotMatch(output, /BUSY/, 'a frozen fleet is not reported as a busy batch');
+}
+
+// A 409 with Retry-After is a concurrent creation batch: wait and retry. The
+// first refusal spells the header as Go's net/http writes it, the second in
+// lowercase as HTTP/2 and some proxies deliver it. A case-sensitive match
+// fails one of the two, whichever case its pattern is written in.
+{
+  const busy = (res, n) => {
+    if (n < 2) {
+      res.statusCode = 409;
+      res.setHeader(n === 0 ? 'Retry-After' : 'retry-after', '5');
+      res.end('{"success":false,"message":"another device creation batch is in progress (2000 devices); retry once it finishes"}');
+      return;
+    }
+    ok(res);
+  };
+  const { code, output, posted } = await runImport(busy, 3);
+  assert.equal(code, 0, `a busy batch must be waited out:\n${output}`);
+  assert.equal(posted.length, 4, 'the first device is posted three times, the second once');
+  assert.match(output, /BUSY/, 'the retry is reported');
 }
 
 console.log('fleet.test.mjs: ok');
