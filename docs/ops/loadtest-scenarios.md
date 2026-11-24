@@ -115,13 +115,16 @@ nl6-reconcile -report report.json -received collector.csv
 - **Statuses.** `OK` · `RESIDUAL` (received < sent, queue state unknown) · `LOSS` (received < sent **and** you passed `-drained`) · `DUP` (received > sent, meaning duplication) · `MISSING` (in the report, no received row: a join gap, or the 100 % case of the same shortfall ambiguity, so it is unclassified without `-drained` too) · `PHANTOM` (received but not in the report, meaning background noise leaked into your export; see the run-tagging notes to isolate it) · `EMPTY` (sent 0 and received 0, only with `-nonempty`; never a failure on its own).
 - **`-drained`: classify the shortfall.** A shortfall measured while the collector's input queue is still draining is **backlog**, and backlog resolves itself. The same shortfall measured after the queue has emptied is **loss**, and loss does not. They have opposite remedies, so `nl6-reconcile` will not guess: it cannot see your collector's queue, and by default reports a shortfall as `RESIDUAL`. Pass `-drained` once the queue has emptied to assert the run is over and get `LOSS`. Reporting a single unclassified residual as loss is the defect this flag exists to prevent. See [Collector ceiling](../explanation/loadtest-collector-ceiling.md).
 - **`-nonempty`: fail a run that sent nothing.** Without it, a report where nothing was sent and nothing was received reconciles as `OK` and exits 0, although nothing was measured.
-With `-nonempty`, a row with sent 0 and received 0 carries status `EMPTY`, and the run exits 1 when the report's sent total is zero.
-A single zero row in a report that sent something does not fail the run.
-Zero rows are legitimate with the `linear`, `sine` and `staged` profiles at a low rate, and with windows shorter than a gNMI sample interval or a flow export tick.
-Without the flag, the CSV and JSON output are unchanged.
+  With `-nonempty`, a row with sent 0 and received 0 carries status `EMPTY`, and the run exits 1 when the report's sent total is zero.
+  A single `EMPTY` row in a report that sent something does not fail the run.
+  `EMPTY` needs a received row for the key with a count of 0.
+  A key with no received row at all is `MISSING` and fails the run, with or without the flag.
+  A Prometheus range result has no series for a counter that never moved, so a zero key from that input is `MISSING`.
+  Zero rows are legitimate with the `linear`, `sine` and `staged` profiles at a low rate, and with windows shorter than a gNMI sample interval or a flow export tick.
+  Without the flag, the CSV and JSON output are unchanged.
 - **Output names for pipelines.** Without `-drained` a shortfall row carries status `RESIDUAL` in all three formats: the `STATUS` column in text, the `status` column in CSV and the `status` field in JSON. With `-drained` the same row carries `LOSS`. Match on both values.
 - **Summary line.** Only the text format prints it. The fleet figure is labelled `fleet_residual=` without `-drained`, `fleet_loss=` with it, and `fleet_delta=` when the figure is zero or negative. Without `-drained`, a `NOTE:` block follows whenever a row is `RESIDUAL` or `MISSING`. With `-nonempty`, an `| N empty` count follows when a row is `EMPTY`. A final `NOTE:` block follows whenever the sent total is zero, with or without `-nonempty`.
-- **Exit code.** `0` when every key is `OK` or `EMPTY`, `1` when any key is flagged, so `nl6-reconcile` drops straight into a CI gate. With `-nonempty` it is also `1` when the sent total is zero. Use `-format csv|json` for a machine-readable diff.
+- **Exit code.** `0` when every key is `OK` or `EMPTY`, `1` when any key is flagged, so `nl6-reconcile` drops straight into a CI gate. With `-nonempty` it is also `1` when the sent total is zero. When `-nonempty` is the only reason for the failure, a line on stderr says so, because CSV and JSON carry no `NOTE:`. Use `-format csv|json` for a machine-readable diff.
 
 #### Get nl6-reconcile
 

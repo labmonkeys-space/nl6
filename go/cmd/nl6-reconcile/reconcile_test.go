@@ -6,6 +6,9 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -434,6 +437,9 @@ func TestExitCode(t *testing.T) {
 		{"all OK nonempty", allOK, true, 0},
 		{"DUP default", dup, false, 1},
 		{"DUP nonempty", dup, true, 1},
+		// A full shortfall inside a wide tolerance is OK; the zero-total check must
+		// read the sent column, not the received one.
+		{"sent 100 received 0 OK nonempty", []result{{Sent: 100, Received: 0, Status: statusOK}}, true, 0},
 	}
 	for _, c := range cases {
 		if got := exitCode(c.res, c.nonempty); got != c.want {
@@ -555,5 +561,99 @@ func TestRenderText_ZeroNoteDoesNotMisattributeAFailure(t *testing.T) {
 				t.Errorf("nonempty=%v %s: NOTE misattributes a failure that does not depend on -nonempty:\n%s", nonempty, name, note)
 			}
 		}
+	}
+}
+
+// runFiles writes report and received to temp files and drives the command
+// through run, returning its exit code, stdout and stderr.
+func runFiles(t *testing.T, report, received string, flags ...string) (int, string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	rp, cp := filepath.Join(dir, "report"), filepath.Join(dir, "received")
+	if err := os.WriteFile(rp, []byte(report), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cp, []byte(received), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	args := append([]string{"-report", rp, "-received", cp}, flags...)
+	code := run(args, strings.NewReader(""), &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+const headerOnlyReceivedCSV = "protocol,source_ip,collector,received\n"
+
+// TestRun_NonemptyFlagWiring drives the command end to end: the flag is off by
+// default, reaches reconcile (EMPTY on the wire) and reaches the exit decision.
+func TestRun_NonemptyFlagWiring(t *testing.T) {
+	for name, rep := range map[string]string{"json": allZeroReportJSON, "csv": allZeroReportCSV} {
+		code, out, _ := runFiles(t, rep, allZeroReceivedCSV, "-format", "csv")
+		if code != 0 || !strings.HasSuffix(out, ",OK\n") {
+			t.Errorf("%s report, default: exit %d, output %q; want exit 0 and an OK row", name, code, out)
+		}
+		code, out, _ = runFiles(t, rep, allZeroReceivedCSV, "-format", "csv", "-nonempty")
+		if code != 1 || !strings.HasSuffix(out, ",EMPTY\n") {
+			t.Errorf("%s report, -nonempty: exit %d, output %q; want exit 1 and an EMPTY row", name, code, out)
+		}
+		if _, out, _ = runFiles(t, rep, allZeroReceivedCSV, "-nonempty"); !strings.Contains(out, "-nonempty is set") {
+			t.Errorf("%s report, -nonempty text: NOTE does not say the flag is set:\n%s", name, out)
+		}
+	}
+}
+
+// TestRun_EmptyReportInputs: a report with no counters, as JSON and as a
+// header-only CSV, has a sent total of zero.
+func TestRun_EmptyReportInputs(t *testing.T) {
+	reports := map[string]string{
+		"json": `{"counters":[]}`,
+		"csv":  "protocol,source_ip,collector,in_window,drain\n",
+	}
+	for name, rep := range reports {
+		if code, _, _ := runFiles(t, rep, headerOnlyReceivedCSV); code != 0 {
+			t.Errorf("%s empty report, default: exit %d, want 0", name, code)
+		}
+		if code, _, _ := runFiles(t, rep, headerOnlyReceivedCSV, "-nonempty"); code != 1 {
+			t.Errorf("%s empty report, -nonempty: exit %d, want 1", name, code)
+		}
+	}
+}
+
+// TestRun_FlaggedRowsAtZeroTotalFailEitherWay: DUP and PHANTOM rows fail a
+// zero-total run with and without -nonempty.
+func TestRun_FlaggedRowsAtZeroTotalFailEitherWay(t *testing.T) {
+	dupRecv := "protocol,source_ip,collector,received\nsyslog,10.42.0.1,c:514,7\n"
+	cases := map[string][2]string{
+		"dup":     {allZeroReportJSON, dupRecv},
+		"phantom": {`{"counters":[]}`, dupRecv},
+	}
+	for name, in := range cases {
+		for _, flags := range [][]string{nil, {"-nonempty"}} {
+			if code, _, _ := runFiles(t, in[0], in[1], flags...); code != 1 {
+				t.Errorf("%s %v: exit %d, want 1", name, flags, code)
+			}
+		}
+	}
+}
+
+// TestRun_NonemptyStderrReason: csv and json carry no NOTE, so a run that
+// fails only because -nonempty saw nothing sent says why on stderr. Stdout
+// stays byte-stable, and no reason is printed when -nonempty is not the cause.
+func TestRun_NonemptyStderrReason(t *testing.T) {
+	for _, format := range []string{"json", "csv", "text"} {
+		code, out, errOut := runFiles(t, `{"counters":[]}`, headerOnlyReceivedCSV, "-nonempty", "-format", format)
+		if code != 1 || !strings.Contains(errOut, "nothing was sent") || !strings.Contains(errOut, "-nonempty") {
+			t.Errorf("%s: exit %d, stderr %q; want exit 1 and a reason naming -nonempty", format, code, errOut)
+		}
+		if format == "json" && out != "[]\n" {
+			t.Errorf("json: stdout %q, want %q", out, "[]\n")
+		}
+	}
+	if _, _, errOut := runFiles(t, `{"counters":[]}`, headerOnlyReceivedCSV, "-format", "json"); errOut != "" {
+		t.Errorf("default: stderr %q, want empty", errOut)
+	}
+	dupRecv := "protocol,source_ip,collector,received\nsyslog,10.42.0.1,c:514,7\n"
+	if _, _, errOut := runFiles(t, allZeroReportJSON, dupRecv, "-nonempty", "-format", "json"); errOut != "" {
+		t.Errorf("flagged DUP row: stderr %q, want empty (the DUP fails the run, not -nonempty)", errOut)
 	}
 }
