@@ -13,7 +13,8 @@
 // range-query result), outer-joins both on the report's
 // (protocol, source_ip, collector) tuple, and prints loss_ratio per key with
 // an in-flight tolerance band. Exit status is non-zero when any key exceeds
-// tolerance (or is phantom/missing), so it doubles as a CI gate.
+// tolerance (or is phantom/missing), or, under -nonempty, when the report's
+// sent total is zero, so it doubles as a CI gate.
 //
 // A shortfall is only called LOSS when -drained asserts the collector's queue
 // had emptied; otherwise it is RESIDUAL, since a still-queued message is
@@ -38,6 +39,7 @@ func main() {
 	format := flag.String("format", "text", "output format: text | csv | json")
 	drained := flag.Bool("drained", false, "assert the collector's input queue had drained when -received was captured; "+
 		"without it a shortfall is reported as RESIDUAL (backlog or loss, unclassified) rather than LOSS")
+	nonempty := flag.Bool("nonempty", false, "mark rows with sent 0 and received 0 as EMPTY, and exit 1 when the report's sent total is zero")
 	showVersion := flag.Bool("version", false, "print the nl6-reconcile version and exit")
 	flag.Parse()
 
@@ -78,7 +80,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	results := reconcile(sent, received, *tolerance, *drained)
+	results := reconcile(sent, received, *tolerance, *drained, *nonempty)
 
 	var out string
 	switch *format {
@@ -99,11 +101,7 @@ func main() {
 	fmt.Print(out)
 
 	// Exit non-zero if any key failed reconciliation — CI-gate friendly.
-	for _, r := range results {
-		if r.Status != statusOK {
-			os.Exit(1)
-		}
-	}
+	os.Exit(exitCode(results, *nonempty))
 }
 
 // readInput reads a file path, or stdin when the path is "-".

@@ -45,6 +45,12 @@ const (
 	statusDup      = "DUP"      // received > sent beyond tolerance (duplication)
 	statusMissing  = "MISSING"  // in report, no received row (total loss or a join gap)
 	statusPhantom  = "PHANTOM"  // in received, no report row (unexpected/background traffic)
+
+	// statusEmpty marks a row with sent 0 and received 0 under -nonempty.
+	// It is not a failure on its own: a single zero row is legitimate at a
+	// low rate or with a window shorter than an export tick. Only a sent
+	// TOTAL of zero fails the run, in exitCode (nl6#1053).
+	statusEmpty = "EMPTY"
 )
 
 // shortfallStatus names a beyond-tolerance shortfall according to whether the
@@ -207,7 +213,8 @@ func parsePrometheus(data []byte) (map[joinKey]uint64, error) {
 
 // reconcile outer-joins sent and received on the tuple and classifies each
 // key against the tolerance band. Deterministic order (sorted by key).
-func reconcile(sent, received map[joinKey]uint64, tolerance float64, drained bool) []result {
+// With nonempty, a key with sent 0 and received 0 is EMPTY instead of OK.
+func reconcile(sent, received map[joinKey]uint64, tolerance float64, drained, nonempty bool) []result {
 	keys := make(map[joinKey]struct{}, len(sent)+len(received))
 	for k := range sent {
 		keys[k] = struct{}{}
@@ -237,10 +244,14 @@ func reconcile(sent, received map[joinKey]uint64, tolerance float64, drained boo
 			res.LossRatio = 1
 		default:
 			if s == 0 {
-				// No sent baseline: any received is duplication, else clean.
-				if r == 0 {
+				// No sent baseline: any received is duplication, else clean
+				// (or EMPTY when the caller asked to see it).
+				switch {
+				case r == 0 && nonempty:
+					res.Status = statusEmpty
+				case r == 0:
 					res.Status = statusOK
-				} else {
+				default:
 					res.Status = statusDup
 				}
 				break
@@ -267,6 +278,29 @@ func reconcile(sent, received map[joinKey]uint64, tolerance float64, drained boo
 		return out[i].Collector < out[j].Collector
 	})
 	return out
+}
+
+// sentTotal sums the sent count over every row.
+func sentTotal(results []result) uint64 {
+	var n uint64
+	for _, r := range results {
+		n += r.Sent
+	}
+	return n
+}
+
+// exitCode is the CI-gate decision: 1 when any key is flagged (anything but
+// OK or EMPTY), or when nonempty is set and nothing was sent at all.
+func exitCode(results []result, nonempty bool) int {
+	for _, r := range results {
+		if r.Status != statusOK && r.Status != statusEmpty {
+			return 1
+		}
+	}
+	if nonempty && sentTotal(results) == 0 {
+		return 1
+	}
+	return 0
 }
 
 // --- rendering ----------------------------------------------------------
