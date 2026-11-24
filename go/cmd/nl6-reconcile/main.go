@@ -85,7 +85,7 @@ func main() {
 	var out string
 	switch *format {
 	case "text":
-		out = renderText(results, *tolerance, *drained)
+		out = renderText(results, *tolerance, *drained, *nonempty)
 	case "csv":
 		out = renderCSV(results)
 	case "json":

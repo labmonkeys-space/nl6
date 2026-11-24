@@ -145,7 +145,7 @@ func TestRender_Formats(t *testing.T) {
 		0.005,
 		true, false, // queue drained: a shortfall here IS loss
 	)
-	if txt := renderText(res, 0.005, true); !strings.Contains(txt, "LOSS") || !strings.Contains(txt, "Summary:") {
+	if txt := renderText(res, 0.005, true, false); !strings.Contains(txt, "LOSS") || !strings.Contains(txt, "Summary:") {
 		t.Fatalf("text render missing LOSS/Summary:\n%s", txt)
 	}
 	if c := renderCSV(res); !strings.HasPrefix(c, "protocol,source_ip,collector,sent,received,delta,loss_ratio,status") {
@@ -213,7 +213,7 @@ func TestRenderText_DoesNotLabelUndrainedShortfallAsLoss(t *testing.T) {
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40586},
 		0.005, false, false,
 	)
-	txt := renderText(res, 0.005, false)
+	txt := renderText(res, 0.005, false, false)
 	if strings.Contains(txt, "fleet_loss") {
 		t.Errorf("undrained summary reports fleet_loss, merging backlog and loss:\n%s", txt)
 	}
@@ -239,7 +239,7 @@ func TestRenderText_NoteOnlyWhenSomethingIsUnclassified(t *testing.T) {
 	if res[0].Status != statusPhantom {
 		t.Fatalf("fixture: got %q, want PHANTOM", res[0].Status)
 	}
-	if txt := renderText(res, 0.005, false); strings.Contains(txt, "-drained") {
+	if txt := renderText(res, 0.005, false, false); strings.Contains(txt, "-drained") {
 		t.Errorf("PHANTOM-only run advises -drained, which cannot change it:\n%s", txt)
 	}
 
@@ -252,7 +252,7 @@ func TestRenderText_NoteOnlyWhenSomethingIsUnclassified(t *testing.T) {
 	if dup[0].Status != statusDup {
 		t.Fatalf("fixture: got %q, want DUP", dup[0].Status)
 	}
-	if txt := renderText(dup, 0.005, false); strings.Contains(txt, "-drained") {
+	if txt := renderText(dup, 0.005, false, false); strings.Contains(txt, "-drained") {
 		t.Errorf("DUP-only run advises -drained:\n%s", txt)
 	}
 }
@@ -266,7 +266,7 @@ func TestRenderText_FleetLabelMatchesTheNumber(t *testing.T) {
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 1000},
 		0.005, false, false,
 	)
-	if txt := renderText(clean, 0.005, false); strings.Contains(txt, "fleet_residual") {
+	if txt := renderText(clean, 0.005, false, false); strings.Contains(txt, "fleet_residual") {
 		t.Errorf("a fully reconciled run reports a residual of zero as a residual:\n%s", txt)
 	}
 
@@ -275,7 +275,7 @@ func TestRenderText_FleetLabelMatchesTheNumber(t *testing.T) {
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 130},
 		0.005, false, false,
 	)
-	if txt := renderText(dup, 0.005, false); strings.Contains(txt, "fleet_residual=-") {
+	if txt := renderText(dup, 0.005, false, false); strings.Contains(txt, "fleet_residual=-") {
 		t.Errorf("duplication rendered as a negative residual:\n%s", txt)
 	}
 }
@@ -293,7 +293,7 @@ func TestReconcile_MissingIsUnclassifiedToo(t *testing.T) {
 	if res[0].Status != statusMissing {
 		t.Fatalf("fixture: got %q, want MISSING", res[0].Status)
 	}
-	txt := renderText(res, 0.005, false)
+	txt := renderText(res, 0.005, false, false)
 	if !strings.Contains(txt, "-drained") {
 		t.Errorf("MISSING without a drain assertion is unclassified and must say so:\n%s", txt)
 	}
@@ -459,6 +459,78 @@ func TestNonempty_AllZeroReportIsEmptyAndFails(t *testing.T) {
 		}
 		if got := exitCode(res, true); got != 1 {
 			t.Errorf("%s report: exitCode = %d, want 1", name, got)
+		}
+	}
+}
+
+// lastNote returns the last "\nNOTE:" block of a text rendering, or "".
+func lastNote(txt string) string {
+	i := strings.LastIndex(txt, "\nNOTE:")
+	if i < 0 {
+		return ""
+	}
+	return txt[i:]
+}
+
+// TestRenderText_ZeroTotalNote: a zero sent total ends the text output with a
+// NOTE. Without -nonempty it names the flag and the possible future default;
+// with it, it says why the run fails.
+func TestRenderText_ZeroTotalNote(t *testing.T) {
+	for name, in := range allZeroInputs(t) {
+		def := lastNote(renderText(reconcile(in[0], in[1], 0.005, false, false), 0.005, false, false))
+		if !strings.HasPrefix(def, "\nNOTE: nothing was sent") || !strings.Contains(def, "-nonempty") || !strings.Contains(def, "later release") {
+			t.Errorf("%s report, default: NOTE missing or wrong:\n%s", name, def)
+		}
+		on := lastNote(renderText(reconcile(in[0], in[1], 0.005, false, true), 0.005, false, true))
+		if !strings.HasPrefix(on, "\nNOTE: nothing was sent") || !strings.Contains(on, "-nonempty is set") || strings.Contains(on, "later release") {
+			t.Errorf("%s report, -nonempty: NOTE missing or wrong:\n%s", name, on)
+		}
+	}
+}
+
+// TestRenderText_NoZeroNoteWhenSomethingWasSent: a normal report gets no NOTE.
+func TestRenderText_NoZeroNoteWhenSomethingWasSent(t *testing.T) {
+	sent := map[joinKey]uint64{k("syslog", "10.42.0.1", "c"): 100}
+	for _, nonempty := range []bool{false, true} {
+		txt := renderText(reconcile(sent, sent, 0.005, false, nonempty), 0.005, false, nonempty)
+		if strings.Contains(txt, "nothing was sent") {
+			t.Errorf("nonempty=%v: zero NOTE on a report that sent 100:\n%s", nonempty, txt)
+		}
+	}
+}
+
+// TestRenderText_EmptyCount: an EMPTY row is neither OK nor flagged; the
+// summary counts it separately, and only when there is one.
+func TestRenderText_EmptyCount(t *testing.T) {
+	sent := map[joinKey]uint64{k("syslog", "10.42.0.1", "c"): 0, k("syslog", "10.42.0.2", "c"): 100}
+	recv := map[joinKey]uint64{k("syslog", "10.42.0.1", "c"): 0, k("syslog", "10.42.0.2", "c"): 100}
+	txt := renderText(reconcile(sent, recv, 0.005, false, true), 0.005, false, true)
+	if !strings.Contains(txt, "| 1 OK | 0 flagged |") || !strings.Contains(txt, "| 1 empty") {
+		t.Errorf("summary does not count the EMPTY row apart:\n%s", txt)
+	}
+	txt = renderText(reconcile(sent, recv, 0.005, false, false), 0.005, false, false)
+	if strings.Contains(txt, "empty") {
+		t.Errorf("summary mentions empty without an EMPTY row:\n%s", txt)
+	}
+}
+
+// TestRenderText_ZeroNoteEdgeCases: the zero NOTE follows the sent total, not
+// the row statuses, and comes after the UNCLASSIFIED NOTE when both apply.
+func TestRenderText_ZeroNoteEdgeCases(t *testing.T) {
+	key := k("syslog", "10.42.0.1", "c")
+	cases := map[string][]result{
+		"missing": reconcile(map[joinKey]uint64{key: 0}, nil, 0.005, false, false),
+		"dup":     reconcile(map[joinKey]uint64{key: 0}, map[joinKey]uint64{key: 7}, 0.005, false, false),
+		"phantom": reconcile(nil, map[joinKey]uint64{key: 7}, 0.005, false, false),
+		"no rows": nil,
+	}
+	for name, res := range cases {
+		txt := renderText(res, 0.005, false, false)
+		if !strings.HasPrefix(lastNote(txt), "\nNOTE: nothing was sent") {
+			t.Errorf("%s: zero NOTE missing or not last:\n%s", name, txt)
+		}
+		if name == "missing" && !strings.Contains(txt, "UNCLASSIFIED") {
+			t.Errorf("missing: UNCLASSIFIED NOTE gone:\n%s", txt)
 		}
 	}
 }

@@ -305,21 +305,24 @@ func exitCode(results []result, nonempty bool) int {
 
 // --- rendering ----------------------------------------------------------
 
-func renderText(results []result, tolerance float64, drained bool) string {
+func renderText(results []result, tolerance float64, drained, nonempty bool) string {
 	var b strings.Builder
 	tw := tabwriter.NewWriter(&b, 0, 2, 2, ' ', 0)
 	// Writes to a strings.Builder-backed tabwriter never error; ignore explicitly.
 	_, _ = fmt.Fprintln(tw, "PROTOCOL\tSOURCE_IP\tCOLLECTOR\tSENT\tRECEIVED\tDELTA\tLOSS%\tSTATUS")
-	var okN, badN, unclassifiedN int
+	var okN, badN, emptyN, unclassifiedN int
 	var totSent, totRecv uint64
 	for _, r := range results {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%.2f%%\t%s\n",
 			r.Protocol, r.SourceIP, r.Collector, r.Sent, r.Received, r.Delta, r.LossRatio*100, r.Status)
 		totSent += r.Sent
 		totRecv += r.Received
-		if r.Status == statusOK {
+		switch r.Status {
+		case statusOK:
 			okN++
-		} else {
+		case statusEmpty:
+			emptyN++
+		default:
 			badN++
 		}
 		if r.Status == statusResidual || r.Status == statusMissing {
@@ -342,8 +345,14 @@ func renderText(results []result, tolerance float64, drained bool) string {
 	default:
 		label = "fleet_residual"
 	}
-	_, _ = fmt.Fprintf(&b, "\nSummary: %d keys | %d OK | %d flagged | tolerance %.2f%% | sent=%d received=%d %s=%.2f%%\n",
-		len(results), okN, badN, tolerance*100, totSent, totRecv, label, fleetLoss)
+	// The empty count appears only when there is one, so the default summary
+	// line is unchanged (EMPTY exists only under -nonempty).
+	emptySeg := ""
+	if emptyN > 0 {
+		emptySeg = fmt.Sprintf(" | %d empty", emptyN)
+	}
+	_, _ = fmt.Fprintf(&b, "\nSummary: %d keys | %d OK | %d flagged | tolerance %.2f%% | sent=%d received=%d %s=%.2f%%%s\n",
+		len(results), okN, badN, tolerance*100, totSent, totRecv, label, fleetLoss, emptySeg)
 	// Gate on an actually-unclassified row, not on badN: a run whose only
 	// flagged rows are PHANTOM or DUP has nothing a drain would change, and
 	// telling that operator to wait for a queue to empty wastes their time.
@@ -352,6 +361,18 @@ func renderText(results []result, tolerance float64, drained bool) string {
 			"Still-queued messages are backlog and resolve themselves; drained-and-missing\n"+
 			"messages are loss and do not. Re-run with -drained once the collector's input\n"+
 			"queue has emptied to classify them.\n")
+	}
+	// A zero sent total means this reconcile measured nothing, whatever the
+	// rows say. Printed last so it is the final word (nl6#1053).
+	if totSent == 0 {
+		if nonempty {
+			_, _ = fmt.Fprint(&b, "\nNOTE: nothing was sent, so this reconcile measured nothing.\n"+
+				"The run fails because -nonempty is set.\n")
+		} else {
+			_, _ = fmt.Fprint(&b, "\nNOTE: nothing was sent, so this reconcile measured nothing.\n"+
+				"Pass -nonempty to fail the run on it. A later release may exit 1\n"+
+				"in this case by default.\n")
+		}
 	}
 	return b.String()
 }
