@@ -337,6 +337,26 @@ func (sm *SimulatorManager) bumpPreAllocProgress() int {
 	return int(sm.preAllocProgress.Add(1))
 }
 
+// runIPCommand runs one `ip` command of the root-namespace TUN delete.
+// A variable so a test can record the commands and fail them.
+var runIPCommand = func(args ...string) ([]byte, error) {
+	return exec.Command("ip", args...).CombinedOutput()
+}
+
+// listLinkNames returns the names of the links in the root namespace.
+// A variable so a test can supply the links.
+var listLinkNames = func() (map[string]struct{}, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]struct{}, len(ifaces))
+	for _, iface := range ifaces {
+		names[iface.Name] = struct{}{}
+	}
+	return names, nil
+}
+
 // bulkDeleteTunInterfaces deletes multiple TUN interfaces efficiently using batch commands
 func (sm *SimulatorManager) bulkDeleteTunInterfaces(interfaceNames []string) error {
 	if len(interfaceNames) == 0 {
@@ -354,9 +374,36 @@ func (sm *SimulatorManager) bulkDeleteTunInterfaces(interfaceNames []string) err
 		return nil
 	}
 
+	// Without a namespace the links are not persistent: closing a device's
+	// file descriptor already removed its link, and `ip -batch` stops at the
+	// first missing one. Only the links that still exist need deleting.
+	remaining := remainingTunLinks(interfaceNames)
+	if len(remaining) == 0 {
+		log.Printf("Bulk deleted %d TUN interfaces (already gone with their file descriptors)", len(interfaceNames))
+		return nil
+	}
+
 	// Method 2: Fallback to parallel deletion if batch fails
 	log.Printf("Batch deletion failed, falling back to parallel deletion")
-	return sm.deleteTunInterfacesParallel(interfaceNames)
+	return sm.deleteTunInterfacesParallel(remaining)
+}
+
+// remainingTunLinks returns the names that still exist as links, in input
+// order. When the links cannot be listed it returns every name, so a failed
+// delete is never taken as done without proof.
+func remainingTunLinks(names []string) []string {
+	existing, err := listLinkNames()
+	if err != nil {
+		log.Printf("Warning: cannot list links to check TUN deletion: %v", err)
+		return names
+	}
+	var remaining []string
+	for _, name := range names {
+		if _, ok := existing[name]; ok {
+			remaining = append(remaining, name)
+		}
+	}
+	return remaining
 }
 
 // deleteTunInterfacesBatch uses iproute2 batch mode for optimal performance
@@ -378,8 +425,7 @@ func (sm *SimulatorManager) deleteTunInterfacesBatch(interfaceNames []string) er
 	batchFile.Sync()
 
 	// Execute the batch file with ip command
-	cmd := exec.Command("ip", "-batch", batchFile.Name())
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := runIPCommand("-batch", batchFile.Name()); err != nil {
 		return fmt.Errorf("batch deletion failed: %v, output: %s", err, string(output))
 	}
 
@@ -391,7 +437,8 @@ func (sm *SimulatorManager) deleteTunInterfacesParallel(interfaceNames []string)
 	const maxWorkers = 50 // Limit concurrent deletions to avoid overwhelming the system
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var errors []string
+	failed := map[string]error{}
+	var failedNames []string
 
 	// Worker pool for parallel deletion
 	sem := make(chan struct{}, maxWorkers)
@@ -406,10 +453,10 @@ func (sm *SimulatorManager) deleteTunInterfacesParallel(interfaceNames []string)
 			defer func() { <-sem }()
 
 			// Delete the interface
-			cmd := exec.Command("ip", "link", "delete", interfaceName)
-			if err := cmd.Run(); err != nil {
+			if _, err := runIPCommand("link", "delete", interfaceName); err != nil {
 				mu.Lock()
-				errors = append(errors, fmt.Sprintf("%s: %v", interfaceName, err))
+				failed[interfaceName] = err
+				failedNames = append(failedNames, interfaceName)
 				mu.Unlock()
 			}
 		}(ifName)
@@ -417,6 +464,12 @@ func (sm *SimulatorManager) deleteTunInterfacesParallel(interfaceNames []string)
 
 	wg.Wait()
 
+	// A link can vanish between the check and its own delete when its file
+	// descriptor closes, so only a link that is still there is an error.
+	var errors []string
+	for _, name := range remainingTunLinks(failedNames) {
+		errors = append(errors, fmt.Sprintf("%s: %v", name, failed[name]))
+	}
 	if len(errors) > 0 {
 		return fmt.Errorf("parallel deletion errors: %s", strings.Join(errors, ", "))
 	}
