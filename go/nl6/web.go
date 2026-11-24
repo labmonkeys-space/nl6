@@ -576,7 +576,8 @@ func deleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := manager.DeleteDevice(deviceID)
 	if err != nil {
-		sendErrorResponse(w, err.Error(), http.StatusNotFound)
+		message, status := deleteDeviceErrorResponse(err)
+		sendErrorResponse(w, message, status)
 		return
 	}
 
@@ -864,4 +865,29 @@ func createDevicesErrorResponse(err error) (string, int) {
 		return perr.PublicMessage(), http.StatusBadRequest
 	}
 	return err.Error(), http.StatusInternalServerError
+}
+
+// deleteDeviceErrorResponse maps a DeleteDevice error to the message and the
+// status the single-device delete answers with.
+//
+// The default is 500, not 404: an error nobody classified is a server fault.
+// The handler used to answer 404 for every error, which told a client that an
+// existing device was missing when the fleet was frozen or the TUN teardown
+// failed. With 500 as the default, a new DeleteDevice error cannot repeat that.
+//
+// A frozen fleet is a state conflict the caller resolves by waiting for the
+// scenario or stopping it, so 409. It carries no Retry-After, because the
+// freeze has no known end.
+//
+// The message is returned verbatim, as the handler always did, so no response
+// body changed with the status.
+func deleteDeviceErrorResponse(err error) (string, int) {
+	switch {
+	case errors.Is(err, errFleetFrozen):
+		return err.Error(), http.StatusConflict
+	case errors.Is(err, errDeviceNotFound):
+		return err.Error(), http.StatusNotFound
+	default:
+		return err.Error(), http.StatusInternalServerError
+	}
 }
