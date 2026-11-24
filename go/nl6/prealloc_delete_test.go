@@ -20,6 +20,7 @@ type fakeLinks struct {
 	mu           sync.Mutex
 	links        map[string]struct{}
 	stuck        map[string]struct{} // `ip link delete` fails although the link exists
+	vanish       map[string]struct{} // `ip link delete` fails, but the link is gone afterwards
 	batchSucceed bool
 	listErr      error
 	listCalls    int
@@ -31,7 +32,7 @@ type fakeLinks struct {
 // `link delete X` removes X when it exists and is not stuck.
 func fakeTunDelete(t *testing.T, links ...string) *fakeLinks {
 	t.Helper()
-	f := &fakeLinks{links: map[string]struct{}{}, stuck: map[string]struct{}{}}
+	f := &fakeLinks{links: map[string]struct{}{}, stuck: map[string]struct{}{}, vanish: map[string]struct{}{}}
 	for _, l := range links {
 		f.links[l] = struct{}{}
 	}
@@ -53,6 +54,11 @@ func fakeTunDelete(t *testing.T, links ...string) *fakeLinks {
 			name := args[2]
 			_, exists := f.links[name]
 			_, stuck := f.stuck[name]
+			if _, vanish := f.vanish[name]; vanish {
+				// The file descriptor closed while ip ran: the delete fails, the link is gone.
+				delete(f.links, name)
+				return []byte("Cannot find device"), errors.New("exit status 1")
+			}
 			if exists && !stuck {
 				delete(f.links, name)
 				return nil, nil
@@ -100,6 +106,19 @@ func TestBulkDeleteTunInterfacesRetriesOnlyLinksThatRemain(t *testing.T) {
 	}
 	if len(f.links) != 0 {
 		t.Fatalf("links left: %v", f.links)
+	}
+	if f.listCalls != 1 {
+		t.Fatalf("want one link listing, after the batch only, got %d", f.listCalls)
+	}
+}
+
+func TestBulkDeleteTunInterfacesTreatsLinkThatVanishesDuringItsDeleteAsDeleted(t *testing.T) {
+	f := fakeTunDelete(t, "sim1")
+	f.vanish["sim1"] = struct{}{}
+	sm := &SimulatorManager{}
+
+	if err := sm.bulkDeleteTunInterfaces([]string{"sim0", "sim1"}); err != nil {
+		t.Fatalf("a link gone after its failed delete must count as deleted, got %v", err)
 	}
 }
 

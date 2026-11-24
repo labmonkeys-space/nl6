@@ -379,7 +379,7 @@ func (sm *SimulatorManager) bulkDeleteTunInterfaces(interfaceNames []string) err
 	// first missing one. Only the links that still exist need deleting.
 	remaining := remainingTunLinks(interfaceNames)
 	if len(remaining) == 0 {
-		log.Printf("Bulk deleted %d TUN interfaces (already gone with their file descriptors)", len(interfaceNames))
+		log.Printf("Bulk delete of %d TUN interfaces done: none left after the batch", len(interfaceNames))
 		return nil
 	}
 
@@ -392,6 +392,9 @@ func (sm *SimulatorManager) bulkDeleteTunInterfaces(interfaceNames []string) err
 // order. When the links cannot be listed it returns every name, so a failed
 // delete is never taken as done without proof.
 func remainingTunLinks(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
 	existing, err := listLinkNames()
 	if err != nil {
 		log.Printf("Warning: cannot list links to check TUN deletion: %v", err)
