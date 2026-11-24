@@ -534,3 +534,26 @@ func TestRenderText_ZeroNoteEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderText_ZeroNoteDoesNotMisattributeAFailure: when a zero-total run
+// already fails on a flagged row (DUP, MISSING, PHANTOM), the zero NOTE must
+// neither suggest -nonempty to make it fail nor blame -nonempty for the failure.
+func TestRenderText_ZeroNoteDoesNotMisattributeAFailure(t *testing.T) {
+	key := k("syslog", "10.42.0.1", "c")
+	for _, nonempty := range []bool{false, true} {
+		cases := map[string][]result{
+			"dup":     reconcile(map[joinKey]uint64{key: 0}, map[joinKey]uint64{key: 7}, 0.005, false, nonempty),
+			"missing": reconcile(map[joinKey]uint64{key: 0}, nil, 0.005, false, nonempty),
+			"phantom": reconcile(nil, map[joinKey]uint64{key: 7}, 0.005, false, nonempty),
+		}
+		for name, res := range cases {
+			note := lastNote(renderText(res, 0.005, false, nonempty))
+			if !strings.HasPrefix(note, "\nNOTE: nothing was sent") {
+				t.Errorf("nonempty=%v %s: zero NOTE missing:\n%s", nonempty, name, note)
+			}
+			if strings.Contains(note, "Pass -nonempty") || strings.Contains(note, "because -nonempty") {
+				t.Errorf("nonempty=%v %s: NOTE misattributes a failure that does not depend on -nonempty:\n%s", nonempty, name, note)
+			}
+		}
+	}
+}

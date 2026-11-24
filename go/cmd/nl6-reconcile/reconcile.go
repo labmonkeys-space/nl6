@@ -363,14 +363,17 @@ func renderText(results []result, tolerance float64, drained, nonempty bool) str
 			"queue has emptied to classify them.\n")
 	}
 	// A zero sent total means this reconcile measured nothing, whatever the
-	// rows say. Printed last so it is the final word (nl6#1053).
+	// rows say. Printed last so it is the final word (nl6#1053). The advice
+	// line about -nonempty applies only when no row is flagged: a flagged row
+	// fails the run on its own, and blaming or suggesting the flag misleads.
 	if totSent == 0 {
-		if nonempty {
-			_, _ = fmt.Fprint(&b, "\nNOTE: nothing was sent, so this reconcile measured nothing.\n"+
-				"The run fails because -nonempty is set.\n")
-		} else {
-			_, _ = fmt.Fprint(&b, "\nNOTE: nothing was sent, so this reconcile measured nothing.\n"+
-				"Pass -nonempty to fail the run on it. A later release may exit 1\n"+
+		_, _ = fmt.Fprint(&b, "\nNOTE: nothing was sent, so this reconcile measured nothing.\n")
+		switch {
+		case badN > 0:
+		case nonempty:
+			_, _ = fmt.Fprint(&b, "The run fails because -nonempty is set.\n")
+		default:
+			_, _ = fmt.Fprint(&b, "Pass -nonempty to fail the run on it. A later release may exit 1\n"+
 				"in this case by default.\n")
 		}
 	}
