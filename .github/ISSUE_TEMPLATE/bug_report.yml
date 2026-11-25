@@ -1,6 +1,7 @@
 name: Bug report
 description: Something in nl6 isn't working as documented
-labels: ["bug", "triage"]
+type: Bug
+labels: ["triage"]
 body:
   - type: markdown
     attributes:

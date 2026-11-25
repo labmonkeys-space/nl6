@@ -1,6 +1,7 @@
-name: Enhancement request
+name: Feature request
 description: Suggest a new capability, device type, protocol, or flag
-labels: ["enhancement", "triage"]
+type: Feature
+labels: ["triage"]
 body:
   - type: markdown
     attributes:

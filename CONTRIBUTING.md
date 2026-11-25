@@ -11,8 +11,7 @@ Work starts from a GitHub issue, not a drive-by PR. Before you write code:
 
 - Search [existing issues](https://github.com/labmonkeys-space/nl6/issues) for
   the bug or feature.
-- If none exists, open one (bug report or enhancement) so the change can be
-  discussed and scoped.
+- If none exists, open one (bug report or feature request) so the change can be discussed and scoped.
 - Reference the issue from your PR with a closing keyword (`Closes #123`).
 
 For security problems, **do not** open a public issue — see
