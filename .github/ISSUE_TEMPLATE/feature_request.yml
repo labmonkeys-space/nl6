@@ -1,6 +1,10 @@
-name: Enhancement request
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature request
 description: Suggest a new capability, device type, protocol, or flag
-labels: ["enhancement", "triage"]
+type: Feature
+labels: ["triage"]
 body:
   - type: markdown
     attributes:
