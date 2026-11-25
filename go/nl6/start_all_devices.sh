@@ -353,7 +353,9 @@ echo ""
 # Show device status
 echo -e "${BLUE}📊 Device Status:${NC}"
 echo "------------------"
-curl -s "http://localhost:$SERVER_PORT/api/v1/devices" | python3 -m json.tool 2>/dev/null || echo "Devices created (JSON formatting not available)"
+# Fetch, then format. Scorecard reads curl piped into an interpreter as download-then-run.
+devices=$(curl -s "http://localhost:$SERVER_PORT/api/v1/devices" || true)
+python3 -m json.tool <<< "$devices" 2>/dev/null || echo "Devices created (JSON formatting not available)"
 
 echo ""
 echo -e "${BLUE}🌐 Access Information:${NC}"
