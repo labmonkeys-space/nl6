@@ -3,7 +3,7 @@
 ---
 namespace: labmonkeys
 name: nl6
-version: 0.40.2
+version: 0.41.0
 readme: README.md
 authors:
   - Ronny Trommer <ronny@no42.org>
