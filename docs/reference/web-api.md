@@ -753,7 +753,7 @@ Every error body is `{"success": false, "message": "..."}`.
 |--------|------|
 | `200` | The device is deleted. |
 | `404` | No device has that ID. |
-| `409` | A running load-test scenario has frozen the fleet. The message names the scenario. There is no `Retry-After` header, because the freeze lasts until the scenario finishes or is stopped. |
+| `409` | A running load-test scenario has frozen the fleet. The freeze check runs before the device lookup, so an unknown ID also answers `409` on a frozen fleet. The message names the scenario. There is no `Retry-After` header, because the freeze lasts until the scenario finishes or is stopped. |
 | `500` | The device's TUN interface could not be removed. The device is deleted from the simulator anyway, so a retry answers `404`. The message names the interface, which may remain in the kernel and need removing by hand. |
 
 ## Version
