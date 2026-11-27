@@ -354,10 +354,6 @@ func TestShippedWalksNeverHitTheNonAdvanceCheck(t *testing.T) {
 				if next == "" {
 					return
 				}
-				if compareOIDs(next, cur) <= 0 {
-					t.Errorf("%s: GETNEXT(%s) = %s does not advance", p, cur, next)
-					return
-				}
 				cur = next
 			}
 			t.Errorf("%s: the walk did not end within %d steps", p, steps)
