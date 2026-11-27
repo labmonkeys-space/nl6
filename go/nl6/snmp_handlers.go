@@ -217,7 +217,26 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 // The metric point p is supplied the same way, so a walk that crosses several
 // metric OIDs within one GETNEXT or GETBULK serves them all from one point
 // (nl6#975).
+//
+// A successor that does not advance past currentOID is answered as end of MIB
+// and logged once per device. Every GETNEXT and GETBULK path of every version
+// calls this function, so the check here covers them all (nl6#1090). Before it,
+// only the v3 GETBULK loop and the v1 Counter64 skip loop had one, and a
+// resource profile that mapped an OID to itself made every other path answer
+// that OID forever. buildResourceIndexes no longer builds such a map; this is
+// the bound if a future index defect does.
 func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID, p int) (string, string) {
+	nextOID, response := s.findNextCandidate(currentOID, lldpServed, p)
+	if nextOID != "" && compareOIDs(nextOID, currentOID) <= 0 {
+		s.logFirstNonAdvance(nextOID, currentOID)
+		return "", valueEndOfMibView
+	}
+	return nextOID, response
+}
+
+// findNextCandidate is findNextOIDWithServed without the non-advance check.
+// Call findNextOIDWithServed instead.
+func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p int) (string, string) {
 	// Try pre-computed next OID map first (O(1) lookup)
 	var precomputedNextOID string
 	var precomputedNextResp string

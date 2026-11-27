@@ -500,6 +500,17 @@ func (s *SNMPServer) logFirstSkipAbort(why, at string) {
 	})
 }
 
+// logFirstNonAdvance emits at most one log line per device when a walk
+// successor, on a GETNEXT or a GETBULK, does not advance (nl6#1090). Same gate as logFirstSkipAbort: the
+// condition is a resource-file defect present from load, so ungated it would
+// repeat on every walk of every device sharing the profile.
+func (s *SNMPServer) logFirstNonAdvance(next, at string) {
+	s.firstNonAdvance.Do(func() {
+		log.Printf("SNMP %s: walk successor %s does not advance past %s; answering end-of-MIB (further non-advancing successors suppressed for this device)",
+			s.device.ID, next, at)
+	})
+}
+
 // logFirstRulesBug emits at most one line per device when createVarbindResponse
 // is handed a varbindResponseRules value that cannot have come from one of its
 // three constructors — a rule field left at its zero value, or an echoNames

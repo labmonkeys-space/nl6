@@ -431,7 +431,10 @@ func v3ScopedVarbind(t *testing.T, resp []byte) (name string, valueTag byte) {
 // that sends an OID to itself would otherwise make the collection loop hand
 // back a non-increasing OID with no exception — which is precisely what a
 // walker cannot terminate on. The v1/v2c GETNEXT path grew the same bound in
-// nl6#524; this pins it for v3 bulk.
+// nl6#524; this pins it for v3 bulk. Since nl6#1090 findNextOIDWithServed ends
+// such a successor itself, before bulkStep sees it, so this pins that the v3
+// bulk walk terminates, not that bulkStep's own check does: no test reaches
+// that check any more.
 //
 // Both halves of the bound are pinned: an entry that maps to ITSELF and one
 // that maps BACKWARD. Loosening the guard from <= 0 to == 0 keeps the self
@@ -989,8 +992,12 @@ func TestV3GetBulkNonRepeatersMakesItAGetNext(t *testing.T) {
 // The clamp cannot be seen through the binding count: the encode bound trims
 // the collection to the same bindings either way. It IS visible through the
 // walk: corrupt the successor just past the ceiling so it does not advance,
-// and the once-per-device logFirstBulkAbort line fires only if the loop got
-// there. With the clamp wired in, it never does.
+// and the once-per-device non-advance log line fires only if the loop got
+// there. With the clamp wired in, it never does. The fixture spells its arcs
+// with leading zeros, which the index stores canonically since nl6#1090, so the
+// corruption is planted on the canonical key and the test first checks that
+// the index holds it: planted on the written spelling it was never read, and
+// the test passed with the clamp removed.
 func TestV3GetBulkClampsTheWalk(t *testing.T) {
 	s := v3TestServer(wideBulkFixture(400))
 	const start = ".1.3.6.1.2.1.1.1.0"
@@ -1002,7 +1009,10 @@ func TestV3GetBulkClampsTheWalk(t *testing.T) {
 	// Step k of the walk from sysDescr.0 lands on ifDescr.k, so the clamped
 	// loop's last call is findNextOID(ifDescr.<ceiling-1>). The next entry
 	// is the first one an unclamped loop would consult.
-	past := fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%03d", ceiling)
+	past := normaliseResourceOID(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%03d", ceiling))
+	if _, ok := s.device.resources.oidNextMap.Load(past); !ok {
+		t.Fatalf("the index holds no successor for %s, so corrupting it would test nothing", past)
+	}
 	s.device.resources.oidNextMap.Store(past, past)
 
 	var buf bytes.Buffer

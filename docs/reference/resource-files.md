@@ -17,6 +17,9 @@ See [Web API → Reload device profiles](web-api.md#reload-device-profiles).
 
 OIDs in the `snmp` section may be written with or without a leading dot.
 The loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup.
+An arc written with a leading zero is read as its number: `.1.3.6.1.2.1.31.1.1.1.18.03` is `ifAlias.3`.
+An OID listed in more than one entry, in one file or across the files of a profile, is served once.
+A GET and a walk serve the same one of those entries, and which one is not specified, so give each OID a single entry.
 
 ## JSON schema
 
