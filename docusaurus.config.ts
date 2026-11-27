@@ -26,7 +26,7 @@ function resolveAppVersion(): string {
 
 // Parsed from go/go.mod so the landing page tracks the toolchain the binary
 // is actually built against. We surface only MAJOR.MINOR to match the marketing
-// style used elsewhere on the page (e.g. "go 1.26+").
+// style used elsewhere on the page (e.g. "go X.Y+").
 function resolveGoVersion(): string {
   const modPath = path.join(__dirname, 'go', 'go.mod');
   const src = fs.readFileSync(modPath, 'utf8');
