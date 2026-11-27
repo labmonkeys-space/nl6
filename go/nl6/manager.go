@@ -439,8 +439,8 @@ var (
 
 // fleetFreezeCheck returns an error naming the freezing scenarios when the
 // fleet is frozen, nil otherwise. The error wraps errFleetFrozen. The
-// single-device delete maps it to 409; device create and delete-all do not
-// look for it and answer 500.
+// REST layer maps it to 409 on device create, the single delete and
+// delete-all (nl6#1104, nl6#1115).
 func (sm *SimulatorManager) fleetFreezeCheck() error {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -148,25 +149,59 @@ func TestDeleteDeviceHandler_SuccessAnswers200(t *testing.T) {
 	}
 }
 
-// Create and delete-all carry the same freeze error as the single delete, but
-// only the single delete answers 409. These two pin that the other handlers
-// did not start matching it.
-func TestDeleteAllDevicesHandler_FrozenFleetStillAnswers500(t *testing.T) {
+// assertNoRetryAfter pins that a freeze 409 tells the caller nothing about
+// when to retry: the freeze lasts until the scenario finishes or is stopped.
+func assertNoRetryAfter(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	if got := w.Header().Get("Retry-After"); got != "" {
+		t.Errorf("Retry-After = %q on a freeze 409, want none", got)
+	}
+}
+
+// Create and delete-all carry the same freeze error as the single delete, and
+// answer the same 409 (nl6#1115).
+func TestDeleteAllDevicesHandler_FrozenFleetAnswers409(t *testing.T) {
 	sm := newFreezeTestManager()
 	addDeleteTestDevice(sm, "device-10.42.0.7", net.IPv4(10, 42, 0, 7), "")
 	mustFreeze(t, sm, "s-000001")
 
 	w := deleteDeviceReq(t, sm, "/api/v1/devices")
-	assertErrorResponse(t, w, http.StatusInternalServerError, freezeMessage)
+	assertErrorResponse(t, w, http.StatusConflict, freezeMessage)
+	assertNoRetryAfter(t, w)
 	if _, exists := sm.devices["device-10.42.0.7"]; !exists {
 		t.Error("a refused delete-all removed the device")
 	}
 }
 
-func TestCreateDevicesHandler_FrozenFleetStillAnswers500(t *testing.T) {
+func TestCreateDevicesHandler_FrozenFleetAnswers409(t *testing.T) {
 	sm := newCreateGateRESTManager(t)
 	mustFreeze(t, sm, "s-000001")
 
 	w := postCreateDevices(t, sm, createBody(t, "10.42.0.3"))
-	assertErrorResponse(t, w, http.StatusInternalServerError, freezeMessage)
+	assertErrorResponse(t, w, http.StatusConflict, freezeMessage)
+	assertNoRetryAfter(t, w)
+}
+
+// The create gate is judged before the freeze, so a batch in flight wins on a
+// frozen fleet and the caller gets the retryable 409, Retry-After included.
+func TestCreateDevicesHandler_BatchInFlightOnFrozenFleetKeepsRetryAfter(t *testing.T) {
+	sm := newCreateGateRESTManager(t)
+	mustFreeze(t, sm, "s-000001")
+	hold, err := sm.tryEnterCreateBatch(2000)
+	if err != nil {
+		t.Fatalf("tryEnterCreateBatch: %v", err)
+	}
+	defer hold()
+
+	w := postCreateDevices(t, sm, createBody(t, "10.42.0.3"))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Retry-After"); got != createConflictRetryAfterSeconds {
+		t.Errorf("Retry-After = %q, want %q", got, createConflictRetryAfterSeconds)
+	}
+	resp := decodeAPIResponse(t, w)
+	if !strings.Contains(resp.Message, "2000") || strings.Contains(resp.Message, "frozen") {
+		t.Errorf("message = %q, want the batch refusal naming 2000, not the freeze", resp.Message)
+	}
 }
