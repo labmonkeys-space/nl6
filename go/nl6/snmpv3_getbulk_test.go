@@ -433,8 +433,9 @@ func v3ScopedVarbind(t *testing.T, resp []byte) (name string, valueTag byte) {
 // walker cannot terminate on. The v1/v2c GETNEXT path grew the same bound in
 // nl6#524; this pins it for v3 bulk. Since nl6#1090 findNextOIDWithServed ends
 // such a successor itself, before bulkStep sees it, so this pins that the v3
-// bulk walk terminates, not that bulkStep's own check does: no test reaches
-// that check any more.
+// bulk walk terminates, not that bulkStep's own check does:
+// TestV3BulkStepEndsAColumnOnASignedArc pins the one case that check still
+// decides.
 //
 // Both halves of the bound are pinned: an entry that maps to ITSELF and one
 // that maps BACKWARD. Loosening the guard from <= 0 to == 0 keeps the self
