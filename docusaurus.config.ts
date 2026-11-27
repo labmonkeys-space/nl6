@@ -35,6 +35,45 @@ function resolveGoVersion(): string {
   return `Go ${match[1]}`;
 }
 
+const resourcesDir = path.join(__dirname, 'go', 'nl6', 'resources');
+
+// The parts the Go loader reads from a device type directory: every entry
+// that is not a directory and ends in .json (loadSpecificResourcesFromDir in
+// resources.go).
+function profileParts(dir: string): string[] {
+  return fs
+    .readdirSync(dir, {withFileTypes: true})
+    .filter((f) => !f.isDirectory() && f.name.endsWith('.json'))
+    .map((f) => path.join(dir, f.name));
+}
+
+// Counted at build time so the landing page's scale strip follows the
+// profiles: the parts of every device type directory. _common is not a
+// device type directory.
+function countResourceFiles(): number {
+  let count = 0;
+  for (const dir of fs.readdirSync(resourcesDir, {withFileTypes: true})) {
+    if (!dir.isDirectory() || dir.name === '_common') continue;
+    count += profileParts(path.join(resourcesDir, dir.name)).length;
+  }
+  if (count === 0) throw new Error(`No resource files under ${resourcesDir}`);
+  return count;
+}
+
+// The SSH commands of linux_server: the `ssh` entries of all its parts, which
+// the loader merges. `exit` and `quit` are handled in code and are not
+// counted.
+function countLinuxSSHCommands(): number {
+  const dir = path.join(resourcesDir, 'linux_server');
+  let count = 0;
+  for (const part of profileParts(dir)) {
+    const ssh = JSON.parse(fs.readFileSync(part, 'utf8'))?.ssh;
+    if (Array.isArray(ssh)) count += ssh.length;
+  }
+  if (count === 0) throw new Error(`No ssh commands under ${dir}`);
+  return count;
+}
+
 const config: Config = {
   title: 'nl6',
   tagline: 'Network device simulator — SNMP/SSH/HTTPS at 30,000-device scale',
@@ -132,6 +171,8 @@ const config: Config = {
     appVersion: resolveAppVersion(),
     license: 'Apache-2.0',
     goVersion: resolveGoVersion(),
+    resourceFileCount: countResourceFiles(),
+    linuxSSHCommandCount: countLinuxSSHCommands(),
     // Literals on purpose. GitHub normalises the `github:` key in
     // .github/FUNDING.yml to the *profile* URL (github.com/indigo423), not the
     // sponsors checkout — so these must not be derived from that file.

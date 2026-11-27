@@ -19,6 +19,7 @@ on:
       - 'src/**'
       - 'static/**'
       - 'go/go.mod'
+      - 'go/nl6/resources/**'
       - 'scripts/check-doc-orphans.mjs'
       - 'scripts/inject-csp.mjs'
       - 'scripts/check-csp.mjs'
