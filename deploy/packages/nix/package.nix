@@ -8,7 +8,7 @@
 , procps
   # Single source of truth for the Nix package version. Bump on each release
   # (see RELEASING.md "Before you tag"); release.yml asserts it equals the tag.
-, version ? "0.40.2"
+, version ? "0.41.0"
 }:
 
 buildGo127Module {
