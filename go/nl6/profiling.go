@@ -119,8 +119,10 @@ var (
 // -benchtime=5x), asr9k profile: N=1000 -> 1.0-1.5 ms/GC on a 16.7 MiB live
 // heap, N=5000 -> 4.3-5.8 ms/GC on 78.5 MiB. Linear from the N=5000 median
 // (4.8 ms): ~29 ms at 30,000, worst run ~35 ms. Well under the 150 ms line,
-// so the SDK default stands. It is an in-process proxy (no sockets, TUN or
-// namespace on the heap); the figures and the extrapolation are recorded in
+// so the SDK default stands. Re-measured at f4fbfec on an Apple M1 (Go
+// 1.27.4): 20.2 MiB and 92.7 MiB, 4.79 ms median at N=5000, still ~29 ms at
+// 30,000. It is an in-process proxy (no sockets, TUN or namespace on the
+// heap); the figures and the extrapolation are recorded in
 // docs/ops/profiling.md, and the fleet-scale re-check is described in
 // context/profiling.md.
 const profilingForceGCDefault = true

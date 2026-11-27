@@ -12,7 +12,7 @@ Each device has its own IP, SNMP listener, SSH server, and flow exporter, so the
 
 | Dimension | Footprint |
 |-----------|-----------|
-| **Memory** | About 16 KiB of live heap per device: 78.5 MiB measured at 5,000 devices, see [Profiling](profiling.md#the-forced-gc-default-measured). |
+| **Memory** | Depends on the device type. With the default `asr9k` profile, 92.7 MiB of live heap at 5,000 devices, about 19 KiB each, on devices that have no sockets, TUN interfaces or namespace, so a real fleet uses more. Built the same way, the other profiles range from about 3 KiB (`aws_s3_storage`) to about 54 KiB (the NVIDIA GPU servers). See [Profiling](profiling.md#the-forced-gc-default-measured). |
 | **CPU** | Minimal during steady state; bursts during device bring-up. |
 | **File descriptors** | Dominated by per-device sockets. nl6 raises its soft limit to the hard limit at startup and the packaged systemd unit sets `LimitNOFILE=1048576`; intervene only when the hard limit is capped (see below). |
 | **Network** | `nl6sim` namespace isolation prevents systemd-networkd overhead. |
@@ -58,7 +58,7 @@ When running under Docker, pair the host tuning above with:
   `SYS_ADMIN` lets the simulator enter the `nl6sim` namespace with `setns`.
 - `--security-opt apparmor=unconfined` so Docker's default AppArmor profile does not block creating the namespace.
 - `--network=host` so per-device TUN IPs are reachable from outside the container.
-- A memory budget of about `16 KiB * device_count` of live heap plus a comfortable buffer for the Go runtime.
+- A memory budget that starts from your profile's heap per device times `device_count`, about 19 KiB per device for `asr9k`, with headroom for what a real fleet adds and for the Go runtime.
 
 See [Docker](../getting-started/docker.md) for the full bring-up recipe and [Troubleshooting](troubleshooting.md) for bring-up failures.
 
