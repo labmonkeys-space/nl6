@@ -13,7 +13,8 @@
 // range-query result), outer-joins both on the report's
 // (protocol, source_ip, collector) tuple, and prints loss_ratio per key with
 // an in-flight tolerance band. Exit status is non-zero when any key exceeds
-// tolerance (or is phantom/missing), so it doubles as a CI gate.
+// tolerance (or is phantom/missing), or, under -nonempty, when the report's
+// sent total is zero, so it doubles as a CI gate.
 //
 // A shortfall is only called LOSS when -drained asserts the collector's queue
 // had emptied; otherwise it is RESIDUAL, since a still-queued message is
@@ -22,8 +23,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -32,84 +35,101 @@ import (
 var Version = "dev"
 
 func main() {
-	reportPath := flag.String("report", "", "path to the scenario report (JSON or CSV projection); '-' for stdin")
-	receivedPath := flag.String("received", "", "path to the received-counts input (CSV or Prometheus range JSON); '-' for stdin")
-	tolerance := flag.Float64("tolerance", 0.005, "in-flight tolerance band on loss_ratio (0.005 = 0.5%); |ratio| within it is OK")
-	format := flag.String("format", "text", "output format: text | csv | json")
-	drained := flag.Bool("drained", false, "assert the collector's input queue had drained when -received was captured; "+
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+// run is the whole command behind a testable seam: it parses args, reads the
+// inputs ('-' reads stdin), writes the rendering to stdout and diagnostics to
+// stderr, and returns the exit status.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("nl6-reconcile", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	reportPath := fs.String("report", "", "path to the scenario report (JSON or CSV projection); '-' for stdin")
+	receivedPath := fs.String("received", "", "path to the received-counts input (CSV or Prometheus range JSON); '-' for stdin")
+	tolerance := fs.Float64("tolerance", 0.005, "in-flight tolerance band on loss_ratio (0.005 = 0.5%); |ratio| within it is OK")
+	format := fs.String("format", "text", "output format: text | csv | json")
+	drained := fs.Bool("drained", false, "assert the collector's input queue had drained when -received was captured; "+
 		"without it a shortfall is reported as RESIDUAL (backlog or loss, unclassified) rather than LOSS")
-	showVersion := flag.Bool("version", false, "print the nl6-reconcile version and exit")
-	flag.Parse()
+	nonempty := fs.Bool("nonempty", false, "mark rows with sent 0 and received 0 as EMPTY, and exit 1 when the report's sent total is zero")
+	showVersion := fs.Bool("version", false, "print the nl6-reconcile version and exit")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
 
 	if *showVersion {
-		fmt.Println(Version)
-		return
+		_, _ = fmt.Fprintln(stdout, Version)
+		return 0
 	}
 
 	if *reportPath == "" || *receivedPath == "" {
-		fmt.Fprintln(os.Stderr, "nl6-reconcile: both -report and -received are required")
-		flag.Usage()
-		os.Exit(2)
+		_, _ = fmt.Fprintln(stderr, "nl6-reconcile: both -report and -received are required")
+		fs.Usage()
+		return 2
 	}
 	if *tolerance < 0 {
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: -tolerance must be >= 0 (got %g)\n", *tolerance)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "nl6-reconcile: -tolerance must be >= 0 (got %g)\n", *tolerance)
+		return 2
 	}
 
-	reportData, err := readInput(*reportPath)
+	reportData, err := readInput(*reportPath, stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: read report: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "nl6-reconcile: read report: %v\n", err)
+		return 2
 	}
-	receivedData, err := readInput(*receivedPath)
+	receivedData, err := readInput(*receivedPath, stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: read received: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "nl6-reconcile: read received: %v\n", err)
+		return 2
 	}
 
 	sent, err := parseReport(reportData)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: parse report: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "nl6-reconcile: parse report: %v\n", err)
+		return 2
 	}
 	received, err := parseReceived(receivedData)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: parse received: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "nl6-reconcile: parse received: %v\n", err)
+		return 2
 	}
 
-	results := reconcile(sent, received, *tolerance, *drained)
+	results := reconcile(sent, received, *tolerance, *drained, *nonempty)
 
 	var out string
 	switch *format {
 	case "text":
-		out = renderText(results, *tolerance, *drained)
+		out = renderText(results, *tolerance, *drained, *nonempty)
 	case "csv":
 		out = renderCSV(results)
 	case "json":
 		out, err = renderJSON(results)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "nl6-reconcile: render json: %v\n", err)
-			os.Exit(2)
+			_, _ = fmt.Fprintf(stderr, "nl6-reconcile: render json: %v\n", err)
+			return 2
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "nl6-reconcile: unknown -format %q (want text|csv|json)\n", *format)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "nl6-reconcile: unknown -format %q (want text|csv|json)\n", *format)
+		return 2
 	}
-	fmt.Print(out)
+	_, _ = fmt.Fprint(stdout, out)
 
-	// Exit non-zero if any key failed reconciliation — CI-gate friendly.
-	for _, r := range results {
-		if r.Status != statusOK {
-			os.Exit(1)
-		}
+	// Exit non-zero if any key failed reconciliation, or under -nonempty if
+	// nothing was sent. CSV and JSON carry no NOTE, so when -nonempty is the
+	// only reason for the failure, say so on stderr; stdout stays byte-stable.
+	code := exitCode(results, *nonempty)
+	if code != 0 && exitCode(results, false) == 0 {
+		_, _ = fmt.Fprintln(stderr, "nl6-reconcile: nothing was sent; failing because -nonempty is set")
 	}
+	return code
 }
 
 // readInput reads a file path, or stdin when the path is "-".
-func readInput(path string) ([]byte, error) {
+func readInput(path string, stdin io.Reader) ([]byte, error) {
 	if path == "-" {
-		return readAll(os.Stdin)
+		return readAll(stdin)
 	}
 	return os.ReadFile(path)
 }

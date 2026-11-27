@@ -6,6 +6,9 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,7 +32,7 @@ func TestReconcile_Classification(t *testing.T) {
 		k("syslog", "10.42.0.4", "c:514"): 1100,
 		k("syslog", "10.42.0.9", "c:514"): 42, // phantom — not in report
 	}
-	got := reconcile(sent, received, 0.005, true)
+	got := reconcile(sent, received, 0.005, true, false)
 
 	want := map[string]string{
 		"10.42.0.1": statusOK,
@@ -58,10 +61,10 @@ func TestReconcile_Classification(t *testing.T) {
 func TestReconcile_ToleranceBoundary(t *testing.T) {
 	sent := map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 1000}
 	// exactly 0.5% loss → OK; 1.0% loss → LOSS
-	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 995}, 0.005, true); got[0].Status != statusOK {
+	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 995}, 0.005, true, false); got[0].Status != statusOK {
 		t.Fatalf("ratio == tolerance: status=%s, want OK", got[0].Status)
 	}
-	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 990}, 0.005, true); got[0].Status != statusLoss {
+	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 990}, 0.005, true, false); got[0].Status != statusLoss {
 		t.Fatalf("ratio > tolerance: status=%s, want LOSS", got[0].Status)
 	}
 }
@@ -143,9 +146,9 @@ func TestRender_Formats(t *testing.T) {
 		map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 100},
 		map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 95},
 		0.005,
-		true, // queue drained: a shortfall here IS loss
+		true, false, // queue drained: a shortfall here IS loss
 	)
-	if txt := renderText(res, 0.005, true); !strings.Contains(txt, "LOSS") || !strings.Contains(txt, "Summary:") {
+	if txt := renderText(res, 0.005, true, false); !strings.Contains(txt, "LOSS") || !strings.Contains(txt, "Summary:") {
 		t.Fatalf("text render missing LOSS/Summary:\n%s", txt)
 	}
 	if c := renderCSV(res); !strings.HasPrefix(c, "protocol,source_ip,collector,sent,received,delta,loss_ratio,status") {
@@ -170,7 +173,7 @@ func TestReconcile_EndToEnd_JSONvsPrometheus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := reconcile(sent, recv, 0.005, true)
+	got := reconcile(sent, recv, 0.005, true, false)
 	if len(got) != 1 || got[0].Status != statusOK || got[0].LossRatio != 0 {
 		t.Fatalf("end-to-end: %+v", got)
 	}
@@ -185,13 +188,13 @@ func TestReconcile_ShortfallIsResidualUntilDrainIsAsserted(t *testing.T) {
 	sent := map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 159500}
 	recv := map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40586}
 
-	undrained := reconcile(sent, recv, 0.005, false)
+	undrained := reconcile(sent, recv, 0.005, false, false)
 	if undrained[0].Status != statusResidual {
 		t.Errorf("without -drained: got %q, want %q — an unclassified shortfall must not be called loss",
 			undrained[0].Status, statusResidual)
 	}
 
-	drained := reconcile(sent, recv, 0.005, true)
+	drained := reconcile(sent, recv, 0.005, true, false)
 	if drained[0].Status != statusLoss {
 		t.Errorf("with -drained: got %q, want %q", drained[0].Status, statusLoss)
 	}
@@ -211,9 +214,9 @@ func TestRenderText_DoesNotLabelUndrainedShortfallAsLoss(t *testing.T) {
 	res := reconcile(
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 159500},
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40586},
-		0.005, false,
+		0.005, false, false,
 	)
-	txt := renderText(res, 0.005, false)
+	txt := renderText(res, 0.005, false, false)
 	if strings.Contains(txt, "fleet_loss") {
 		t.Errorf("undrained summary reports fleet_loss, merging backlog and loss:\n%s", txt)
 	}
@@ -234,12 +237,12 @@ func TestRenderText_NoteOnlyWhenSomethingIsUnclassified(t *testing.T) {
 	res := reconcile(
 		map[joinKey]uint64{},
 		map[joinKey]uint64{k("syslog", "10.42.0.9", "c:514"): 500},
-		0.005, false,
+		0.005, false, false,
 	)
 	if res[0].Status != statusPhantom {
 		t.Fatalf("fixture: got %q, want PHANTOM", res[0].Status)
 	}
-	if txt := renderText(res, 0.005, false); strings.Contains(txt, "-drained") {
+	if txt := renderText(res, 0.005, false, false); strings.Contains(txt, "-drained") {
 		t.Errorf("PHANTOM-only run advises -drained, which cannot change it:\n%s", txt)
 	}
 
@@ -247,12 +250,12 @@ func TestRenderText_NoteOnlyWhenSomethingIsUnclassified(t *testing.T) {
 	dup := reconcile(
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 100},
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 130},
-		0.005, false,
+		0.005, false, false,
 	)
 	if dup[0].Status != statusDup {
 		t.Fatalf("fixture: got %q, want DUP", dup[0].Status)
 	}
-	if txt := renderText(dup, 0.005, false); strings.Contains(txt, "-drained") {
+	if txt := renderText(dup, 0.005, false, false); strings.Contains(txt, "-drained") {
 		t.Errorf("DUP-only run advises -drained:\n%s", txt)
 	}
 }
@@ -264,18 +267,18 @@ func TestRenderText_FleetLabelMatchesTheNumber(t *testing.T) {
 	clean := reconcile(
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 1000},
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 1000},
-		0.005, false,
+		0.005, false, false,
 	)
-	if txt := renderText(clean, 0.005, false); strings.Contains(txt, "fleet_residual") {
+	if txt := renderText(clean, 0.005, false, false); strings.Contains(txt, "fleet_residual") {
 		t.Errorf("a fully reconciled run reports a residual of zero as a residual:\n%s", txt)
 	}
 
 	dup := reconcile(
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 100},
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 130},
-		0.005, false,
+		0.005, false, false,
 	)
-	if txt := renderText(dup, 0.005, false); strings.Contains(txt, "fleet_residual=-") {
+	if txt := renderText(dup, 0.005, false, false); strings.Contains(txt, "fleet_residual=-") {
 		t.Errorf("duplication rendered as a negative residual:\n%s", txt)
 	}
 }
@@ -288,12 +291,12 @@ func TestReconcile_MissingIsUnclassifiedToo(t *testing.T) {
 	res := reconcile(
 		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40},
 		map[joinKey]uint64{},
-		0.005, false,
+		0.005, false, false,
 	)
 	if res[0].Status != statusMissing {
 		t.Fatalf("fixture: got %q, want MISSING", res[0].Status)
 	}
-	txt := renderText(res, 0.005, false)
+	txt := renderText(res, 0.005, false, false)
 	if !strings.Contains(txt, "-drained") {
 		t.Errorf("MISSING without a drain assertion is unclassified and must say so:\n%s", txt)
 	}
@@ -318,7 +321,7 @@ func TestReconcile_YangPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{"10.42.0.1": statusOK, "10.42.0.2": statusLoss, "10.42.0.3": statusMissing}
-	got := reconcile(sent, recv, 0.005, true)
+	got := reconcile(sent, recv, 0.005, true, false)
 	if len(got) != len(want) {
 		t.Fatalf("got %d results, want %d: %+v", len(got), len(want), got)
 	}
@@ -328,9 +331,329 @@ func TestReconcile_YangPush(t *testing.T) {
 		}
 	}
 	// Without the drain assertion a shortfall is not called loss.
-	for _, r := range reconcile(sent, recv, 0.005, false) {
+	for _, r := range reconcile(sent, recv, 0.005, false, false) {
 		if r.SourceIP == "10.42.0.2" && r.Status != statusResidual {
 			t.Errorf("shortfall without -drained: status %s, want %s", r.Status, statusResidual)
 		}
+	}
+}
+
+// Inputs shared by the nl6#1053 tests: one key that sent nothing and received
+// nothing, as the report JSON, as its CSV projection, and as a received CSV.
+const (
+	allZeroReportJSON  = `{"counters":[{"protocol":"syslog","source_ip":"10.42.0.1","collector":"c:514","sent":0}]}`
+	allZeroReportCSV   = "protocol,source_ip,collector,in_window,drain\nsyslog,10.42.0.1,c:514,0,0\n"
+	allZeroReceivedCSV = "protocol,source_ip,collector,received\nsyslog,10.42.0.1,c:514,0\n"
+)
+
+// allZeroInputs parses the all-zero report in both report formats.
+func allZeroInputs(t *testing.T) map[string][2]map[joinKey]uint64 {
+	t.Helper()
+	out := map[string][2]map[joinKey]uint64{}
+	for name, rep := range map[string]string{"json": allZeroReportJSON, "csv": allZeroReportCSV} {
+		sent, err := parseReport([]byte(rep))
+		if err != nil {
+			t.Fatalf("%s: parseReport: %v", name, err)
+		}
+		recv, err := parseReceived([]byte(allZeroReceivedCSV))
+		if err != nil {
+			t.Fatalf("%s: parseReceived: %v", name, err)
+		}
+		out[name] = [2]map[joinKey]uint64{sent, recv}
+	}
+	return out
+}
+
+// TestDefaultOutput_AllZeroIsByteIdentical pins the default CSV and JSON bytes
+// of an all-zero reconcile to the release before nl6#1053: pipelines match on
+// these, so -nonempty must stay opt-in.
+func TestDefaultOutput_AllZeroIsByteIdentical(t *testing.T) {
+	const wantCSV = "protocol,source_ip,collector,sent,received,delta,loss_ratio,status\nsyslog,10.42.0.1,c:514,0,0,0,0,OK\n"
+	const wantJSON = "[\n  {\n    \"protocol\": \"syslog\",\n    \"source_ip\": \"10.42.0.1\",\n    \"collector\": \"c:514\",\n    \"sent\": 0,\n    \"received\": 0,\n    \"delta\": 0,\n    \"loss_ratio\": 0,\n    \"status\": \"OK\"\n  }\n]\n"
+	for name, in := range allZeroInputs(t) {
+		res := reconcile(in[0], in[1], 0.005, false, false)
+		if got := renderCSV(res); got != wantCSV {
+			t.Errorf("%s report: CSV changed:\n%q", name, got)
+		}
+		got, err := renderJSON(res)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != wantJSON {
+			t.Errorf("%s report: JSON changed:\n%q", name, got)
+		}
+	}
+}
+
+// TestReconcile_NonemptyMarksZeroRowsEmpty: -nonempty turns only the
+// sent-0/received-0 row into EMPTY; sent 0 with received above 0 stays DUP,
+// and -drained does not touch it (drain classifies shortfalls only).
+func TestReconcile_NonemptyMarksZeroRowsEmpty(t *testing.T) {
+	sent := map[joinKey]uint64{
+		k("syslog", "10.42.0.1", "c"): 0,
+		k("syslog", "10.42.0.2", "c"): 0,
+		k("syslog", "10.42.0.3", "c"): 100,
+	}
+	recv := map[joinKey]uint64{
+		k("syslog", "10.42.0.1", "c"): 0,
+		k("syslog", "10.42.0.2", "c"): 5,
+		k("syslog", "10.42.0.3", "c"): 100,
+	}
+	for _, drained := range []bool{false, true} {
+		for nonempty, want := range map[bool][]string{
+			false: {statusOK, statusDup, statusOK},
+			true:  {statusEmpty, statusDup, statusOK},
+		} {
+			got := reconcile(sent, recv, 0.005, drained, nonempty)
+			for i, r := range got {
+				if r.Status != want[i] {
+					t.Errorf("drained=%v nonempty=%v %s: got %s, want %s", drained, nonempty, r.SourceIP, r.Status, want[i])
+				}
+			}
+		}
+	}
+}
+
+// TestExitCode: EMPTY rows never fail a run on their own; -nonempty fails a
+// run whose sent total is zero, including a report with no rows at all.
+func TestExitCode(t *testing.T) {
+	zero := []result{{Sent: 0, Received: 0, Status: statusOK}}
+	zeroEmpty := []result{{Sent: 0, Received: 0, Status: statusEmpty}}
+	mixed := []result{{Sent: 0, Status: statusEmpty}, {Sent: 100, Received: 100, Status: statusOK}}
+	allOK := []result{{Sent: 100, Received: 100, Status: statusOK}}
+	dup := []result{{Sent: 100, Received: 200, Status: statusDup}}
+	cases := []struct {
+		name     string
+		res      []result
+		nonempty bool
+		want     int
+	}{
+		{"all-zero default", zero, false, 0},
+		{"all-zero nonempty", zeroEmpty, true, 1},
+		{"no rows default", nil, false, 0},
+		{"no rows nonempty", nil, true, 1},
+		{"one EMPTY row in a good report", mixed, true, 0},
+		{"all OK default", allOK, false, 0},
+		{"all OK nonempty", allOK, true, 0},
+		{"DUP default", dup, false, 1},
+		{"DUP nonempty", dup, true, 1},
+		// A full shortfall inside a wide tolerance is OK; the zero-total check must
+		// read the sent column, not the received one.
+		{"sent 100 received 0 OK nonempty", []result{{Sent: 100, Received: 0, Status: statusOK}}, true, 0},
+	}
+	for _, c := range cases {
+		if got := exitCode(c.res, c.nonempty); got != c.want {
+			t.Errorf("%s: exitCode = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// TestNonempty_AllZeroReportIsEmptyAndFails runs both report formats through
+// parse, reconcile and the machine-readable renderers with -nonempty.
+func TestNonempty_AllZeroReportIsEmptyAndFails(t *testing.T) {
+	for name, in := range allZeroInputs(t) {
+		res := reconcile(in[0], in[1], 0.005, false, true)
+		if csvOut := renderCSV(res); !strings.HasSuffix(csvOut, ",EMPTY\n") {
+			t.Errorf("%s report: CSV row not EMPTY:\n%s", name, csvOut)
+		}
+		jsonOut, err := renderJSON(res)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(jsonOut, `"status": "EMPTY"`) {
+			t.Errorf("%s report: JSON row not EMPTY:\n%s", name, jsonOut)
+		}
+		if got := exitCode(res, true); got != 1 {
+			t.Errorf("%s report: exitCode = %d, want 1", name, got)
+		}
+	}
+}
+
+// lastNote returns the last "\nNOTE:" block of a text rendering, or "".
+func lastNote(txt string) string {
+	i := strings.LastIndex(txt, "\nNOTE:")
+	if i < 0 {
+		return ""
+	}
+	return txt[i:]
+}
+
+// TestRenderText_ZeroTotalNote: a zero sent total ends the text output with a
+// NOTE. Without -nonempty it names the flag and the possible future default;
+// with it, it says why the run fails.
+func TestRenderText_ZeroTotalNote(t *testing.T) {
+	for name, in := range allZeroInputs(t) {
+		def := lastNote(renderText(reconcile(in[0], in[1], 0.005, false, false), 0.005, false, false))
+		if !strings.HasPrefix(def, "\nNOTE: nothing was sent") || !strings.Contains(def, "-nonempty") || !strings.Contains(def, "later release") {
+			t.Errorf("%s report, default: NOTE missing or wrong:\n%s", name, def)
+		}
+		on := lastNote(renderText(reconcile(in[0], in[1], 0.005, false, true), 0.005, false, true))
+		if !strings.HasPrefix(on, "\nNOTE: nothing was sent") || !strings.Contains(on, "-nonempty is set") || strings.Contains(on, "later release") {
+			t.Errorf("%s report, -nonempty: NOTE missing or wrong:\n%s", name, on)
+		}
+	}
+}
+
+// TestRenderText_NoZeroNoteWhenSomethingWasSent: a normal report gets no NOTE.
+func TestRenderText_NoZeroNoteWhenSomethingWasSent(t *testing.T) {
+	sent := map[joinKey]uint64{k("syslog", "10.42.0.1", "c"): 100}
+	for _, nonempty := range []bool{false, true} {
+		txt := renderText(reconcile(sent, sent, 0.005, false, nonempty), 0.005, false, nonempty)
+		if strings.Contains(txt, "nothing was sent") {
+			t.Errorf("nonempty=%v: zero NOTE on a report that sent 100:\n%s", nonempty, txt)
+		}
+	}
+}
+
+// TestRenderText_EmptyCount: an EMPTY row is neither OK nor flagged; the
+// summary counts it separately, and only when there is one.
+func TestRenderText_EmptyCount(t *testing.T) {
+	sent := map[joinKey]uint64{k("syslog", "10.42.0.1", "c"): 0, k("syslog", "10.42.0.2", "c"): 100}
+	recv := map[joinKey]uint64{k("syslog", "10.42.0.1", "c"): 0, k("syslog", "10.42.0.2", "c"): 100}
+	txt := renderText(reconcile(sent, recv, 0.005, false, true), 0.005, false, true)
+	if !strings.Contains(txt, "| 1 OK | 0 flagged |") || !strings.Contains(txt, "| 1 empty") {
+		t.Errorf("summary does not count the EMPTY row apart:\n%s", txt)
+	}
+	txt = renderText(reconcile(sent, recv, 0.005, false, false), 0.005, false, false)
+	if strings.Contains(txt, "empty") {
+		t.Errorf("summary mentions empty without an EMPTY row:\n%s", txt)
+	}
+}
+
+// TestRenderText_ZeroNoteEdgeCases: the zero NOTE follows the sent total, not
+// the row statuses, and comes after the UNCLASSIFIED NOTE when both apply.
+func TestRenderText_ZeroNoteEdgeCases(t *testing.T) {
+	key := k("syslog", "10.42.0.1", "c")
+	cases := map[string][]result{
+		"missing": reconcile(map[joinKey]uint64{key: 0}, nil, 0.005, false, false),
+		"dup":     reconcile(map[joinKey]uint64{key: 0}, map[joinKey]uint64{key: 7}, 0.005, false, false),
+		"phantom": reconcile(nil, map[joinKey]uint64{key: 7}, 0.005, false, false),
+		"no rows": nil,
+	}
+	for name, res := range cases {
+		txt := renderText(res, 0.005, false, false)
+		if !strings.HasPrefix(lastNote(txt), "\nNOTE: nothing was sent") {
+			t.Errorf("%s: zero NOTE missing or not last:\n%s", name, txt)
+		}
+		if name == "missing" && !strings.Contains(txt, "UNCLASSIFIED") {
+			t.Errorf("missing: UNCLASSIFIED NOTE gone:\n%s", txt)
+		}
+	}
+}
+
+// TestRenderText_ZeroNoteDoesNotMisattributeAFailure: when a zero-total run
+// already fails on a flagged row (DUP, MISSING, PHANTOM), the zero NOTE must
+// neither suggest -nonempty to make it fail nor blame -nonempty for the failure.
+func TestRenderText_ZeroNoteDoesNotMisattributeAFailure(t *testing.T) {
+	key := k("syslog", "10.42.0.1", "c")
+	for _, nonempty := range []bool{false, true} {
+		cases := map[string][]result{
+			"dup":     reconcile(map[joinKey]uint64{key: 0}, map[joinKey]uint64{key: 7}, 0.005, false, nonempty),
+			"missing": reconcile(map[joinKey]uint64{key: 0}, nil, 0.005, false, nonempty),
+			"phantom": reconcile(nil, map[joinKey]uint64{key: 7}, 0.005, false, nonempty),
+		}
+		for name, res := range cases {
+			note := lastNote(renderText(res, 0.005, false, nonempty))
+			if !strings.HasPrefix(note, "\nNOTE: nothing was sent") {
+				t.Errorf("nonempty=%v %s: zero NOTE missing:\n%s", nonempty, name, note)
+			}
+			if strings.Contains(note, "Pass -nonempty") || strings.Contains(note, "because -nonempty") {
+				t.Errorf("nonempty=%v %s: NOTE misattributes a failure that does not depend on -nonempty:\n%s", nonempty, name, note)
+			}
+		}
+	}
+}
+
+// runFiles writes report and received to temp files and drives the command
+// through run, returning its exit code, stdout and stderr.
+func runFiles(t *testing.T, report, received string, flags ...string) (int, string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	rp, cp := filepath.Join(dir, "report"), filepath.Join(dir, "received")
+	if err := os.WriteFile(rp, []byte(report), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cp, []byte(received), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	args := append([]string{"-report", rp, "-received", cp}, flags...)
+	code := run(args, strings.NewReader(""), &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+const headerOnlyReceivedCSV = "protocol,source_ip,collector,received\n"
+
+// TestRun_NonemptyFlagWiring drives the command end to end: the flag is off by
+// default, reaches reconcile (EMPTY on the wire) and reaches the exit decision.
+func TestRun_NonemptyFlagWiring(t *testing.T) {
+	for name, rep := range map[string]string{"json": allZeroReportJSON, "csv": allZeroReportCSV} {
+		code, out, _ := runFiles(t, rep, allZeroReceivedCSV, "-format", "csv")
+		if code != 0 || !strings.HasSuffix(out, ",OK\n") {
+			t.Errorf("%s report, default: exit %d, output %q; want exit 0 and an OK row", name, code, out)
+		}
+		code, out, _ = runFiles(t, rep, allZeroReceivedCSV, "-format", "csv", "-nonempty")
+		if code != 1 || !strings.HasSuffix(out, ",EMPTY\n") {
+			t.Errorf("%s report, -nonempty: exit %d, output %q; want exit 1 and an EMPTY row", name, code, out)
+		}
+		if _, out, _ = runFiles(t, rep, allZeroReceivedCSV, "-nonempty"); !strings.Contains(out, "-nonempty is set") {
+			t.Errorf("%s report, -nonempty text: NOTE does not say the flag is set:\n%s", name, out)
+		}
+	}
+}
+
+// TestRun_EmptyReportInputs: a report with no counters, as JSON and as a
+// header-only CSV, has a sent total of zero.
+func TestRun_EmptyReportInputs(t *testing.T) {
+	reports := map[string]string{
+		"json": `{"counters":[]}`,
+		"csv":  "protocol,source_ip,collector,in_window,drain\n",
+	}
+	for name, rep := range reports {
+		if code, _, _ := runFiles(t, rep, headerOnlyReceivedCSV); code != 0 {
+			t.Errorf("%s empty report, default: exit %d, want 0", name, code)
+		}
+		if code, _, _ := runFiles(t, rep, headerOnlyReceivedCSV, "-nonempty"); code != 1 {
+			t.Errorf("%s empty report, -nonempty: exit %d, want 1", name, code)
+		}
+	}
+}
+
+// TestRun_FlaggedRowsAtZeroTotalFailEitherWay: DUP and PHANTOM rows fail a
+// zero-total run with and without -nonempty.
+func TestRun_FlaggedRowsAtZeroTotalFailEitherWay(t *testing.T) {
+	dupRecv := "protocol,source_ip,collector,received\nsyslog,10.42.0.1,c:514,7\n"
+	cases := map[string][2]string{
+		"dup":     {allZeroReportJSON, dupRecv},
+		"phantom": {`{"counters":[]}`, dupRecv},
+	}
+	for name, in := range cases {
+		for _, flags := range [][]string{nil, {"-nonempty"}} {
+			if code, _, _ := runFiles(t, in[0], in[1], flags...); code != 1 {
+				t.Errorf("%s %v: exit %d, want 1", name, flags, code)
+			}
+		}
+	}
+}
+
+// TestRun_NonemptyStderrReason: csv and json carry no NOTE, so a run that
+// fails only because -nonempty saw nothing sent says why on stderr. Stdout
+// stays byte-stable, and no reason is printed when -nonempty is not the cause.
+func TestRun_NonemptyStderrReason(t *testing.T) {
+	for _, format := range []string{"json", "csv", "text"} {
+		code, out, errOut := runFiles(t, `{"counters":[]}`, headerOnlyReceivedCSV, "-nonempty", "-format", format)
+		if code != 1 || !strings.Contains(errOut, "nothing was sent") || !strings.Contains(errOut, "-nonempty") {
+			t.Errorf("%s: exit %d, stderr %q; want exit 1 and a reason naming -nonempty", format, code, errOut)
+		}
+		if format == "json" && out != "[]\n" {
+			t.Errorf("json: stdout %q, want %q", out, "[]\n")
+		}
+	}
+	if _, _, errOut := runFiles(t, `{"counters":[]}`, headerOnlyReceivedCSV, "-format", "json"); errOut != "" {
+		t.Errorf("default: stderr %q, want empty", errOut)
+	}
+	dupRecv := "protocol,source_ip,collector,received\nsyslog,10.42.0.1,c:514,7\n"
+	if _, _, errOut := runFiles(t, allZeroReportJSON, dupRecv, "-nonempty", "-format", "json"); errOut != "" {
+		t.Errorf("flagged DUP row: stderr %q, want empty (the DUP fails the run, not -nonempty)", errOut)
 	}
 }
