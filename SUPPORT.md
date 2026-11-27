@@ -19,8 +19,7 @@ makes a fast answer far more likely.
 ## Bugs and feature requests
 
 - **Bug?** Open a [bug report](https://github.com/labmonkeys-space/nl6/issues/new/choose).
-- **Idea or missing capability?** Open an
-  [enhancement request](https://github.com/labmonkeys-space/nl6/issues/new/choose).
+- **Idea or missing capability?** Open a [feature request](https://github.com/labmonkeys-space/nl6/issues/new/choose).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to send a change yourself.
 

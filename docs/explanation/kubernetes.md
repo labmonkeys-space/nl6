@@ -33,6 +33,9 @@ Out of the box the simulator needs:
   NETCONF call home and gNMI dial-out also dial out from an ephemeral port and bind nothing.
   4334 is the NETCONF client's port, not nl6's.
 - `/dev/net/tun` mounted into the container.
+- An unconfined AppArmor profile on nodes that run AppArmor, unless the container is privileged.
+  The runtime's default profile denies the mount that `ip netns add` runs.
+  The simulator then exits at startup, because it does not fall back to the root namespace.
 
 `CAP_SYS_ADMIN` is effectively the "new root".
 Restricted-profile PodSecurity admission will refuse this combination, so the namespace hosting the simulator must be labelled `pod-security.kubernetes.io/enforce: privileged`.

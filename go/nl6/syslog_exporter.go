@@ -413,7 +413,7 @@ func (e *SyslogExporter) fireWithCtx(entry *SyslogCatalogEntry, ctx SyslogTempla
 		// scenario ledger must stay exact).
 		if e.closing.Load() {
 			if p != nil {
-				p.ledger.dropped.Add(1)
+				p.ledger.countAbandonedWrite(1)
 			}
 			return nil
 		}

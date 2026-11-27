@@ -26,7 +26,7 @@ See [Network namespace](../ops/network-namespace.md) for the namespace details a
 | `-auto-netmask` | string | `16` | Netmask (prefix length) for auto-created devices. The fleet is a flat `/16` management plane. Only the `/16` network and broadcast are reserved, so `.x.0`/`.x.255` are ordinary device hosts. Accepts `8` / `16` / `24`; an explicit `24` keeps classic per-`/24` semantics (skips `.0`/`.255`). |
 | `-port` | string | `8080` | HTTP API server port. |
 | `-snmp-port` | int | `161` | UDP port for the SNMP listener on each device. Use `1161` to avoid requiring `CAP_NET_BIND_SERVICE`. |
-| `-no-namespace` | bool | `false` | Disable network namespace isolation (run in the root namespace). |
+| `-no-namespace` | bool | `false` | Disable network namespace isolation (run in the root namespace). Without it, the simulator exits at startup if the `nl6sim` namespace cannot be created. |
 | `-help` | n/a | n/a | Show the help message and exit. |
 | `-version` | n/a | n/a | Print the simulator version string to stdout and exit 0. Runs before any startup side effects (no TUN, no netns, no port binds) so it works from unprivileged shells and inside minimal containers. |
 

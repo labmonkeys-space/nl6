@@ -174,11 +174,7 @@ Watch the two workflows that run in sequence:
 The Release is created as a **draft** — review it, verify the artifacts, then
 publish:
 
-- [ ] The draft Release has the correct tag and attaches the binaries
-      (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`), `.deb`/`.rpm`,
-      `checksums.txt` + `checksums.txt.cosign.bundle`, `nl6.sbom.spdx.json`, and
-      `nl6.sbom.report.html` (open it — it is the readable view of the SPDX JSON
-      and needs no tooling).
+- [ ] The draft Release has the correct tag and attaches the binaries (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`), `.deb`/`.rpm`, `checksums.txt` + `checksums.txt.cosign.bundle` (also attached as `checksums.txt.sigstore.json`, the same file under the name Scorecard recognises), `nl6.sbom.spdx.json`, and `nl6.sbom.report.html` (open it: it is the readable view of the SPDX JSON and needs no tooling).
 - [ ] **Verify the signatures + provenance** (see the next section). Do this on
       the draft assets before publishing.
 - [ ] **Product-SBOM sanity** — `nl6.sbom.spdx.json` describes the shipped binary, not the repo.
@@ -190,11 +186,18 @@ publish:
       Every merged PR labelled `breaking-change` (`gh pr list --state merged --label breaking-change`) gets an entry under **Upgrade notes**; its body carries the text to lift.
 - [ ] `ghcr.io/labmonkeys-space/nl6:vX.Y.Z` and `:latest` both updated
       (check the "Packages" panel on the repo page).
-- [ ] **Publish** the draft:
+- [ ] **Publish** the draft.
+      With release immutability enabled in the repository settings, publishing locks the release: its assets can no longer be changed or deleted, and its tag can no longer be moved or deleted.
+      The title and notes stay editable.
+      A tag of a deleted immutable release cannot be reused, so a mistake found after publishing ships as the next patch release.
+      Check every asset on the draft first.
 
       ```sh
       gh release edit vX.Y.Z --draft=false --repo labmonkeys-space/nl6
+      gh release verify vX.Y.Z --repo labmonkeys-space/nl6  # immutable releases only
       ```
+
+      `gh release verify` checks the release attestation GitHub generates for an immutable release.
 
 - [ ] <https://labmonkeys-space.github.io/nl6/> hero eyebrow shows
       `vX.Y.Z · Apache-2.0 · Go <minor>`. If the site didn't refresh,
@@ -212,7 +215,8 @@ IDENTITY='^https://github.com/labmonkeys-space/nl6/.github/workflows/release.yml
 ISSUER='https://token.actions.githubusercontent.com'
 
 # 1. Checksums file (cosign sign-blob, new bundle format). Then check the
-#    artifacts against it.
+#    artifacts against it. checksums.txt.sigstore.json is the same bundle and
+#    verifies the same way.
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.cosign.bundle \
   --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER"

@@ -102,7 +102,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5  # v7.1.0
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
@@ -130,8 +130,16 @@ jobs:
         # self-contained .cosign.bundle (signature + cert + Rekor entry). The
         # legacy --output-signature/--output-certificate flags are ignored under
         # it, so emit the bundle. Verify with `cosign verify-blob --bundle`.
+        #
+        # The same bundle is also published as checksums.txt.sigstore.json, the
+        # name OpenSSF Scorecard's Signed-Releases check recognises: it matches
+        # asset names ending in .asc, .minisig, .sig, .sign, .sigstore or
+        # .sigstore.json, and .cosign.bundle is not one of them. The two files
+        # are byte-identical, so either verifies; the .cosign.bundle name stays
+        # for RELEASING.md and existing scripts.
         run: |
           cosign sign-blob --yes checksums.txt --bundle checksums.txt.cosign.bundle
+          cp checksums.txt.cosign.bundle checksums.txt.sigstore.json
 
       - name: Check SBOM coverage (reconcile subset)
         # The product SBOM below is derived from the nl6 binary alone. The six
@@ -234,6 +242,7 @@ jobs:
             dist/*.rpm
             dist/checksums.txt
             dist/checksums.txt.cosign.bundle
+            dist/checksums.txt.sigstore.json
             dist/nl6.sbom.spdx.json
             dist/nl6.sbom.report.html
 

@@ -364,7 +364,11 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		// to this handler (the running batch's requested count is not its rate),
 		// and a poller can read create_batch_in_progress from
 		// GET /api/v1/status instead of guessing.
-		if status == http.StatusConflict {
+		//
+		// Keyed on the batch error, not on the 409: a frozen fleet is also a 409
+		// but has no known end, and the missing header is how a client tells
+		// the two apart (nl6#1115).
+		if errors.Is(err, errCreateBatchInProgress) {
 			w.Header().Set("Retry-After", createConflictRetryAfterSeconds)
 		}
 		sendErrorResponse(w, msg, status)
@@ -576,7 +580,8 @@ func deleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := manager.DeleteDevice(deviceID)
 	if err != nil {
-		sendErrorResponse(w, err.Error(), http.StatusNotFound)
+		message, status := deleteDeviceErrorResponse(err)
+		sendErrorResponse(w, message, status)
 		return
 	}
 
@@ -586,7 +591,8 @@ func deleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 func deleteAllDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	err := manager.DeleteAllDevices()
 	if err != nil {
-		sendErrorResponse(w, err.Error(), http.StatusInternalServerError)
+		message, status := deleteDeviceErrorResponse(err)
+		sendErrorResponse(w, message, status)
 		return
 	}
 
@@ -849,6 +855,14 @@ func createDevicesErrorResponse(err error) (string, int) {
 	if errors.Is(err, errCreateBatchInProgress) {
 		return err.Error(), http.StatusConflict
 	}
+	// A frozen fleet is a state conflict too, the same 409 the single and the
+	// bulk delete answer (nl6#1104, nl6#1115). Unlike the batch it has no known
+	// end, so the handler sends no Retry-After for it: a client tells the two
+	// 409s apart by that header. The gate is judged before the freeze, so a
+	// batch in flight always wins and the caller gets the retryable answer.
+	if errors.Is(err, errFleetFrozen) {
+		return err.Error(), http.StatusConflict
+	}
 	// Every caller-data refusal the batch produces (resourceFileError,
 	// startIPError) carries a PublicMessage rendering that is safe for an HTTP
 	// body, so ONE interface arm maps them all to 400: a new caller-data error
@@ -864,4 +878,31 @@ func createDevicesErrorResponse(err error) (string, int) {
 		return perr.PublicMessage(), http.StatusBadRequest
 	}
 	return err.Error(), http.StatusInternalServerError
+}
+
+// deleteDeviceErrorResponse maps a DeleteDevice or DeleteAllDevices error to
+// the message and the status the single and the bulk delete answer with.
+// DeleteAllDevices never returns errDeviceNotFound, so delete-all answers 409
+// for a frozen fleet and 500 for anything else (nl6#1115).
+//
+// The default is 500, not 404: an error nobody classified is a server fault.
+// The handler used to answer 404 for every error, which told a client that an
+// existing device was missing when the fleet was frozen or the TUN teardown
+// failed. With 500 as the default, a new DeleteDevice error cannot repeat that.
+//
+// A frozen fleet is a state conflict the caller resolves by waiting for the
+// scenario or stopping it, so 409. It carries no Retry-After, because the
+// freeze has no known end.
+//
+// The message is returned verbatim, as the handler always did, so no response
+// body changed with the status.
+func deleteDeviceErrorResponse(err error) (string, int) {
+	switch {
+	case errors.Is(err, errFleetFrozen):
+		return err.Error(), http.StatusConflict
+	case errors.Is(err, errDeviceNotFound):
+		return err.Error(), http.StatusNotFound
+	default:
+		return err.Error(), http.StatusInternalServerError
+	}
 }

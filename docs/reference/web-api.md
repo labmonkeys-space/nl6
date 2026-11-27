@@ -415,7 +415,7 @@ Do not poll `is_creating_devices`: it can read `false` while a create would stil
 
 **The auto-start batch counts as a batch.** A REST create issued while the `-auto-start-ip` batch runs gets the `409` until that batch completes, even though `GET /api/v1/status` already answers `200`.
 
-- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). A client of your own should do the same.
+- `scripts/fleet.sh import` treats a `409` that carries `Retry-After` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). It fails at once on a `409` without `Retry-After`, which is a frozen fleet. A client of your own should do the same.
 - The web console's Clos-fabric wizard does **not** retry. A `409` from another batch aborts it and leaves a **half-built fabric**: the devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe, because existing addresses are absorbed as successes.
 
 **What the gate does not cover.** `DELETE /api/v1/devices`, shutdown, and the detached pre-allocation workers of a batch that timed out in pre-allocation (5-minute timeout) do not take the gate.
@@ -426,9 +426,12 @@ Everything else runs inside the gate, in this order: `start_ip`, then the batch 
 Those are logged as `create devices: rejected with <status>: ...`.
 So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 
-A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message.
-On a frozen fleet, `DELETE /api/v1/devices/{id}` answers `404` and `DELETE /api/v1/devices` answers `500`, both with the freeze message.
-On this endpoint `409` means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
+A create against a fleet frozen by a running load-test scenario is answered `409` with the freeze message.
+`DELETE /api/v1/devices/{id}` and `DELETE /api/v1/devices` answer the same `409` on a frozen fleet.
+On `POST /api/v1/devices` a `409` means a concurrent creation batch, a concurrent profile reload, or a frozen fleet; the body says which.
+Only the first two carry `Retry-After: 5`.
+A frozen fleet has no `Retry-After`, because the freeze lasts until the scenario finishes or is stopped.
+A client tells a retryable `409` from a frozen fleet by that header.
 
 ### `resource_file` failures
 
@@ -744,6 +747,21 @@ curl -X DELETE http://localhost:8080/api/v1/devices/{device-id}
 # All devices
 curl -X DELETE http://localhost:8080/api/v1/devices
 ```
+
+The single-device delete answers with one of these statuses.
+Every error body is `{"success": false, "message": "..."}`.
+
+| Status | When |
+|--------|------|
+| `200` | The device is deleted. |
+| `404` | No device has that ID. |
+| `409` | A running load-test scenario has frozen the fleet. The freeze check runs before the device lookup, so an unknown ID also answers `409` on a frozen fleet. The message names the scenario. There is no `Retry-After` header, because the freeze lasts until the scenario finishes or is stopped. |
+| `500` | The device's TUN interface could not be removed. The device is deleted from the simulator anyway, so a retry answers `404`. The message names the interface, which may remain in the kernel and need removing by hand. |
+
+`DELETE /api/v1/devices` answers `200` when every device is deleted.
+It answers `409` on a frozen fleet, with the same message and no `Retry-After`, and deletes nothing.
+It answers `500` when a device's teardown fails.
+The devices are removed from the simulator anyway, and the message names what failed.
 
 ## Version
 

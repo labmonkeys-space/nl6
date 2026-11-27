@@ -12,9 +12,9 @@ import (
 
 // Freeze-fleet mechanism (scenario PR0, FR35/FR38): while a scenario has
 // frozen the fleet, device create/delete must be rejected with an error
-// naming the freezing scenario so the REST layer can map it to 409. The
-// flag is inert in this story — only the (future) scenario controller and
-// these tests set it.
+// naming the freezing scenario. Device create, the single delete and
+// delete-all all map it to 409. The flag is inert in this
+// story — only the (future) scenario controller and these tests set it.
 
 func newFreezeTestManager() *SimulatorManager {
 	return &SimulatorManager{

@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -40,6 +41,8 @@ var deleteDeviceTunInterfaces = func(sm *SimulatorManager, interfaceNames []stri
 var deleteDeviceTunInterfacesInNamespace = func(sm *SimulatorManager, interfaceNames []string) error {
 	return sm.bulkDeleteTunInterfacesInNamespace(interfaceNames)
 }
+
+var createNetNamespace = CreateNetNamespace
 
 // ManagerOption configures a SimulatorManager during construction.
 //
@@ -94,8 +97,12 @@ func WithFlowTickSync(sync bool) ManagerOption {
 	return func(sm *SimulatorManager) { sm.flowTickSync = sync }
 }
 
-// NewSimulatorManagerWithOptions creates a manager with configurable namespace isolation
-func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *SimulatorManager {
+// NewSimulatorManagerWithOptions creates a manager with configurable namespace
+// isolation. A requested namespace that cannot be created is an error: there is
+// no fallback to the root namespace, because exports for the veth address would
+// leave by the default route and be lost while counting as sent. Running in the
+// root namespace is only ever chosen with -no-namespace.
+func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) (*SimulatorManager, error) {
 	// Go 1.20+ auto-seeds the math/rand package, so an explicit Seed call
 	// would be a no-op (and is deprecated).
 
@@ -119,15 +126,12 @@ func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *S
 
 	// Initialize network namespace for device isolation
 	if useNamespace {
-		ns, err := CreateNetNamespace()
+		ns, err := createNetNamespace()
 		if err != nil {
-			log.Printf("WARNING: Failed to create network namespace: %v", err)
-			log.Printf("Falling back to root namespace (systemd-networkd may consume resources)")
-			sm.useNamespace = false
-		} else {
-			sm.netNamespace = ns
-			log.Printf("Network namespace '%s' active - devices isolated from systemd-networkd", NETNS_NAME)
+			return nil, fmt.Errorf("create network namespace %q: %w", NETNS_NAME, err)
 		}
+		sm.netNamespace = ns
+		log.Printf("Network namespace '%s' active - devices isolated from systemd-networkd", NETNS_NAME)
 	}
 
 	// Pre-generate shared SSH host key for all devices
@@ -157,7 +161,7 @@ func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *S
 	// later. Phase 3 of per-device-export-config.
 	sm.initFlowSubsystem()
 
-	return sm
+	return sm, nil
 }
 
 // getNextTunName returns the next on-demand TUN interface name and advances the
@@ -423,9 +427,20 @@ func (sm *SimulatorManager) unfreezeFleet(scenarioID string) {
 	delete(sm.fleetFrozenBy, scenarioID)
 }
 
+// errFleetFrozen and errDeviceNotFound are the sentinels a refused membership
+// change is classified by. Same shape as errCreateBatchInProgress: wrapped
+// with %w so the message carries the scenario IDs or the device ID, and
+// tested with errors.Is at the REST boundary. Their text is the fixed part of
+// the message a client already reads, so wrapping them changed no body.
+var (
+	errFleetFrozen    = errors.New("fleet membership is frozen")
+	errDeviceNotFound = errors.New("not found")
+)
+
 // fleetFreezeCheck returns an error naming the freezing scenarios when the
-// fleet is frozen, nil otherwise. The error text carries the scenario IDs so
-// the REST layer can map the rejection to 409 with actionable context.
+// fleet is frozen, nil otherwise. The error wraps errFleetFrozen. The
+// REST layer maps it to 409 on device create, the single delete and
+// delete-all (nl6#1104, nl6#1115).
 func (sm *SimulatorManager) fleetFreezeCheck() error {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
@@ -447,8 +462,8 @@ func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
 	// compareScenarioID exists to close for the scenario listing. This is the
 	// other place multiple scenario IDs are rendered for an operator.
 	slices.SortFunc(holders, compareScenarioID)
-	return fmt.Errorf("fleet membership is frozen by running scenario(s) %s: device create/delete is rejected until they finish",
-		strings.Join(holders, ", "))
+	return fmt.Errorf("%w by running scenario(s) %s: device create/delete is rejected until they finish",
+		errFleetFrozen, strings.Join(holders, ", "))
 }
 
 func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
@@ -484,7 +499,7 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 
 	device, exists := sm.devices[deviceID]
 	if !exists {
-		return fmt.Errorf("device %s not found", deviceID)
+		return fmt.Errorf("device %s %w", deviceID, errDeviceNotFound)
 	}
 
 	// Capture TUN interface identity BEFORE Stop runs. device.Stop()

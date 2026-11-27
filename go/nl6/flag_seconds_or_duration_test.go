@@ -179,7 +179,10 @@ func TestFlowDurationFlags_FeedTheRealConsumers(t *testing.T) {
 		"-flow-inactive-timeout", "15", "-flow-template-interval", "60"}); err != nil {
 		t.Fatal(err)
 	}
-	sm := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(f.Tick.Duration()))
+	sm, err := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(f.Tick.Duration()))
+	if err != nil {
+		t.Fatal(err)
+	}
 	sm.SetFlowTemplateInterval(f.Template.Duration())
 	if sm.flowTickInterval != 5*time.Second || sm.flowTemplateInterval != 60*time.Second {
 		t.Errorf("manager got tick=%s template=%s", sm.flowTickInterval, sm.flowTemplateInterval)

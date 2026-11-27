@@ -11,8 +11,7 @@ Work starts from a GitHub issue, not a drive-by PR. Before you write code:
 
 - Search [existing issues](https://github.com/labmonkeys-space/nl6/issues) for
   the bug or feature.
-- If none exists, open one (bug report or enhancement) so the change can be
-  discussed and scoped.
+- If none exists, open one (bug report or feature request) so the change can be discussed and scoped.
 - Reference the issue from your PR with a closing keyword (`Closes #123`).
 
 For security problems, **do not** open a public issue — see
@@ -87,6 +86,10 @@ Signed-off-by: Your Name <you@example.com>
 ## Open a pull request
 
 - Keep PRs focused — one logical change, separately reviewable.
+- Add tests with the change.
+  New functionality and bug fixes in the Go code come with Go tests in the same PR (`cd go && go test ./...`), and a fix should include a test that fails without it.
+  Other changes (scripts, packaging, the docs site, dependency bumps) come with the check that fits them where one exists, such as a `*.test.mjs` or the Ansible role's `check-role.sh`.
+  Once the package has more than 25 tests above `minimumTestFunctions`, `go/nl6/test_inventory_test.go` fails and names the value to raise it to.
 - Fill in the [PR template](.github/pull_request_template.md); include the
   `Closes #<issue>` line.
 - CI must be green: build, tests, and code quality all run as required checks,
