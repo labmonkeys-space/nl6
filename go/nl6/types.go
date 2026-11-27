@@ -289,8 +289,9 @@ type SNMPServer struct {
 	// ended on a non-advancing successor (see logFirstBulkAbort).
 	firstBulkAbort sync.Once
 
-	// firstNonAdvance gates the log line for a GETNEXT successor that does
-	// not advance past the OID it was asked about (see logFirstNonAdvance).
+	// firstNonAdvance gates the log line for a walk successor, on a GETNEXT
+	// or a GETBULK, that does not advance past the OID it was asked about
+	// (see logFirstNonAdvance).
 	firstNonAdvance sync.Once
 
 	// firstMalformedV3List gates the log line for a discarded SNMPv3 GETBULK

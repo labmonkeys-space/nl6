@@ -582,9 +582,18 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 //	                       EXACTLY the symptom nl6#526 set out to remove,
 //	                       arriving by a different route. Since nl6#1090
 //	                       findNextOIDWithServed answers such a successor as
-//	                       end of MIB on every path, so this check is no
-//	                       longer reached, and no test reaches it either. It
-//	                       stays as a second bound.
+//	                       end of MIB on every path, so this check is a
+//	                       second bound. It still decides one case. It
+//	                       compares with compareOIDsLexicographically, which
+//	                       reads a signed arc such as "+5" as 5, where
+//	                       compareOIDs in findNextOIDWithServed reads it as
+//	                       0. A key ".2.+5" beside ".2.5" loads, passes that
+//	                       check and ends the column here
+//	                       (TestV3BulkStepEndsAColumnOnASignedArc). Both keys
+//	                       encode as ".2.5", so without this check one
+//	                       response would carry that OID twice. Remove it
+//	                       when resource keys with a non-numeric arc are
+//	                       refused at load (nl6#1131).
 //
 // The v2c reference tests only the first two; the non-advance guard is a v3
 // property (nl6#526) and is kept per column rather than dropped for symmetry.

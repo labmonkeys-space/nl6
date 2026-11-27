@@ -423,15 +423,15 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 // accident (nl6#542 review R13).
 //
 // The loop is bounded twice over. It relies on findNextOIDWithServed returning
-// a strictly greater OID or "", an invariant driven by operator-supplied
-// resource files via oidNextMap, and this loop runs INLINE in the shared UDP
-// handler with no recover() on the path: a non-advancing entry would wedge
-// every device, where before nl6#524 it was only the manager's problem. So a
-// non-advance ends the walk, and the request's shared skip budget backs that
-// up. Either exit is a data defect, so it is logged once per device (the
+// a strictly greater OID or "", and this loop runs INLINE in the shared UDP
+// handler with no recover() on the path: a non-advancing entry from an
+// operator-supplied resource file would wedge every device, where before
+// nl6#524 it was only the manager's problem. findNextOIDWithServed checks that
+// itself since nl6#1090, ends the walk and logs it once per device, so the loop
+// carries no check of its own. The request's shared skip budget backs that up.
+// A budget exit is a data defect too, so it is logged once per device (the
 // manager only sees a walk that ends early, indistinguishable from a short
-// table) and answered as end-of-MIB. compareOIDs is the comparator the walk
-// itself orders by.
+// table) and answered as end-of-MIB.
 //
 // `budget` spans the WHOLE REQUEST, not this binding. See counter64SkipBudget:
 // a per-binding cap multiplies by the binding count, which is the amplification
@@ -466,13 +466,7 @@ func (s *SNMPServer) getNextBinding(requested string, served []kvOID, p, version
 				responseOID = ""
 				break
 			}
-			prev := responseOID
 			responseOID, response = s.findNextOIDWithServed(responseOID, served, p)
-			if responseOID != "" && compareOIDs(responseOID, prev) <= 0 {
-				s.logFirstSkipAbort("successor "+responseOID+" does not advance", prev)
-				responseOID = ""
-				break
-			}
 		}
 	}
 
@@ -489,7 +483,7 @@ func (s *SNMPServer) getNextBinding(requested string, served []kvOID, p, version
 }
 
 // logFirstSkipAbort emits at most one log line per device when the SNMPv1
-// Counter64 skip loop ends on one of its safety bounds rather than on a
+// Counter64 skip loop ends on its skip budget rather than on a
 // non-Counter64 successor. Same gate as logFirstEncodeErr on the trap path:
 // the condition is a resource-file defect present from load, so ungated it
 // would repeat on every v1 walk of every device sharing the profile.

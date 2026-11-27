@@ -354,10 +354,6 @@ func TestShippedWalksNeverHitTheNonAdvanceCheck(t *testing.T) {
 				if next == "" {
 					return
 				}
-				if compareOIDs(next, cur) <= 0 {
-					t.Errorf("%s: GETNEXT(%s) = %s does not advance", p, cur, next)
-					return
-				}
 				cur = next
 			}
 			t.Errorf("%s: the walk did not end within %d steps", p, steps)
@@ -368,5 +364,59 @@ func TestShippedWalksNeverHitTheNonAdvanceCheck(t *testing.T) {
 		if steps < len(s.device.resources.sortedOIDs) {
 			t.Errorf("%s: the walk ended after %d steps, fewer than the %d static OIDs", p, steps, len(s.device.resources.sortedOIDs))
 		}
+	}
+}
+
+// TestV3BulkStepEndsAColumnOnASignedArc pins the one case bulkStep's own
+// non-advance check still decides. A resource key with a signed arc loads,
+// because normaliseResourceOID leaves a key that is not all digits alone. The
+// walk index sorts with compareOIDsLexicographically, which reads "+5" as 5.
+// findNextOIDWithServed checks with compareOIDs, which reads it as 0. So the
+// step from the signed key to its plain twin passes the check there, although
+// both keys encode as the same OID. bulkStep ends the column instead. Without
+// its check a v3 GETBULK answers that OID twice in one response, which is the
+// nl6#526 symptom.
+//
+// The keys sit in hrSWRunName, where the device serves no object of its own.
+// Under sysName the signed key would hide sysName.0 from a walk as well.
+//
+// When resource keys with a non-numeric arc are refused at load (nl6#1131),
+// this test fails at LoadSpecificResources. Remove it together with bulkStep's
+// check.
+func TestV3BulkStepEndsAColumnOnASignedArc(t *testing.T) {
+	const (
+		slug   = "zzsignedarc"
+		signed = ".1.3.6.1.2.1.25.4.2.1.2.+5"
+		plain  = ".1.3.6.1.2.1.25.4.2.1.2.5"
+	)
+	t.Chdir(t.TempDir())
+	dir := filepath.Join("resources", slug)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rows := fmt.Sprintf(`{"snmp":[{"oid":%q,"response":"descr"},{"oid":%q,"response":"signed"},{"oid":%q,"response":"plain"}]}`,
+		dupSysDescr, signed, plain)
+	if err := os.WriteFile(filepath.Join(dir, slug+"_snmp_000.json"), []byte(rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources(slug + ".json")
+	if err != nil {
+		t.Fatalf("LoadSpecificResources: %v", err)
+	}
+	s := dupServer(res)
+	served, p := s.lldpServedOIDs(), s.metricsPoint()
+
+	if next, _ := s.findNextOIDWithServed(signed, served, p); next != plain {
+		t.Fatalf("findNextOIDWithServed(%s) = %q, want %s: the step must pass the check there for bulkStep's to decide",
+			signed, next, plain)
+	}
+	var advanced bool
+	logged := captureLog(t, func() { _, _, advanced = s.bulkStep(signed, served, p) })
+	if advanced {
+		t.Errorf("bulkStep(%s) advanced to %s, which encodes as the same OID", signed, plain)
+	}
+	if !strings.Contains(logged, "v3 GETBULK successor") {
+		t.Errorf("bulkStep ended the column without its log line:\n%s", logged)
 	}
 }

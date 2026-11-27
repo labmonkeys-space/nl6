@@ -125,6 +125,11 @@ func (s *SNMPServer) findResponseAt(oid string, p int) string {
 // would wrap in the accumulator below (the old strconv.Atoi clamped to MaxInt),
 // but such an OID is malformed and never produced by a real agent or walk; the
 // only consequence would be cosmetic mis-ordering, never a panic.
+//
+// A segment with a leading sign is a second exception. strconv.Atoi read "+5"
+// as 5 and this function reads it as 0. The fuzz inputs carry no signed
+// segment. A resource key can carry one, and the walk index sorts it by the
+// Atoi reading (nl6#1131).
 func compareOIDs(oid1, oid2 string) int {
 	c1 := newOIDCursor(oid1)
 	c2 := newOIDCursor(oid2)
