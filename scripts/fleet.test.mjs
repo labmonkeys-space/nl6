@@ -137,10 +137,17 @@ const ok = (res) => res.end('{"success":true}');
 
 // A 409 without Retry-After is a fleet frozen by a running scenario (nl6#1115).
 // It lasts as long as the scenario, so import fails on the first attempt even
-// with retries left.
+// with retries left. The refusal carries a header whose name only ends in
+// Retry-After, as a proxy may add one. A match that is not anchored to the
+// start of the line takes it for the real header and retries.
 {
   const frozen = '{"success":false,"message":"fleet membership is frozen by running scenario(s) s-000001: device create/delete is rejected until they finish"}';
-  const { code, output, posted } = await runImport((res) => { res.statusCode = 409; res.end(frozen); }, 5);
+  const refuse = (res) => {
+    res.statusCode = 409;
+    res.setHeader('X-Upstream-Retry-After', '5');
+    res.end(frozen);
+  };
+  const { code, output, posted } = await runImport(refuse, 5);
   assert.notEqual(code, 0, `a frozen fleet must fail the import:\n${output}`);
   assert.equal(posted.length, 1, `a frozen fleet must not be retried:\n${output}`);
   assert.match(output, /s-000001/, 'the failure names the freezing scenario');
