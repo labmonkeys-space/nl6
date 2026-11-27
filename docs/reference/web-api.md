@@ -427,8 +427,9 @@ Those are logged as `create devices: rejected with <status>: ...`.
 So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 
 A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message.
-On a frozen fleet, `DELETE /api/v1/devices/{id}` answers `404` and `DELETE /api/v1/devices` answers `500`, both with the freeze message.
-On this endpoint `409` means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
+On a frozen fleet, `DELETE /api/v1/devices/{id}` answers `409` with the freeze message.
+`DELETE /api/v1/devices` answers `500` with it.
+On `POST /api/v1/devices` `409` means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
 
 ### `resource_file` failures
 
@@ -744,6 +745,16 @@ curl -X DELETE http://localhost:8080/api/v1/devices/{device-id}
 # All devices
 curl -X DELETE http://localhost:8080/api/v1/devices
 ```
+
+The single-device delete answers with one of these statuses.
+Every error body is `{"success": false, "message": "..."}`.
+
+| Status | When |
+|--------|------|
+| `200` | The device is deleted. |
+| `404` | No device has that ID. |
+| `409` | A running load-test scenario has frozen the fleet. The freeze check runs before the device lookup, so an unknown ID also answers `409` on a frozen fleet. The message names the scenario. There is no `Retry-After` header, because the freeze lasts until the scenario finishes or is stopped. |
+| `500` | The device's TUN interface could not be removed. The device is deleted from the simulator anyway, so a retry answers `404`. The message names the interface, which may remain in the kernel and need removing by hand. |
 
 ## Version
 

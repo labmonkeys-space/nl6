@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -426,9 +427,20 @@ func (sm *SimulatorManager) unfreezeFleet(scenarioID string) {
 	delete(sm.fleetFrozenBy, scenarioID)
 }
 
+// errFleetFrozen and errDeviceNotFound are the sentinels a refused membership
+// change is classified by. Same shape as errCreateBatchInProgress: wrapped
+// with %w so the message carries the scenario IDs or the device ID, and
+// tested with errors.Is at the REST boundary. Their text is the fixed part of
+// the message a client already reads, so wrapping them changed no body.
+var (
+	errFleetFrozen    = errors.New("fleet membership is frozen")
+	errDeviceNotFound = errors.New("not found")
+)
+
 // fleetFreezeCheck returns an error naming the freezing scenarios when the
-// fleet is frozen, nil otherwise. The error text carries the scenario IDs so
-// the REST layer can map the rejection to 409 with actionable context.
+// fleet is frozen, nil otherwise. The error wraps errFleetFrozen. The
+// single-device delete maps it to 409; device create and delete-all do not
+// look for it and answer 500.
 func (sm *SimulatorManager) fleetFreezeCheck() error {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
@@ -450,8 +462,8 @@ func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
 	// compareScenarioID exists to close for the scenario listing. This is the
 	// other place multiple scenario IDs are rendered for an operator.
 	slices.SortFunc(holders, compareScenarioID)
-	return fmt.Errorf("fleet membership is frozen by running scenario(s) %s: device create/delete is rejected until they finish",
-		strings.Join(holders, ", "))
+	return fmt.Errorf("%w by running scenario(s) %s: device create/delete is rejected until they finish",
+		errFleetFrozen, strings.Join(holders, ", "))
 }
 
 func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
@@ -487,7 +499,7 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 
 	device, exists := sm.devices[deviceID]
 	if !exists {
-		return fmt.Errorf("device %s not found", deviceID)
+		return fmt.Errorf("device %s %w", deviceID, errDeviceNotFound)
 	}
 
 	// Capture TUN interface identity BEFORE Stop runs. device.Stop()
