@@ -377,13 +377,17 @@ func TestShippedWalksNeverHitTheNonAdvanceCheck(t *testing.T) {
 // its check a v3 GETBULK answers that OID twice in one response, which is the
 // nl6#526 symptom.
 //
-// When resource keys with a non-numeric arc are refused at load, this test
-// fails at LoadSpecificResources. Remove it together with bulkStep's check.
+// The keys sit in hrSWRunName, where the device serves no object of its own.
+// Under sysName the signed key would hide sysName.0 from a walk as well.
+//
+// When resource keys with a non-numeric arc are refused at load (nl6#1131),
+// this test fails at LoadSpecificResources. Remove it together with bulkStep's
+// check.
 func TestV3BulkStepEndsAColumnOnASignedArc(t *testing.T) {
 	const (
 		slug   = "zzsignedarc"
-		signed = ".1.3.6.1.2.1.1.5.+5"
-		plain  = ".1.3.6.1.2.1.1.5.5"
+		signed = ".1.3.6.1.2.1.25.4.2.1.2.+5"
+		plain  = ".1.3.6.1.2.1.25.4.2.1.2.5"
 	)
 	t.Chdir(t.TempDir())
 	dir := filepath.Join("resources", slug)

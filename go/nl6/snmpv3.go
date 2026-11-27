@@ -587,13 +587,13 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 //	                       compares with compareOIDsLexicographically, which
 //	                       reads a signed arc such as "+5" as 5, where
 //	                       compareOIDs in findNextOIDWithServed reads it as
-//	                       0. A key ".5.+5" beside ".5.5" loads, passes that
+//	                       0. A key ".2.+5" beside ".2.5" loads, passes that
 //	                       check and ends the column here
 //	                       (TestV3BulkStepEndsAColumnOnASignedArc). Both keys
-//	                       encode as ".5.5", so without this check one
+//	                       encode as ".2.5", so without this check one
 //	                       response would carry that OID twice. Remove it
 //	                       when resource keys with a non-numeric arc are
-//	                       refused at load.
+//	                       refused at load (nl6#1131).
 //
 // The v2c reference tests only the first two; the non-advance guard is a v3
 // property (nl6#526) and is kept per column rather than dropped for symmetry.
