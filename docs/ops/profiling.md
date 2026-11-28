@@ -199,11 +199,14 @@ The default is `true` because one forced GC, extrapolated to 30,000 devices, sta
 
 | N devices | live heap | ms per `runtime.GC()` (3 runs of `-benchtime=5x`) |
 |-----------|-----------|----------------------------------------------------|
-| 1000 | 16.7 MiB | 1.0, 1.0, 1.5 |
-| 5000 | 78.5 MiB | 4.3, 4.8, 5.8 |
+| 1000 | 20.2 MiB | 1.19, 1.21, 1.25 |
+| 5000 | 92.7 MiB | 4.74, 4.79, 4.92 |
 
-Linear from the N=5000 median (4.8 ms): **~29 ms at 30,000 devices**.
+Linear from the N=5000 median (4.79 ms): **~29 ms at 30,000 devices**.
+Measured at `f4fbfec` on an Apple M1 with Go 1.27.4, each N in its own process, with the default `asr9k` profile.
+The first measurement, at `fcb7706`, read 16.7 and 78.5 MiB: the heap of the same fleet has grown since.
 The devices in this measurement have no sockets, TUN interfaces or namespace, so a real fleet's heap is larger and its GC slower.
+Other profiles carry other engines, so the heap per device differs: built the same way, it ranges from about 3 KiB (`aws_s3_storage`) to about 54 KiB (the three NVIDIA GPU servers), and 16 of the 31 profiles stay under 16 KiB.
 Check it on your fleet: time one forced GC on a host running 30,000 real devices.
 If it crosses 150 ms (1% of the 15 s window), flip the default and its constant, or run with `-profiling-force-gc=false`.
 

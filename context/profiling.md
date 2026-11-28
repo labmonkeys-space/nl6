@@ -14,6 +14,8 @@ The rule: if one `runtime.GC()` on a heap built from N=5000 TUN-less devices, ex
 Linear from the N=5000 median (4.8 ms) that is about 29 ms at 30,000 devices, and about 35 ms from the worst run.
 Machine: Apple M1 Max, darwin/arm64, Go 1.27.0, `asr9k` profile.
 That is under the 150 ms line by a factor of five, so the default is `true` (the SDK default), and `simulator.go`'s flag default reads from the same constant.
+Re-measured on 2026-11-27 at `f4fbfec` (Apple M1, Go 1.27.4): 1.19, 1.21 and 1.25 ms at N=1000 (20.2 MiB) and 4.74, 4.79 and 4.92 ms at N=5000 (92.7 MiB), about 29 ms at 30,000 from the median, so the default stands.
+Run each N in its own process (`-bench 'BenchmarkForcedGCOnFleetHeap/devices=5000$'`). Every call of a sub-benchmark, Go's `b.N=1` probe included, loads the profile again, and `stackCache` (`interface_hierarchy.go`) keeps each loaded copy alive, about 0.5 MiB for `asr9k`. The figures above include the probe's copy, and a `-count=3` run grows by about 1.06 MiB per repeat. `fcb7706` predates `stackCache` (#854).
 The benchmark is an in-process proxy.
 Its devices carry their value engines and resource pointers but no sockets, TUN interfaces or namespace, so a real 30,000-device fleet's heap is larger and its GC slower.
 The fleet-scale measurement is still open.
