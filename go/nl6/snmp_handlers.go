@@ -44,6 +44,11 @@ func (s *SNMPServer) findResponseAt(oid string, p int) string {
 			return val
 		}
 	}
+	if oid == hrSystemUptimeOID {
+		if val, ok := s.device.liveHrSystemUptime(); ok {
+			return val
+		}
+	}
 
 	// Handle dynamic sysLocation OID - lock-free access
 	if oid == sysLocationOID {
@@ -297,6 +302,7 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 		systemClear := !stepsOverLiveSystemOID(currentOID, s.device.resources.systemGapPreds)
 		if metricsClear && ifCyclerClear && lldpClear && systemClear {
 			val := s.overrideIfHC(ifCycler, precomputedNextOID, precomputedNextResp)
+			val = s.overrideHrSystemUptime(precomputedNextOID, val)
 			return precomputedNextOID, s.overrideLLDP(precomputedNextOID, val)
 		}
 	}
@@ -469,6 +475,7 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 	if upLive && nextOID == sysUpTimeOID {
 		response, _ = s.device.liveSysUpTime()
 	}
+	response = s.overrideHrSystemUptime(nextOID, response)
 
 	// overrideLLDP after overrideIfHC so the dynamic LLDP/ifAlias value wins
 	// even when the chosen candidate originated from the static oidIndex
@@ -1132,6 +1139,20 @@ func (s *SNMPServer) overrideIfHC(ic *IfCounterCycler, oid, staticResp string) s
 		return dynVal
 	}
 	return staticResp
+}
+
+// overrideHrSystemUptime serves the live hrSystemUptime.0 on a walk. Its row
+// stays in the static index as the marker, so a walk reaches it on either
+// route as the static successor, and the live value replaces the row's
+// (nl6#1087).
+func (s *SNMPServer) overrideHrSystemUptime(oid, resp string) string {
+	if oid != hrSystemUptimeOID {
+		return resp
+	}
+	if val, ok := s.device.liveHrSystemUptime(); ok {
+		return val
+	}
+	return resp
 }
 
 // getMetricValue returns the cycling metric value for a dynamic OID at point p,

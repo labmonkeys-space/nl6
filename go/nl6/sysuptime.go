@@ -25,6 +25,9 @@ const (
 	sysLocationOID = ".1.3.6.1.2.1.1.6.0"
 )
 
+// hrSystemUptimeOID is hrSystemUptime.0 (HOST-RESOURCES-MIB).
+const hrSystemUptimeOID = ".1.3.6.1.2.1.25.1.1.0"
+
 // liveSystemOIDs is the three in walk order.
 var liveSystemOIDs = [...]string{sysUpTimeOID, sysNameOID, sysLocationOID}
 
@@ -75,6 +78,22 @@ func (d *DeviceSimulator) liveSysUpTime() (string, bool) {
 		now = d.now
 	}
 	return strconv.FormatUint(uint64(uptimeTicks(d.bootTime, now())), 10), true
+}
+
+// liveHrSystemUptime is the hrSystemUptime.0 value served now: the reading
+// sysUpTime.0 serves, with no offset, on a device that has a boot instant and
+// whose profile carries the row (nl6#1087). The row only marks that the
+// profile serves the object, and its value is never served on such a device.
+// Without the row the object is not served, and without a boot instant the row
+// answers like any static OID.
+func (d *DeviceSimulator) liveHrSystemUptime() (string, bool) {
+	if d == nil || d.resources == nil || d.resources.oidIndex == nil {
+		return "", false
+	}
+	if _, ok := d.resources.oidIndex.Load(hrSystemUptimeOID); !ok {
+		return "", false
+	}
+	return d.liveSysUpTime()
 }
 
 // systemGapPredecessors returns the static OIDs whose successor in sorted

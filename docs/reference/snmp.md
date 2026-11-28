@@ -632,6 +632,11 @@ A `1.3.6.1.2.1.1.3.0` row in an operator's own profile is never served; the ship
 **A walk reaches all three.** They are not in the resource map, so a GETNEXT or GETBULK takes them as candidates beside the static rows.
 Earlier releases skipped `sysName.0` and `sysLocation.0` on a walk of the system group, although a GET answered them.
 
+**`hrSystemUptime.0` counts from the same instant.**
+On a profile that carries a `1.3.6.1.2.1.25.1.1.0` row, which the three NVIDIA profiles do, `hrSystemUptime.0` serves the value `sysUpTime.0` serves at the same instant, with no offset, and wraps with it.
+The row only marks that the profile serves the object, and its value is never served.
+A profile without the row does not serve `hrSystemUptime.0`.
+
 **A host clock jump does not shift `ifLastChange` against `sysUpTime.0`.** Both are measured on the monotonic clock, from the same boot instant.
 A jump is an NTP step, a host suspend, or a VM pause or snapshot.
 The gNMI, NETCONF and YANG-Push `last-change` leaves are the boot instant's wall-clock reading plus that monotonic time since boot.
@@ -640,7 +645,7 @@ After a jump of J they are therefore off by J against the notification's own tim
 **What does not move yet.** `snmpEngineBoots` stays 1, and a device cannot be restarted.
 The engine time of an SNMPv3 trap counts from the moment the device's trap exporter was attached, which is its creation, not from the boot instant itself.
 Deleting and re-creating a device makes a new device, with a new boot instant, a new `sysName` and no topology links.
-`hrSystemUptime.0` on the NVIDIA profiles goes out as `TimeTicks`, but its value is still static, and so is the SSH `show version` uptime.
+The SSH `show version` uptime is still static.
 
 ## Dynamic CPU / memory / temperature metrics
 
