@@ -16,10 +16,11 @@ import (
 // TestHrStorageSizeAndUsedFitTheirUnits pins nl6#1056's units change on every
 // shipped profile whose metric map serves hrStorageSize.1 or hrStorageUsed.1:
 // at every point of the curve both fit Integer32 (0..2147483647), used never
-// exceeds size, and size is the profile's memory expressed in the profile's own
-// hrStorageAllocationUnits.1. Before the change the engine served KB whatever
-// the row said, so nvidia_dgx_h100 and nvidia_hgx_h200 answered a GET of
-// hrStorageSize.1 with 2147483648, one over Integer32, in units of 1 MiB: 2 PiB.
+// exceeds size, and size and used are the profile's memory expressed in the
+// profile's own hrStorageAllocationUnits.1. Before the change the engine served
+// KB whatever the row said, so nvidia_dgx_h100 and nvidia_hgx_h200 answered a
+// GET of hrStorageSize.1 with 2147483648, one over Integer32, in units of
+// 1 MiB: 2 PiB.
 func TestHrStorageSizeAndUsedFitTheirUnits(t *testing.T) {
 	boot := time.Now().Add(-time.Hour)
 	wantSize := map[string]int64{
@@ -58,6 +59,11 @@ func TestHrStorageSizeAndUsedFitTheirUnits(t *testing.T) {
 			}
 			if us > sz {
 				t.Fatalf("%s point %d: hrStorageUsed.1 = %d exceeds hrStorageSize.1 = %d", profile, p, us, sz)
+			}
+			// The exact value: MemTotalKB is a multiple of the units on every
+			// profile here, so only used shows a conversion that divides first.
+			if kb := s.device.metricsCycler.memUsed[p]; us != kb*1024/units {
+				t.Fatalf("%s point %d: hrStorageUsed.1 = %d, want %d KB in units of %d = %d", profile, p, us, kb, units, kb*1024/units)
 			}
 		}
 	}
