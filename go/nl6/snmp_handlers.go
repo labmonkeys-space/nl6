@@ -1163,6 +1163,9 @@ func (s *SNMPServer) getMetricValue(oid string, p int) string {
 		return kbInStorageUnits(s.device.metricsCycler.memTotal, s.device.hrStorageUnits)
 	case MetricHrStorageUsed:
 		return kbInStorageUnits(s.device.metricsCycler.memUsed[p], s.device.hrStorageUnits)
+	// hrMemorySize.0 is KBytes, Integer32 (nl6#1088).
+	case MetricHrMemorySize:
+		return kbytesClamped(s.device.metricsCycler.memTotal)
 	// GPU metric types (NVIDIA DCGM)
 	case MetricGPUUtil:
 		return s.device.metricsCycler.GetGPUUtil(parseGPUIndexFromOID(oid), p)

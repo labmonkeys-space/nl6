@@ -446,7 +446,12 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // temperatures), pre-change value shippedOIDEncodingDigestBeforeMetricShadow.
 // Reversed by TestMetricShadowRePinIsOnlyTheDeletion in
 // snmp_shipped_metric_shadow_ledger_test.go.
-const shippedOIDEncodingDigest = "d2f55d095d58498e9e7356846c92e6adc41d4ee6e96c8d3537c9e170f2e42799"
+// Re-pinned by nl6#1088: deleting the three static hrMemorySize.0 rows took
+// the name out of the corpus entirely, pre-change value
+// shippedOIDEncodingDigestBeforeHrMemorySize. Reversed by
+// TestHrMemorySizeRePinIsOnlyTheDeletion in
+// snmp_shipped_hrmemorysize_ledger_test.go.
+const shippedOIDEncodingDigest = "fa94dfb5a3d9c69baf45deffa7bba6d2a100e332a1bebfc51bf42eada0fdda88"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

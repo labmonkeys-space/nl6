@@ -224,7 +224,11 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // deleted, pre-change value shippedTagDigestBeforeMetricShadow. Reversed by
 // TestMetricShadowDeletionReproducesTheParentCorpus in
 // snmp_shipped_metric_shadow_ledger_test.go.
-const shippedTagDigest = "a91aaf3a4449c844a9d37c39e715e658f9aafef9b9f2486e93c54fabe4bba1c2"
+// Re-pinned by nl6#1088: the three static hrMemorySize.0 rows are deleted,
+// pre-change value shippedTagDigestBeforeHrMemorySize. Reversed by
+// TestHrMemorySizeDeletionReproducesTheParentCorpus in
+// snmp_shipped_hrmemorysize_ledger_test.go.
+const shippedTagDigest = "204b4de53379dd6c4b403d166497e64f2cb8906d1cfbf17650f315c14e669605"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)
