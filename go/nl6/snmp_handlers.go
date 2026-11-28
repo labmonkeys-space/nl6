@@ -16,17 +16,42 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 )
 
-// findResponse answers one GET binding from the metric point served now. A
-// request with several bindings reads the point once and calls findResponseAt.
+// findResponse answers one GET binding from the reading served now. A request
+// with several bindings reads once and calls findResponseAt.
 func (s *SNMPServer) findResponse(oid string) string {
-	return s.findResponseAt(oid, s.metricsPoint())
+	return s.findResponseAt(oid, s.readRequest())
 }
 
-// metricsPoint is the metric point served now, read once per request so every
-// binding of the request comes from it (nl6#975). A device without a cycler
+// requestReading is what one request reads once and serves every binding
+// from: the metric point (nl6#975) and the uptime (nl6#1087). Read per
+// binding, a GET of sysUpTime.0 and hrSystemUptime.0 could straddle a tick and
+// answer two values for one instant. The zero value is a device with no boot
+// instant, which answers both uptimes from its rows.
+type requestReading struct {
+	point  int
+	booted bool   // the device has a boot instant, so the uptimes are live
+	ticks  uint32 // the uptime at the request's instant, when booted
+}
+
+// uptime is the live sysUpTime.0 value. It is formatted only where an uptime
+// is served, so a request that asks for none allocates nothing for it.
+func (r requestReading) uptime() string {
+	return strconv.FormatUint(uint64(r.ticks), 10)
+}
+
+// readRequest is the reading served now.
+func (s *SNMPServer) readRequest() requestReading {
+	ticks, booted := s.device.uptimeNow()
+	return requestReading{point: s.metricsPoint(), booted: booted, ticks: ticks}
+}
+
+// metricsPoint is the metric point served now, read once per request
+// through readRequest, so every binding of the request comes from it
+// (nl6#975). A device without a cycler
 // serves no metric OID, so 0 is never used to index anything.
 func (s *SNMPServer) metricsPoint() int {
 	if mc := s.device.metricsCycler; mc != nil {
@@ -35,18 +60,14 @@ func (s *SNMPServer) metricsPoint() int {
 	return 0
 }
 
-// findResponseAt is findResponse with the metric point supplied by the request.
-func (s *SNMPServer) findResponseAt(oid string, p int) string {
-	// sysUpTime.0 counts from the device's boot instant (nl6#1031). A device
+// findResponseAt is findResponse with the reading supplied by the request.
+func (s *SNMPServer) findResponseAt(oid string, at requestReading) string {
+	// sysUpTime.0 counts from the device's boot instant (nl6#1031), and so does
+	// hrSystemUptime.0 where the profile carries its row (nl6#1087). A device
 	// without one (hand-built test fixtures) falls through to its resources.
-	if oid == sysUpTimeOID {
-		if val, ok := s.device.liveSysUpTime(); ok {
-			return val
-		}
-	}
-	if oid == hrSystemUptimeOID {
-		if val, ok := s.device.liveHrSystemUptime(); ok {
-			return val
+	if at.booted {
+		if oid == sysUpTimeOID || (oid == hrSystemUptimeOID && s.device.servesHrSystemUptime()) {
+			return at.uptime()
 		}
 	}
 
@@ -68,7 +89,7 @@ func (s *SNMPServer) findResponseAt(oid string, p int) string {
 
 	// Handle dynamic CPU/memory metric OIDs - per-device cycling values
 	if s.device.metricsCycler != nil {
-		if val := s.getMetricValue(oid, p); val != "" {
+		if val := s.getMetricValue(oid, at.point); val != "" {
 			return val
 		}
 		// Handle all dynamic IF-MIB counter OIDs (ifTable + ifXTable):
@@ -209,7 +230,7 @@ func (c *oidCursor) next() (int, bool) {
 // that issue many lookups per request should instead build the set once and
 // call findNextOIDWithServed to avoid rebuilding it per repetition.
 func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
-	return s.findNextOIDWithServed(currentOID, s.lldpServedOIDs(), s.metricsPoint())
+	return s.findNextOIDWithServed(currentOID, s.lldpServedOIDs(), s.readRequest())
 }
 
 // findNextOIDWithServed is findNextOID with the LLDP served-OID set supplied
@@ -219,9 +240,9 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 // the original hot path that turned a fabric-wide Enlinkd walk into O(steps ×
 // links). nil/empty is valid (device serves no LLDP).
 //
-// The metric point p is supplied the same way, so a walk that crosses several
-// metric OIDs within one GETNEXT or GETBULK serves them all from one point
-// (nl6#975).
+// The reading is supplied the same way, so a walk that crosses several metric
+// OIDs within one GETNEXT or GETBULK serves them all from one point (nl6#975),
+// and both uptimes from one instant (nl6#1087).
 //
 // A successor that does not advance past currentOID is answered as end of MIB
 // and logged once per device. Every GETNEXT and GETBULK path of every version
@@ -230,8 +251,8 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 // resource profile that mapped an OID to itself made every other path answer
 // that OID forever. buildResourceIndexes no longer builds such a map; this is
 // the bound if a future index defect does.
-func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID, p int) (string, string) {
-	nextOID, response := s.findNextCandidate(currentOID, lldpServed, p)
+func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID, at requestReading) (string, string) {
+	nextOID, response := s.findNextCandidate(currentOID, lldpServed, at)
 	if nextOID != "" && compareOIDs(nextOID, currentOID) <= 0 {
 		s.logFirstNonAdvance(nextOID, currentOID)
 		return "", valueEndOfMibView
@@ -241,7 +262,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 
 // findNextCandidate is findNextOIDWithServed without the non-advance check.
 // Call findNextOIDWithServed instead.
-func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p int) (string, string) {
+func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, at requestReading) (string, string) {
 	// Try pre-computed next OID map first (O(1) lookup)
 	var precomputedNextOID string
 	var precomputedNextResp string
@@ -271,9 +292,9 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 	lldpNextLLDP, lldpNextVal := lldpNextFromServed(lldpServed, currentOID)
 	lldpHas := lldpNextLLDP != ""
 
-	// sysUpTime.0 is live on a device with a boot instant; its value is read
-	// only if the walk reaches it.
-	upLive := !s.device.bootTime.IsZero()
+	// sysUpTime.0 is live on a device with a boot instant, at the request's
+	// reading.
+	upLive := at.booted
 
 	// Fast path: precomputedNextOID is safe to return immediately iff no
 	// dynamic source can emit a candidate in (currentOID, precomputedNextOID].
@@ -302,7 +323,7 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 		systemClear := !stepsOverLiveSystemOID(currentOID, s.device.resources.systemGapPreds)
 		if metricsClear && ifCyclerClear && lldpClear && systemClear {
 			val := s.overrideIfHC(ifCycler, precomputedNextOID, precomputedNextResp)
-			val = s.overrideHrSystemUptime(precomputedNextOID, val)
+			val = s.overrideHrSystemUptime(precomputedNextOID, val, at)
 			return precomputedNextOID, s.overrideLLDP(precomputedNextOID, val)
 		}
 	}
@@ -337,8 +358,7 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 			}
 		}
 		if upLive {
-			upVal, _ := s.device.liveSysUpTime()
-			consider(sysUpTimeOID, upVal)
+			consider(sysUpTimeOID, at.uptime())
 		}
 		consider(sysNameOID, cachedSysName)
 		consider(sysLocationOID, cachedSysLocation)
@@ -387,10 +407,9 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 
 	// Add dynamic OIDs if they're greater than currentOID
 	if upLive && compareOIDs(sysUpTimeOID, currentOID) > 0 {
-		upVal, _ := s.device.liveSysUpTime()
 		candidates = append(candidates, struct{ oid, resp string }{
 			oid:  sysUpTimeOID,
-			resp: upVal,
+			resp: at.uptime(),
 		})
 	}
 	if compareOIDs(sysNameOID, currentOID) > 0 {
@@ -411,7 +430,7 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 	if s.device.metricsCycler != nil && len(sortedMetricOIDs) > 0 {
 		for _, mOID := range sortedMetricOIDs {
 			if compareOIDs(mOID, currentOID) > 0 {
-				val := s.getMetricValue(mOID, p)
+				val := s.getMetricValue(mOID, at.point)
 				if val != "" {
 					candidates = append(candidates, struct{ oid, resp string }{
 						oid:  mOID,
@@ -473,9 +492,9 @@ func (s *SNMPServer) findNextCandidate(currentOID string, lldpServed []kvOID, p 
 	// one) ties with the live candidate and is listed first; the live value
 	// wins, as it does on GET.
 	if upLive && nextOID == sysUpTimeOID {
-		response, _ = s.device.liveSysUpTime()
+		response = at.uptime()
 	}
-	response = s.overrideHrSystemUptime(nextOID, response)
+	response = s.overrideHrSystemUptime(nextOID, response, at)
 
 	// overrideLLDP after overrideIfHC so the dynamic LLDP/ifAlias value wins
 	// even when the chosen candidate originated from the static oidIndex
@@ -533,8 +552,8 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	// the dominant cost of an Enlinkd fabric walk. One snapshot per request
 	// is also more consistent (a single view of link/oper state).
 	lldpServed := s.lldpServedOIDs()
-	// One metric point for the whole request too, for the same reason.
-	p := s.metricsPoint()
+	// One reading for the whole request too, for the same reason.
+	at := s.readRequest()
 
 	// ── Non-repeater section (GETNEXT semantics) ──────────────────────────
 	cap := nonRepeaters
@@ -542,7 +561,7 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 		cap = len(allOIDs)
 	}
 	for i := 0; i < cap; i++ {
-		nextOID, nextVal := s.findNextOIDWithServed(allOIDs[i], lldpServed, p)
+		nextOID, nextVal := s.findNextOIDWithServed(allOIDs[i], lldpServed, at)
 		if nextOID == "" {
 			nextOID = allOIDs[i]
 			nextVal = valueEndOfMibView
@@ -598,7 +617,7 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 				responseValues = append(responseValues, valueEndOfMibView)
 				continue
 			}
-			nextOID, nextVal := s.findNextOIDWithServed(currentOIDs[col], lldpServed, p)
+			nextOID, nextVal := s.findNextOIDWithServed(currentOIDs[col], lldpServed, at)
 			if nextOID == "" || nextVal == valueEndOfMibView {
 				endOfMib[col] = true
 				responseOIDs = append(responseOIDs, startCol)
@@ -627,9 +646,9 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 // (nl6#176).
 func (s *SNMPServer) handleGetRequestVarbinds(oids []string, requestData []byte) []byte {
 	responses := make([]string, len(oids))
-	p := s.metricsPoint()
+	at := s.readRequest()
 	for i, o := range oids {
-		responses[i] = s.findResponseAt(o, p)
+		responses[i] = s.findResponseAt(o, at)
 	}
 	return s.createGetResponse(oids, responses, requestData)
 }
@@ -1144,15 +1163,14 @@ func (s *SNMPServer) overrideIfHC(ic *IfCounterCycler, oid, staticResp string) s
 // overrideHrSystemUptime serves the live hrSystemUptime.0 on a walk. Its row
 // stays in the static index as the marker, so a walk reaches it on either
 // route as the static successor, and the live value replaces the row's
-// (nl6#1087).
-func (s *SNMPServer) overrideHrSystemUptime(oid, resp string) string {
-	if oid != hrSystemUptimeOID {
+// (nl6#1087). A walk reaches the OID only through its row, so the marker check
+// is a guard: it keeps the rule in one place if a dynamic source ever serves
+// the OID.
+func (s *SNMPServer) overrideHrSystemUptime(oid, resp string, at requestReading) string {
+	if oid != hrSystemUptimeOID || !at.booted || !s.device.servesHrSystemUptime() {
 		return resp
 	}
-	if val, ok := s.device.liveHrSystemUptime(); ok {
-		return val
-	}
-	return resp
+	return at.uptime()
 }
 
 // getMetricValue returns the cycling metric value for a dynamic OID at point p,

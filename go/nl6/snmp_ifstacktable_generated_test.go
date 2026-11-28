@@ -23,7 +23,7 @@ func walkIfStackStatus(t *testing.T, srv *SNMPServer) []string {
 	var rows []string
 	cur := ifStackStatusRoot
 	for steps := 0; steps < 10000; steps++ {
-		next, val := srv.findNextOIDWithServed(cur, served, srv.metricsPoint())
+		next, val := srv.findNextOIDWithServed(cur, served, srv.readRequest())
 		rest, ok := strings.CutPrefix(strings.TrimPrefix(next, "."), ifStackStatusRoot+".")
 		if next == "" || !ok || compareOIDs(next, cur) <= 0 {
 			break

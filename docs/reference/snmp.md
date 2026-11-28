@@ -636,6 +636,7 @@ Earlier releases skipped `sysName.0` and `sysLocation.0` on a walk of the system
 On a profile that carries a `1.3.6.1.2.1.25.1.1.0` row, which the three NVIDIA profiles do, `hrSystemUptime.0` serves the value `sysUpTime.0` serves at the same instant, with no offset, and wraps with it.
 The row only marks that the profile serves the object, and its value is never served.
 A profile without the row does not serve `hrSystemUptime.0`.
+One SNMP request reads the uptime once, so a v1 or v2c GET or GETNEXT, or a GETBULK of any version, that carries both uptimes answers the same value for them.
 
 **A host clock jump does not shift `ifLastChange` against `sysUpTime.0`.** Both are measured on the monotonic clock, from the same boot instant.
 A jump is an NTP step, a host suspend, or a VM pause or snapshot.

@@ -424,8 +424,9 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 	// what turned a fabric-wide Enlinkd walk into O(steps × links), and two
 	// snapshots could straddle a topology generation bump.
 	lldpServed := s.lldpServedOIDs()
-	// One metric point for the whole request too, for the same reason (nl6#975).
-	p := s.metricsPoint()
+	// One reading for the whole request too, for the same reason (nl6#975,
+	// nl6#1087).
+	at := s.readRequest()
 
 	// The exact upper bound is known before any walking: one binding per
 	// non-repeater column plus columns × repetitions. Sizing here keeps the
@@ -442,7 +443,7 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 		nonRep = len(allOIDs)
 	}
 	for i := 0; i < nonRep; i++ {
-		nextOID, nextVal, advanced := s.bulkStep(allOIDs[i], lldpServed, p)
+		nextOID, nextVal, advanced := s.bulkStep(allOIDs[i], lldpServed, at)
 		if !advanced {
 			nextOID, nextVal = allOIDs[i], valueEndOfMibView
 		}
@@ -523,7 +524,7 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 				repVals = append(repVals, valueEndOfMibView)
 				continue
 			}
-			nextOID, nextVal, advanced := s.bulkStep(currentOIDs[col], lldpServed, p)
+			nextOID, nextVal, advanced := s.bulkStep(currentOIDs[col], lldpServed, at)
 			if !advanced {
 				endOfMib[col] = true
 				repOIDs = append(repOIDs, startCol)
@@ -588,8 +589,8 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 //
 // The v2c reference tests only the first two; the non-advance guard is a v3
 // property (nl6#526) and is kept per column rather than dropped for symmetry.
-func (s *SNMPServer) bulkStep(currentOID string, lldpServed []kvOID, p int) (string, string, bool) {
-	nextOID, response := s.findNextOIDWithServed(currentOID, lldpServed, p)
+func (s *SNMPServer) bulkStep(currentOID string, lldpServed []kvOID, at requestReading) (string, string, bool) {
+	nextOID, response := s.findNextOIDWithServed(currentOID, lldpServed, at)
 	if nextOID == "" || response == valueEndOfMibView {
 		return "", "", false
 	}

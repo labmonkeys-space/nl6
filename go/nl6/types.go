@@ -128,9 +128,10 @@ type DeviceSimulator struct {
 	// values agree with the row a collector reads and stay within Integer32.
 	// Zero (a hand-built fixture) means 1024, the HOST-RESOURCES KBytes unit.
 	hrStorageUnits int64
-	// now is the clock sysUpTime.0 alone is read against; nil means time.Now.
-	// A test seam for that one object, set before the device is shared: the
-	// engines keep their own seams (MetricsCycler.now, InterfaceState.now).
+	// now is the clock the uptime is read against, once per request, for
+	// sysUpTime.0 and hrSystemUptime.0; nil means time.Now. A test seam for
+	// those two objects, set before the device is shared: the engines keep
+	// their own seams (MetricsCycler.now, InterfaceState.now).
 	now func() time.Time
 	// Cached frequently accessed values (lock-free)
 	cachedSysName     atomic.Value    // Stores string

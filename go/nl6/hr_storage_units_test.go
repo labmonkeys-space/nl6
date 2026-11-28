@@ -43,17 +43,17 @@ func TestHrStorageSizeAndUsedFitTheirUnits(t *testing.T) {
 		s := bootedShippedDevice(t, profile, boot, nil)
 		units := s.device.hrStorageUnits
 		dp := GetDeviceProfile(profile)
-		if got, want := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, 0)), dp.MemTotalKB*1024/units; got != want {
+		if got, want := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, requestReading{point: 0})), dp.MemTotalKB*1024/units; got != want {
 			t.Errorf("%s hrStorageSize.1 = %d, want MemTotalKB %d in units of %d = %d", profile, got, dp.MemTotalKB, units, want)
 		}
 		if want, ok := wantSize[profile]; !ok {
 			t.Errorf("%s serves hrStorageSize.1 from the engine but has no expected value here", profile)
-		} else if got := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, 0)); got != want {
+		} else if got := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, requestReading{point: 0})); got != want {
 			t.Errorf("%s hrStorageSize.1 = %d, want %d", profile, got, want)
 		}
 		for p := 0; p < numDataPoints; p++ {
-			sz := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, p))
-			us := mustInt(t, profile, s.findResponseAt(hrStorageUsed1OID, p))
+			sz := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, requestReading{point: p}))
+			us := mustInt(t, profile, s.findResponseAt(hrStorageUsed1OID, requestReading{point: p}))
 			if sz < 0 || sz > math.MaxInt32 || us < 0 || us > math.MaxInt32 {
 				t.Fatalf("%s point %d: hrStorageSize.1 = %d, hrStorageUsed.1 = %d, want both in 0..%d", profile, p, sz, us, math.MaxInt32)
 			}
@@ -86,10 +86,10 @@ func TestVendorMemoryOIDsStayInKB(t *testing.T) {
 	s := bootedShippedDevice(t, "dell_poweredge_r750.json", time.Now().Add(-time.Hour), nil)
 	s.device.hrStorageUnits = 1048576
 	kb := GetDeviceProfile("dell_poweredge_r750.json").MemTotalKB
-	if got := mustInt(t, "dell_poweredge_r750.json", s.findResponseAt(dellMemTotalOID, 0)); got != kb {
+	if got := mustInt(t, "dell_poweredge_r750.json", s.findResponseAt(dellMemTotalOID, requestReading{point: 0})); got != kb {
 		t.Errorf("iDRAC memory total = %d, want %d KB whatever hrStorageAllocationUnits.1 says", got, kb)
 	}
-	if got := mustInt(t, "dell_poweredge_r750.json", s.findResponseAt(hrStorageSize1OID, 0)); got != kb/1024 {
+	if got := mustInt(t, "dell_poweredge_r750.json", s.findResponseAt(hrStorageSize1OID, requestReading{point: 0})); got != kb/1024 {
 		t.Errorf("control: hrStorageSize.1 = %d with units of 1 MiB, want %d", got, kb/1024)
 	}
 }
