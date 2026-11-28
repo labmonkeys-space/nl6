@@ -20,7 +20,8 @@ import (
 // profile's own hrStorageAllocationUnits.1. Before the change the engine served
 // KB whatever the row said, so nvidia_dgx_h100 and nvidia_hgx_h200 answered a
 // GET of hrStorageSize.1 with 2147483648, one over Integer32, in units of
-// 1 MiB: 2 PiB.
+// 1 MiB: 2 PiB. Each profile is then given units of 1 MiB, which pins the two
+// OIDs to their own metric types on the profiles that ship units of 1024.
 func TestHrStorageSizeAndUsedFitTheirUnits(t *testing.T) {
 	boot := time.Now().Add(-time.Hour)
 	wantSize := map[string]int64{
@@ -65,6 +66,18 @@ func TestHrStorageSizeAndUsedFitTheirUnits(t *testing.T) {
 			if kb := s.device.metricsCycler.memUsed[p]; us != kb*1024/units {
 				t.Fatalf("%s point %d: hrStorageUsed.1 = %d, want %d KB in units of %d = %d", profile, p, us, kb, units, kb*1024/units)
 			}
+		}
+		// Both values follow other units too. With units of 1024, KB and units
+		// are the same number, so an OID mapped back to MetricMemTotal or
+		// MetricMemUsed would not show above on arista_7280r3 or
+		// dell_poweredge_r750.
+		const mib = 1048576
+		s.device.hrStorageUnits = mib
+		if got, want := mustInt(t, profile, s.findResponseAt(hrStorageSize1OID, 0)), dp.MemTotalKB*1024/mib; got != want {
+			t.Errorf("%s hrStorageSize.1 = %d with units of 1 MiB, want %d", profile, got, want)
+		}
+		if got, want := mustInt(t, profile, s.findResponseAt(hrStorageUsed1OID, 0)), s.device.metricsCycler.memUsed[0]*1024/mib; got != want {
+			t.Errorf("%s hrStorageUsed.1 = %d with units of 1 MiB, want %d", profile, got, want)
 		}
 	}
 	if checked != len(wantSize) {
