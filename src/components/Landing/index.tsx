@@ -8,6 +8,8 @@ type HeroMeta = {
   appVersion: string;
   license: string;
   goVersion: string;
+  resourceFileCount: number;
+  linuxSSHCommandCount: number;
   sponsorUrl: string;
   koFiUrl: string;
 };
@@ -171,7 +173,8 @@ function DocLink({to, t, h}: {to: string; t: string; h: string}) {
 export default function Landing(): React.JSX.Element {
   const quickStart = useBaseUrl('/getting-started/quick-start');
   const {siteConfig} = useDocusaurusContext();
-  const {appVersion, license, goVersion, sponsorUrl, koFiUrl} = siteConfig.customFields as HeroMeta;
+  const {appVersion, license, goVersion, resourceFileCount, linuxSSHCommandCount, sponsorUrl, koFiUrl} =
+    siteConfig.customFields as HeroMeta;
   // Bare version (no leading "v") for package filenames; the release tag keeps
   // the "v". appVersion is resolved at build time, so these stay current.
   const ver = appVersion.replace(/^v/, '');
@@ -211,7 +214,7 @@ export default function Landing(): React.JSX.Element {
               <div className="nl6-hero__stats">
                 <Stat label="devices / host" value="30,000" unit="tested" />
                 <Stat label="device types"   value={String(TYPE_COUNT)} unit={`in ${CATEGORY_COUNT} cat.`} />
-                <Stat label="heap / device"  value="16+"    unit="KiB heap" />
+                <Stat label="heap / device"  value="16+"    unit="KiB" />
                 <Stat label="parallel workers" value="500"  unit="max" />
               </div>
             </div>
@@ -339,9 +342,9 @@ export default function Landing(): React.JSX.Element {
           <div className="nl6-scale">
             <Stat label="concurrent devices" value="30,000" unit="tested" />
             <Stat label="device types"       value={String(TYPE_COUNT)} />
-            <Stat label="resource files"     value="414" unit="json" />
+            <Stat label="resource files"     value={String(resourceFileCount)} unit="json" />
             <Stat label="world cities"       value="45k+"   unit="sysLocation" />
-            <Stat label="ssh commands"       value="30"  unit="linux" />
+            <Stat label="ssh commands"       value={String(linuxSSHCommandCount)} unit="linux" />
           </div>
         </section>
 

@@ -11,8 +11,9 @@ name: Docs check
 on:
   pull_request:
     # Keep in step with the docs.yml push paths: everything `make docs-build`
-    # reads (go/go.mod feeds the landing-page Go version, the three scripts
-    # run inside the build), plus both docs workflow files.
+    # reads (go/go.mod feeds the landing-page Go version, go/nl6/resources
+    # its resource-file and SSH-command counts, the three scripts run inside
+    # the build), plus both docs workflow files.
     paths:
       - 'docs/**'
       - 'docusaurus.config.ts'
@@ -21,6 +22,7 @@ on:
       - 'src/**'
       - 'static/**'
       - 'go/go.mod'
+      - 'go/nl6/resources/**'
       - 'scripts/check-doc-orphans.mjs'
       - 'scripts/inject-csp.mjs'
       - 'scripts/check-csp.mjs'
