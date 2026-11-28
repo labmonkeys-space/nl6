@@ -88,24 +88,20 @@ func moveLink(t *testing.T, s *InterfaceState, ifIndex int, v uint8) {
 
 func linkDown(t *testing.T, s *InterfaceState, ifIndex int) {
 	t.Helper()
-	res, evts := s.SetLinkState(ifIndex, OperDown)
+	res, _ := s.SetLinkState(ifIndex, OperDown)
 	if res != LinkMovedVisible {
 		t.Fatalf("SetLinkState(%d, down) = %v, want LinkMovedVisible", ifIndex, res)
 	}
-	for _, e := range evts {
-		s.Broadcast(e)
-	}
+	s.Deliver()
 }
 
 func linkUp(t *testing.T, s *InterfaceState, ifIndex int) {
 	t.Helper()
-	res, evts := s.SetLinkState(ifIndex, OperUp)
+	res, _ := s.SetLinkState(ifIndex, OperUp)
 	if res != LinkMovedVisible {
 		t.Fatalf("SetLinkState(%d, up) = %v, want LinkMovedVisible", ifIndex, res)
 	}
-	for _, e := range evts {
-		s.Broadcast(e)
-	}
+	s.Deliver()
 }
 
 func TestCounterHold_HoldsEveryColumnWhileDown(t *testing.T) {

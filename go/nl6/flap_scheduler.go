@@ -171,8 +171,8 @@ type FlapScheduler struct {
 // for no cap. Now/Seed are exposed for deterministic tests.
 //
 // Publish is what a fire hands its outcome to. The manager passes
-// publishStateChanges, which broadcasts and then resyncs the far end of a
-// topology link (nl6#1023); nil broadcasts only, which is what a scheduler
+// publishStateChanges, which delivers and then resyncs the far end of a
+// topology link (nl6#1023); nil delivers only, which is what a scheduler
 // built by a test without a manager gets.
 type FlapSchedulerOptions struct {
 	GlobalCapPerSecond int
@@ -210,15 +210,14 @@ func NewFlapScheduler(opts FlapSchedulerOptions) *FlapScheduler {
 
 // publishFire hands a fire's outcome to the configured Publish. Without one
 // (a scheduler built with no Publish, or the zero value tests construct) it
-// broadcasts the events, which is everything a fire did before nl6#1023.
+// delivers the events the fire queued on the engine, which is everything a
+// fire did before nl6#1023.
 func (s *FlapScheduler) publishFire(deviceIP net.IP, state *InterfaceState, ifIndex int, evts []StateChange) {
 	if s.publish != nil {
 		s.publish(deviceIP, state, ifIndex, evts)
 		return
 	}
-	for _, evt := range evts {
-		state.Broadcast(evt)
-	}
+	state.Deliver()
 }
 
 // Register attaches a device's interfaces to the scheduler under a

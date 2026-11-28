@@ -187,7 +187,7 @@ func (s *SNMPServer) ownsIfIndex(n int) bool {
 
 // applySetActions performs every validated assignment. Each ifAdminStatus SET
 // goes through InterfaceState.ApplyAdminStatus — the SAME funnel the REST
-// admin-status POST uses — and broadcasts every event it returns, so a gNMI
+// admin-status POST uses — and delivers every event it queues, so a gNMI
 // ON_CHANGE listener and the Tier C notify hook cannot tell a SET from a POST.
 //
 // The only apply is a CAS loop on an atomic slot, which cannot fail once the

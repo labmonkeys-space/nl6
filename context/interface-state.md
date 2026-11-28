@@ -67,11 +67,12 @@ That is why the flap scheduler's no-op log once named two causes, one of which d
 
 **Broadcast path:**
 
-1. The slot store commits.
-2. `Broadcast` sends a `StateChange` to every registered ON_CHANGE Subscribe listener through a per-stream depth-16 channel, drop-oldest on overflow.
-   It drops a zero-`Changed` event rather than fanning out an update for ifIndex 0.
-3. The counter-hold hook (`if_counter_hold.go`) reconciles every dial-derived column against the derived oper.
+1. The slot store commits and the mutator queues its events on the engine's outbox, both under `outMu`.
+   `Deliver` then takes one event at a time from the outbox and runs the steps below for it, outside every lock.
+2. The counter-hold hook (`if_counter_hold.go`) reconciles every dial-derived column against the derived oper.
    Columns hold while oper is not `up(1)`, through a per-slot immutable ledger applied at the one `heldDeltasAt` read in `GetDynamicAt`, with a seqlock and two instant clamps that keep polls monotonic. Details in `context/if-counters.md`.
+3. `Broadcast` sends a `StateChange` to every registered ON_CHANGE Subscribe listener through a per-stream depth-16 channel, drop-oldest on overflow.
+   It drops a zero-`Changed` event rather than fanning out an update for ifIndex 0.
 4. The Tier C hook fires, oper-only, gated on `LeafOperStatus`.
 
 **Tier C (`correlate-state-notifications`):** an oper transition fires correlated link traps and syslog for that ifIndex.
@@ -79,6 +80,33 @@ That is why the flap scheduler's no-op log once named two causes, one of which d
 The manager wires it at trap and syslog attach time (`wireStateNotify`) to call `FireForInterface(entry, ifIndex)` on the role-matched catalog entries (`EntriesByRole`, vendor wins per role).
 The closure snapshots the exporters under `device.mu.RLock` and fires outside the lock; a closing guard handles teardown.
 All mutation sources are covered because they share the single `Broadcast` funnel.
+
+**Events leave an engine in mutation order (`interface_state_outbox.go`).**
+`SetLinkState`, `ApplyAdminStatus` and `SetPeerDown` hold `outMu` from before their slot write until their events are appended to the outbox.
+`Deliver` broadcasts from the outbox, one drain per engine at a time.
+A caller that finds a drain running returns at once, and that drain sends its events.
+A caller sends at most the events that were queued when it started.
+A goroutine of the engine takes the drain over for the rest, without a gap.
+
+- Events of one engine arrive in mutation order, and the events of one mutation stay adjacent.
+- Engines are not ordered against each other.
+- Production code never calls `Broadcast` for a mutator's events. It calls `Deliver`.
+- The lock order is `linkPropMu`, `outMu`, `familyMu`. Nothing that holds `outMu` calls a listener, the Tier C hook or the counter-hold hook.
+- Under a race a caller can return before its own events are out. A REST or SNMP SET reply can then precede its trap.
+- The outbox has no cap, because a cap would drop a real change. It grows only while a drain is blocked.
+- A shared caller, such as the flap scheduler's one goroutine, never keeps draining for producers that keep mutating.
+- A panic in the Tier C hook does not stop the drain. The events behind it are sent first, then the caller panics with the first value. That value can come from an event another producer queued. A panic on the engine's goroutine has no caller and is logged.
+- All mutations of one engine serialise on `outMu`, a parent's cascade included.
+- The counter hold runs when a drain reaches the oper event. Under a race a poll right after a REST or SNMP SET reply can read counters that still advance on a port reported down.
+- A test that races producers calls `waitDelivered` before it reads its listener, because the last events can still be on the engine's goroutine.
+- `SeedPeerDown` is silent and queues nothing.
+
+Before this, each caller broadcast its mutator's events after the mutator returned, with no lock held.
+Two producers on one interface could deliver in either order, and a consumer that renders from the event ended on the older state.
+
+Two alternatives were rejected.
+A lock held from the mutation to the end of the broadcast would make a resync take the far end's lock under `linkPropMu`, and a device in teardown would stall every propagation.
+Dropping older events in the consumers would lose a real change.
 Link telemetry volume rides real state changes (`-if-flap-scenario` or REST), and state-driven fires bypass the Poisson global cap on initial transmit.
 
 **Flap scheduler (`flap_scheduler.go`):** one shared min-heap goroutine drives Poisson-distributed flaps per (device, ifIndex), the same shape as `trap_scheduler.go`.
@@ -118,7 +146,8 @@ Copying the near end's link let one end's up fire cut the other's outage short.
 
 **`SetPeerDown` has `SetLinkState`'s contract:** events only on a derived transition (stamping `lastChange`, cascading to subinterfaces), masked beneath admin down or an own fault, a no-op on the same value.
 
-**`publishStateChanges` (`link_propagation.go`) is the one post-mutation helper at every broadcast site.**
+**`publishStateChanges` (`link_propagation.go`) is the one post-mutation helper at every mutation site.**
+It calls `Deliver` on the engine and then resyncs the far end.
 Sites: the flap scheduler through `FlapSchedulerOptions.Publish`, REST `oper-status` and `admin-status` and their auto-reverts, SNMP SET.
 It runs after a masked link move too, because a masked move fires nothing but changes what the port transmits.
 
@@ -126,7 +155,8 @@ It runs after a masked link move too, because a masked move fires nothing but ch
 
 1. Resolve both ends to their engines. Resolution reads `sm.mu`, which `DeleteDevice` holds across a teardown.
 2. Under `linkPropMu`: re-check the link, read the near end, write the far end. The last resync sees the newest state, and a link removal's release cannot be overtaken.
-3. Broadcast after the lock, because the Tier C hook takes the far device's `mu`.
+3. `Deliver` on the far end after the lock, because the Tier C hook takes the far device's `mu`.
+   The far end's events were queued by `SetPeerDown` under the lock, so they still leave in mutation order.
 
 **Lifecycle:**
 
@@ -158,6 +188,7 @@ Every other path stays visible.
 - Propagating `peerDown` instead of `Transmits`.
 - Writing the far end's link.
 - Broadcasting under `linkPropMu`.
+- Broadcasting a mutator's events from the caller. Use `Deliver`.
 
 ## Subinterfaces follow their parent
 
@@ -178,7 +209,7 @@ The stack is cached per `*DeviceResources`.
 Hierarchy warnings log once per process, since the hierarchy is rebuilt per device.
 
 **Cascade:** a parent's visible transition CAS-stamps each moved child's `lastChange` and returns the child's event after the parent's.
-That is why `SetLinkState` returns `(LinkMutation, []StateChange)` and every caller broadcasts all of them.
+That is why `SetLinkState` returns `(LinkMutation, []StateChange)`, and all of them are queued and delivered.
 It is what gives the unit its ON_CHANGE update from every mutation source.
 
 **Traps:** `linkRoleFor` fires no trap for `up(1)` to `lowerLayerDown(7)` in either direction.

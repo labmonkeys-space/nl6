@@ -808,3 +808,93 @@ func TestTopologyStatus_ReportsLinkPropagation(t *testing.T) {
 	f.mgr.SetLinkPropagation(true)
 	read("flag on", true)
 }
+
+// A far end whose drain is blocked in its notify hook must not stall a resync
+// that writes it, nor a resync of another link. The far end's events follow
+// in mutation order once the drain resumes.
+func TestLinkPropagation_BlockedFarEndDrainDoesNotStallResyncs(t *testing.T) {
+	f, a, b := propagationFixture(t)
+	c := f.addDevice(t, 3, 4, "charlie")
+	must(t, f.mgr.AddTopologyLinks([]LinkJSON{{A: ep(a.IP.String(), 2), B: ep(c.IP.String(), 1)}}))
+
+	bSt := deviceInterfaceState(b)
+	ch := make(chan StateChange, 16)
+	bSt.AddListener(ch)
+	defer bSt.RemoveListener(ch)
+	entered, release, stalled := blockFirstNotify(t, bSt)
+
+	// Block bravo's drain with a port that has no link.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, evts := bSt.SetLinkState(3, OperDown)
+		f.mgr.publishStateChanges(b.IP.String(), bSt, 3, evts)
+	}()
+	<-entered
+
+	postStatus(t, a, 1, "admin-status", "DOWN")
+	wantOper(t, "far end written behind a blocked drain", b, 2, "2")
+	postStatus(t, a, 2, "admin-status", "DOWN")
+	wantOper(t, "another link", c, 1, "2")
+	if stalled.Load() {
+		t.Fatal("a resync waited behind the blocked drain")
+	}
+	if len(ch) != 1 {
+		t.Fatalf("%d events out on bravo while its drain is blocked, want 1", len(ch))
+	}
+
+	release()
+	<-done
+	waitDelivered(t, bSt)
+	if len(ch) != 2 {
+		t.Fatalf("%d events on bravo after release, want 2", len(ch))
+	}
+	first, second := <-ch, <-ch
+	if first.IfIndex != 3 || second.IfIndex != 2 || !second.PeerDown {
+		t.Fatalf("want interface 3 then interface 2 held by its peer, got %+v then %+v", first, second)
+	}
+}
+
+// A flap on a port races a propagated change from its far end: the resync
+// writes the port under linkPropMu and delivers after it, the flap writes and
+// delivers on its own. The port's events still arrive in mutation order.
+func TestLinkPropagation_FlapRacingPropagatedChangeArrivesInMutationOrder(t *testing.T) {
+	f, a, b := propagationFixture(t)
+	aSt, bSt := deviceInterfaceState(a), deviceInterfaceState(b)
+	aIP, bIP := a.IP.String(), b.IP.String()
+	const workers, rounds = 4, 500
+
+	ch := make(chan StateChange, 1<<16) // deeper than every event of the run, so drop-oldest never applies
+	bSt.AddListener(ch)
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < rounds; i++ {
+				if w%2 == 0 {
+					// Alpha's shutdown holds bravo if2 down through the link.
+					target := uint8(AdminDown)
+					if i%2 == 1 {
+						target = AdminUp
+					}
+					f.mgr.publishStateChanges(aIP, aSt, 1, aSt.ApplyAdminStatus(1, target))
+					continue
+				}
+				target := uint8(OperDown)
+				if i%2 == 1 {
+					target = OperUp
+				}
+				if res, evts := bSt.SetLinkState(2, target); res != LinkUnchanged {
+					f.mgr.publishStateChanges(bIP, bSt, 2, evts)
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	waitDelivered(t, bSt)
+	bSt.RemoveListener(ch) // before close: Broadcast must never send to a closed channel
+	close(ch)
+	wantMutationOrder(t, ch, bSt, 2)
+}
