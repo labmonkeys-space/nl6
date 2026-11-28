@@ -17,6 +17,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -34,6 +35,9 @@ const (
 	// hrStorage row 1, in hrStorageAllocationUnits.1 rather than KB (nl6#1056)
 	MetricHrStorageSize // Memory total (constant)
 	MetricHrStorageUsed // Memory used
+
+	// hrMemorySize.0, in KBytes clamped to Integer32 (nl6#1088)
+	MetricHrMemorySize // Memory total (constant)
 
 	// GPU-specific metric types (NVIDIA DCGM)
 	MetricGPUUtil     MetricOIDType = iota + 10 // GPU compute utilization %
@@ -276,6 +280,7 @@ func nvidiaGPUOIDs(gpuCount int) map[string]MetricOIDType {
 	m[".1.3.6.1.2.1.25.3.3.1.2.1"] = MetricCPUPercent
 	m[".1.3.6.1.2.1.25.2.3.1.5.1"] = MetricHrStorageSize
 	m[".1.3.6.1.2.1.25.2.3.1.6.1"] = MetricHrStorageUsed
+	m[hrMemorySizeOID] = MetricHrMemorySize
 	return m
 }
 
@@ -330,6 +335,9 @@ const (
 	hrStorageUsed1OID       = ".1.3.6.1.2.1.25.2.3.1.6.1"
 )
 
+// hrMemorySizeOID is HOST-RESOURCES-MIB hrMemorySize.0, in KBytes (nl6#1088).
+const hrMemorySizeOID = ".1.3.6.1.2.1.25.2.2.0"
+
 // defaultHrStorageUnits is the HOST-RESOURCES KBytes unit, used when a profile
 // ships no hrStorageAllocationUnits.1, which keeps arista_7280r3's values.
 const defaultHrStorageUnits = 1024
@@ -365,4 +373,20 @@ func kbInStorageUnits(kb, units int64) string {
 		units = defaultHrStorageUnits
 	}
 	return strconv.FormatInt(kb*1024/units, 10)
+}
+
+// kbytesClamped serves kb as a HOST-RESOURCES KBytes value, whose SYNTAX is
+// Integer32 (0..2147483647). A value above the range is clamped to its top,
+// so a 2 TiB host (2147483648 KB) reports 1 KiB less than it has.
+//
+// The clamp is nl6's own choice, not a copy of a real agent: net-snmp does not
+// clamp. handle_memsize in agent/mibgroup/host/hr_storage.c computes the value
+// in a signed int, so at 2^31 KB it would overflow and send a negative number.
+// A real host rarely gets there, since the value comes from MemTotal in
+// /proc/meminfo, which sits a little below the installed RAM.
+func kbytesClamped(kb int64) string {
+	if kb > math.MaxInt32 {
+		kb = math.MaxInt32
+	}
+	return strconv.FormatInt(kb, 10)
 }

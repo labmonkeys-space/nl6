@@ -49,7 +49,7 @@ Static columns come from the `*_snmp_gpu.json` resource file and never change.
 
 Dynamic columns come from the metrics cycler.
 Eight columns times eight GPUs gives 64 dynamic GPU OIDs per device.
-With the three Host Resources OIDs under [Standard MIBs](#standard-mibs), each device serves 67 dynamic OIDs.
+With the four Host Resources OIDs under [Standard MIBs](#standard-mibs), each device serves 68 dynamic OIDs.
 
 | Column | Name | Type and unit | Behaviour |
 |--------|------|---------------|-----------|
@@ -88,12 +88,13 @@ The per-profile ranges the cycles are drawn from:
 The profiles also serve `system`, the IF-MIB interface tables and Host Resources (`1.3.6.1.2.1.25`).
 Interface counters come from the same engine as every other device type; see [SNMP](../snmp.md).
 
-Three Host Resources OIDs are dynamic and come from the device's metrics cycler, not the static resource file.
+Four Host Resources OIDs are dynamic and come from the device's metrics cycler, not the static resource file.
 They behave like the per-GPU metrics, including the minute-boundary case, described in [Value behaviour](#value-behaviour).
 
 | OID | Name | Behaviour |
 |-----|------|-----------|
 | `1.3.6.1.2.1.25.3.3.1.2.1` | `hrProcessorLoad.1` | Cycling CPU percent, moves to the next point once per minute |
+| `1.3.6.1.2.1.25.2.2.0` | `hrMemorySize.0` | Constant physical memory total from the device profile, never advances, in KB, capped at 2147483647 (the H100 and H200 hold 2 TiB, 2147483648 KB) |
 | `1.3.6.1.2.1.25.2.3.1.5.1` | `hrStorageSize.1` | Constant physical memory total from the device profile, never advances, in the profile's `hrStorageAllocationUnits.1` (1 MiB on the H100 and H200, 1 KiB on the A100) |
 | `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, moves to the next point once per minute, in the same units |
 

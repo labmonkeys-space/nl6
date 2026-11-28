@@ -121,9 +121,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "static hrMemorySize.0 rows deleted",
+		file:         "snmp_shipped_hrmemorysize_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       hrMemorySizeParentRevision,
+		values:       restoreHrMemorySizeRows,
+		names:        hrMemorySizeOIDNamesBefore,
+	},
+	{
 		name:         "static rows on metric-owned OIDs deleted",
 		file:         "snmp_shipped_metric_shadow_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: hrMemorySizeParentRevision,
 		parent:       metricShadowParentRevision,
 		values:       restoreMetricShadowRows,
 		names:        metricShadowOIDNamesBefore,
