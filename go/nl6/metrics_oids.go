@@ -15,7 +15,10 @@
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // MetricOIDType identifies which cycling metric an OID maps to.
 type MetricOIDType int
@@ -27,6 +30,10 @@ const (
 	MetricMemTotal                         // Memory total (KB, constant)
 	MetricMemUsedPct                       // Memory used % (for vendors that report %)
 	MetricTemperature                      // Temperature in Celsius
+
+	// hrStorage row 1, in hrStorageAllocationUnits.1 rather than KB (nl6#1056)
+	MetricHrStorageSize // Memory total (constant)
+	MetricHrStorageUsed // Memory used
 
 	// GPU-specific metric types (NVIDIA DCGM)
 	MetricGPUUtil     MetricOIDType = iota + 10 // GPU compute utilization %
@@ -137,8 +144,8 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 	// --- Arista (uses standard Host Resources MIB) ---
 	"arista_7280r3.json": {
 		".1.3.6.1.2.1.25.3.3.1.2.1":      MetricCPUPercent,
-		".1.3.6.1.2.1.25.2.3.1.5.1":      MetricMemTotal,
-		".1.3.6.1.2.1.25.2.3.1.6.1":      MetricMemUsed,
+		".1.3.6.1.2.1.25.2.3.1.5.1":      MetricHrStorageSize,
+		".1.3.6.1.2.1.25.2.3.1.6.1":      MetricHrStorageUsed,
 		".1.3.6.1.2.1.99.1.1.1.4.100006": MetricTemperature, // entPhySensorValue (temp)
 	},
 
@@ -172,9 +179,9 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 	"dell_poweredge_r750.json": {
 		".1.3.6.1.4.1.674.10892.5.4.200.10.1.12.1.1": MetricCPUPercent,
 		".1.3.6.1.4.1.674.10892.5.4.700.20.1.8.1.1":  MetricMemTotal,
-		".1.3.6.1.4.1.674.10892.5.4.700.20.1.6.1.1":  MetricTemperature, // systemBoardInletTemp
-		".1.3.6.1.2.1.25.2.3.1.5.1":                  MetricMemTotal,    // hrStorageSize (physical memory)
-		".1.3.6.1.2.1.25.2.3.1.6.1":                  MetricMemUsed,     // hrStorageUsed (physical memory)
+		".1.3.6.1.4.1.674.10892.5.4.700.20.1.6.1.1":  MetricTemperature,   // systemBoardInletTemp
+		".1.3.6.1.2.1.25.2.3.1.5.1":                  MetricHrStorageSize, // hrStorageSize (physical memory)
+		".1.3.6.1.2.1.25.2.3.1.6.1":                  MetricHrStorageUsed, // hrStorageUsed (physical memory)
 	},
 
 	// --- HPE iLO ---
@@ -267,8 +274,8 @@ func nvidiaGPUOIDs(gpuCount int) map[string]MetricOIDType {
 	}
 	// Also include host-level CPU/memory/temperature via standard Host Resources MIB
 	m[".1.3.6.1.2.1.25.3.3.1.2.1"] = MetricCPUPercent
-	m[".1.3.6.1.2.1.25.2.3.1.5.1"] = MetricMemTotal
-	m[".1.3.6.1.2.1.25.2.3.1.6.1"] = MetricMemUsed
+	m[".1.3.6.1.2.1.25.2.3.1.5.1"] = MetricHrStorageSize
+	m[".1.3.6.1.2.1.25.2.3.1.6.1"] = MetricHrStorageUsed
 	return m
 }
 
@@ -313,4 +320,49 @@ func init() {
 // for a given device type. The result is cached at init time.
 func GetSortedMetricOIDs(resourceFile string) []string {
 	return cachedSortedMetricOIDs[resourceFile]
+}
+
+// The hrStorage row 1 columns the metric engine serves on the profiles that map
+// them (nl6#1056).
+const (
+	hrStorageAllocUnits1OID = ".1.3.6.1.2.1.25.2.3.1.4.1"
+	hrStorageSize1OID       = ".1.3.6.1.2.1.25.2.3.1.5.1"
+	hrStorageUsed1OID       = ".1.3.6.1.2.1.25.2.3.1.6.1"
+)
+
+// defaultHrStorageUnits is the HOST-RESOURCES KBytes unit, used when a profile
+// ships no hrStorageAllocationUnits.1, which keeps arista_7280r3's values.
+const defaultHrStorageUnits = 1024
+
+// hrStorageAllocationUnits reads hrStorageAllocationUnits.1 from the profile's
+// own resources: a positive integer, else defaultHrStorageUnits. A row that is
+// present but not a positive integer also falls back, silently: the column is
+// untyped, so no load rule refuses such a value, and the row a collector reads
+// is then wrong whatever the engine does. Resolved once per device, so the
+// engine and the row cannot drift. No units field on DeviceProfile,
+// deliberately: it would be a second source.
+func hrStorageAllocationUnits(res *DeviceResources) int64 {
+	if res == nil || res.oidIndex == nil {
+		return defaultHrStorageUnits
+	}
+	v, ok := res.oidIndex.Load(hrStorageAllocUnits1OID)
+	if !ok {
+		return defaultHrStorageUnits
+	}
+	s, _ := v.(string)
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n <= 0 {
+		return defaultHrStorageUnits
+	}
+	return n
+}
+
+// kbInStorageUnits converts kb kilobytes to a count of units-byte blocks,
+// rounded down, as hrStorageSize and hrStorageUsed express them. Zero units
+// (a fixture that never resolved them) means defaultHrStorageUnits.
+func kbInStorageUnits(kb, units int64) string {
+	if units <= 0 {
+		units = defaultHrStorageUnits
+	}
+	return strconv.FormatInt(kb*1024/units, 10)
 }

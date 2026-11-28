@@ -650,6 +650,9 @@ The point served depends on the time since the device was created, one point per
 All of a device's metrics read the same point at the same instant.
 One SNMP request reads the point once, so every OID in a GET, GETNEXT or GETBULK comes from the same point, even across a minute boundary.
 Memory used plus memory free read in one request is the total on every profile that serves both.
+`hrStorageSize.1` and `hrStorageUsed.1` count the profile's own `hrStorageAllocationUnits.1`, read once when the device is created, or units of 1024 bytes when the profile ships no such row, so they agree with the row a collector reads and fit `Integer32` on every shipped profile.
+The vendor OIDs that report memory stay in KB, as before.
+A GET and a walk of a metric OID serve the same value: a static row on one is ignored by both.
 Per-category device profiles define the baseline ranges and spike amplitudes.
 GPU servers add per-GPU metric cycling on top of this.
 See [GPU simulation](gpu/index.md).

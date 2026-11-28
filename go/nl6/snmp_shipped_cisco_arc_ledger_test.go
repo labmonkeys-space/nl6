@@ -833,7 +833,8 @@ func TestCiscoEnvMonAndMemoryPoolMatchTheMIB(t *testing.T) {
 // cycler. A WALK is a different path. findNextOIDWithServed assembles candidates
 // and takes the lexicographically smallest with a STRICT less-than, so when the
 // static row and the metric OID are the same OID the FIRST candidate wins — and
-// the static one is appended first, from precomputedNextOID. Measured at the
+// the static one is appended first, from precomputedNextOID. That held until
+// nl6#1056, which lets the metric value win the tie. Measured at the
 // parent revision 5bded6c on a device with a live cycler:
 //
 //	findNextOID(".1.3.6.1.4.1.9.9.13.1.3.1.2.1")
