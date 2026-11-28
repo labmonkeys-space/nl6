@@ -31,6 +31,10 @@ const (
 	MetricMemUsedPct                       // Memory used % (for vendors that report %)
 	MetricTemperature                      // Temperature in Celsius
 
+	// hrStorage row 1, in hrStorageAllocationUnits.1 rather than KB (nl6#1056)
+	MetricHrStorageSize // Memory total (constant)
+	MetricHrStorageUsed // Memory used
+
 	// GPU-specific metric types (NVIDIA DCGM)
 	MetricGPUUtil     MetricOIDType = iota + 10 // GPU compute utilization %
 	MetricGPUMemUsed                            // GPU VRAM used (MB)
@@ -140,8 +144,8 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 	// --- Arista (uses standard Host Resources MIB) ---
 	"arista_7280r3.json": {
 		".1.3.6.1.2.1.25.3.3.1.2.1":      MetricCPUPercent,
-		".1.3.6.1.2.1.25.2.3.1.5.1":      MetricMemTotal,
-		".1.3.6.1.2.1.25.2.3.1.6.1":      MetricMemUsed,
+		".1.3.6.1.2.1.25.2.3.1.5.1":      MetricHrStorageSize,
+		".1.3.6.1.2.1.25.2.3.1.6.1":      MetricHrStorageUsed,
 		".1.3.6.1.2.1.99.1.1.1.4.100006": MetricTemperature, // entPhySensorValue (temp)
 	},
 
@@ -175,9 +179,9 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 	"dell_poweredge_r750.json": {
 		".1.3.6.1.4.1.674.10892.5.4.200.10.1.12.1.1": MetricCPUPercent,
 		".1.3.6.1.4.1.674.10892.5.4.700.20.1.8.1.1":  MetricMemTotal,
-		".1.3.6.1.4.1.674.10892.5.4.700.20.1.6.1.1":  MetricTemperature, // systemBoardInletTemp
-		".1.3.6.1.2.1.25.2.3.1.5.1":                  MetricMemTotal,    // hrStorageSize (physical memory)
-		".1.3.6.1.2.1.25.2.3.1.6.1":                  MetricMemUsed,     // hrStorageUsed (physical memory)
+		".1.3.6.1.4.1.674.10892.5.4.700.20.1.6.1.1":  MetricTemperature,   // systemBoardInletTemp
+		".1.3.6.1.2.1.25.2.3.1.5.1":                  MetricHrStorageSize, // hrStorageSize (physical memory)
+		".1.3.6.1.2.1.25.2.3.1.6.1":                  MetricHrStorageUsed, // hrStorageUsed (physical memory)
 	},
 
 	// --- HPE iLO ---
@@ -270,8 +274,8 @@ func nvidiaGPUOIDs(gpuCount int) map[string]MetricOIDType {
 	}
 	// Also include host-level CPU/memory/temperature via standard Host Resources MIB
 	m[".1.3.6.1.2.1.25.3.3.1.2.1"] = MetricCPUPercent
-	m[".1.3.6.1.2.1.25.2.3.1.5.1"] = MetricMemTotal
-	m[".1.3.6.1.2.1.25.2.3.1.6.1"] = MetricMemUsed
+	m[".1.3.6.1.2.1.25.2.3.1.5.1"] = MetricHrStorageSize
+	m[".1.3.6.1.2.1.25.2.3.1.6.1"] = MetricHrStorageUsed
 	return m
 }
 

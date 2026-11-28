@@ -1145,15 +1145,6 @@ func (s *SNMPServer) getMetricValue(oid string, p int) string {
 	if !exists {
 		return ""
 	}
-	// hrStorageSize.1 and hrStorageUsed.1 count hrStorageAllocationUnits.1,
-	// not KB. Only these two: the vendor OIDs that share MetricMemTotal and
-	// MetricMemUsed stay in KB (nl6#1056).
-	switch oid {
-	case hrStorageSize1OID:
-		return kbInStorageUnits(s.device.metricsCycler.memTotal, s.device.hrStorageUnits)
-	case hrStorageUsed1OID:
-		return kbInStorageUnits(s.device.metricsCycler.memUsed[p], s.device.hrStorageUnits)
-	}
 	switch metricType {
 	case MetricCPUPercent:
 		return s.device.metricsCycler.GetCPUPercent(p)
@@ -1167,6 +1158,11 @@ func (s *SNMPServer) getMetricValue(oid string, p int) string {
 		return s.device.metricsCycler.GetMemUsedPercent(p)
 	case MetricTemperature:
 		return s.device.metricsCycler.GetTemperature(p)
+	// hrStorage row 1 counts hrStorageAllocationUnits.1, not KB (nl6#1056).
+	case MetricHrStorageSize:
+		return kbInStorageUnits(s.device.metricsCycler.memTotal, s.device.hrStorageUnits)
+	case MetricHrStorageUsed:
+		return kbInStorageUnits(s.device.metricsCycler.memUsed[p], s.device.hrStorageUnits)
 	// GPU metric types (NVIDIA DCGM)
 	case MetricGPUUtil:
 		return s.device.metricsCycler.GetGPUUtil(parseGPUIndexFromOID(oid), p)

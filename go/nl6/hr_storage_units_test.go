@@ -73,7 +73,7 @@ func TestHrStorageSizeAndUsedFitTheirUnits(t *testing.T) {
 }
 
 // TestVendorMemoryOIDsStayInKB: the conversion applies to hrStorageSize.1 and
-// hrStorageUsed.1 only. A vendor OID that shares MetricMemTotal keeps serving
+// hrStorageUsed.1 only. A vendor OID of type MetricMemTotal keeps serving
 // KB, here dell_poweredge_r750's iDRAC memory total. dell ships units of 1024,
 // where KB and units are the same number, so the device is given units of
 // 1 MiB: a conversion applied to the vendor OID would then show, and the
