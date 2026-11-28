@@ -1295,7 +1295,7 @@ func TestNvidiaArcWalkIsStrictlyIncreasing(t *testing.T) {
 			newArc, oldArc, steps := 0, 0, 0
 			cur := ""
 			for steps < maxSteps {
-				next, _ := srv.findNextOIDWithServed(cur, served, srv.metricsPoint())
+				next, _ := srv.findNextOIDWithServed(cur, served, srv.readRequest())
 				if next == "" {
 					break
 				}

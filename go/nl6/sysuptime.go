@@ -7,7 +7,6 @@ package main
 
 import (
 	"sort"
-	"strconv"
 	"time"
 )
 
@@ -24,6 +23,9 @@ const (
 	sysNameOID     = ".1.3.6.1.2.1.1.5.0"
 	sysLocationOID = ".1.3.6.1.2.1.1.6.0"
 )
+
+// hrSystemUptimeOID is hrSystemUptime.0 (HOST-RESOURCES-MIB).
+const hrSystemUptimeOID = ".1.3.6.1.2.1.25.1.1.0"
 
 // liveSystemOIDs is the three in walk order.
 var liveSystemOIDs = [...]string{sysUpTimeOID, sysNameOID, sysLocationOID}
@@ -64,17 +66,32 @@ func uptimeTicks(boot, now time.Time) uint32 {
 	return uint32(elapsed / (10 * time.Millisecond))
 }
 
-// liveSysUpTime is the sysUpTime.0 value served now, and false on a device
-// with no boot instant, which answers from its resources like any static OID.
-func (d *DeviceSimulator) liveSysUpTime() (string, bool) {
+// uptimeNow is the sysUpTime.0 reading now, in TimeTicks, and false on a
+// device with no boot instant, which answers from its resources like any
+// static OID. readRequest reads it once per request.
+func (d *DeviceSimulator) uptimeNow() (uint32, bool) {
 	if d == nil || d.bootTime.IsZero() {
-		return "", false
+		return 0, false
 	}
 	now := time.Now
 	if d.now != nil {
 		now = d.now
 	}
-	return strconv.FormatUint(uint64(uptimeTicks(d.bootTime, now())), 10), true
+	return uptimeTicks(d.bootTime, now()), true
+}
+
+// servesHrSystemUptime reports whether the device's profile carries the
+// hrSystemUptime.0 row. On a device with a boot instant the object then serves
+// the reading sysUpTime.0 serves, with no offset (nl6#1087): the row only marks
+// that the profile serves the object, and its value is never served there.
+// Without the row the object is not served, and without a boot instant the row
+// answers like any static OID.
+func (d *DeviceSimulator) servesHrSystemUptime() bool {
+	if d == nil || d.resources == nil || d.resources.oidIndex == nil {
+		return false
+	}
+	_, ok := d.resources.oidIndex.Load(hrSystemUptimeOID)
+	return ok
 }
 
 // systemGapPredecessors returns the static OIDs whose successor in sorted

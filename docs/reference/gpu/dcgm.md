@@ -97,6 +97,7 @@ They behave like the per-GPU metrics, including the minute-boundary case, descri
 | `1.3.6.1.2.1.25.2.3.1.5.1` | `hrStorageSize.1` | Constant physical memory total from the device profile, never advances, in the profile's `hrStorageAllocationUnits.1` (1 MiB on the H100 and H200, 1 KiB on the A100) |
 | `1.3.6.1.2.1.25.2.3.1.6.1` | `hrStorageUsed.1` | Cycling physical memory used, moves to the next point once per minute, in the same units |
 
+`hrSystemUptime.0` (`1.3.6.1.2.1.25.1.1.0`) is live as well, though not from the metrics cycler: it counts from the device's boot instant and reads the same as `sysUpTime.0`; see [SNMP → Live system objects](../snmp.md#live-system-objects).
 The other Host Resources OIDs, including storage row 2, are static.
 
 ## SSH

@@ -1558,7 +1558,7 @@ func TestNoShippedWalkEmitsABareColumnOID(t *testing.T) {
 		set := map[string]struct{}{}
 		cur := ""
 		for len(set) < maxSteps {
-			next, _ := srv.findNextOIDWithServed(cur, served, srv.metricsPoint())
+			next, _ := srv.findNextOIDWithServed(cur, served, srv.readRequest())
 			if next == "" || (cur != "" && compareOIDs(next, cur) <= 0) {
 				break
 			}

@@ -189,6 +189,8 @@ Writing one is a silent no-op, and reading a profile's JSON to learn what a devi
 2064 such rows were deleted for exactly that reason.
 The two exceptions are `ifAdminStatus` (`.7`) and `ifOperStatus` (`.8`), whose static rows *seed* the interface-state engine and are load-bearing.
 The same holds for an OID the metric engine serves, such as a CPU, memory or temperature object: a GET and a walk both answer from the engine, and the shipped profiles carry no static row on one.
+A `hrSystemUptime.0` row (`1.3.6.1.2.1.25.1.1.0`) is different again: it is a marker that makes the device serve the object, live from its boot instant.
+Its value is never served, but it is still checked as a TimeTicks when the file loads, so write a number such as `0`.
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
 The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected.
